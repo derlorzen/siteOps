@@ -15,7 +15,7 @@ import * as z from 'zod/v4';
 
 function env(name, fallback = undefined) { const value = process.env[name] ?? fallback; if (value === undefined) throw new Error(`Missing env ${name}`); return value; }
 const cfg = {
-  port: Number(env('PORT','3100')), host: env('HOST','127.0.0.1'), databaseUrl: env('DATABASE_URL'),
+  port: Number(env('PORT','3100')), host: env('HOST','0.0.0.0'), databaseUrl: env('DATABASE_URL'),
   masterKey: env('SITEOPS_MASTER_KEY'), mcpToken: env('MCP_API_TOKEN'), dashboardUser: env('DASHBOARD_USER'),
   dashboardPassword: env('DASHBOARD_PASSWORD'), workspaceRoot: env('WORKSPACE_ROOT','/opt/siteops/workspaces'),
   backupRepoUrl: process.env.BACKUP_REPO_URL || '', backupBranch: env('BACKUP_REPO_BRANCH','main'), backupGitKey: process.env.BACKUP_GIT_SSH_KEY || '',
