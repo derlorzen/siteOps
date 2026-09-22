@@ -1,22 +1,34 @@
 # Deploy SiteOps on Hostinger Cloud Startup
 
-SiteOps 0.3 is a Node.js/Fastify application designed for Hostinger's managed Node.js Web App hosting. It does not require a VPS, Docker, systemd, a local Git binary, a PHP binary or persistent application storage.
+SiteOps 0.4 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
 
-## 1. PostgreSQL
+## 1. Create the Hostinger MySQL database
 
-Hostinger Cloud/Web hosting provides MySQL, not PostgreSQL. SiteOps therefore uses an external PostgreSQL database.
+In hPanel:
 
-Recommended setup:
+1. Open **Websites → Dashboard → Databases → Management** for the SiteOps website.
+2. Create a database, for example `siteops`.
+3. Create/assign a database user and a strong password.
+4. Note the database name, username and host. For a Node.js app and database on the same Hostinger hosting plan, the database host is normally `localhost`.
+5. Add the values to the Node.js application's environment variables:
 
-1. Create a dedicated Supabase project named **SiteOps** in the EU region.
-2. In the Hostinger Node.js application dashboard use **Database → Connect → Supabase**, or configure the connection manually.
-3. Ensure SiteOps receives a PostgreSQL connection string as `DATABASE_URL`.
-4. Prefer the Supabase pooled connection string for the long-running Node.js application.
-5. Keep `sslmode=require` in the connection string when applicable.
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=<hostinger database user>
+DB_PASSWORD=<hostinger database password>
+DB_NAME=<hostinger database name>
+```
 
-The schema is applied automatically when SiteOps starts. It can also be applied explicitly with `npm run migrate`.
+SiteOps automatically creates its tables on application startup.
 
-Do not reuse an unrelated production project's database for SiteOps.
+A single connection string is also supported:
+
+```
+DATABASE_URL=mysql://USER:PASSWORD@localhost:3306/DATABASE
+```
+
+Do not configure both unless they point to the same database. If `DATABASE_URL` exists, it takes precedence.
 
 ## 2. Private GitHub backup repository
 
@@ -52,23 +64,30 @@ All backup Git operations use GitHub's HTTPS API. No deploy key, SSH key file or
 3. Select `derlorzen/siteOps`.
 4. Choose Node.js 22.
 5. Hostinger should detect Fastify. If it is shown as **Other**, use `app.mjs` as the entry file.
-6. There is no build step.
+6. There is no separate build step.
 7. Start command: `npm start`.
 8. Add the environment variables from `.env.example`.
 9. Deploy.
 
-Hostinger supports deployment from GitHub and can redeploy the application after repository updates.
+Hostinger supports GitHub deployment for Node.js applications and can rebuild the application after repository updates.
 
 ## 4. Required environment variables
 
 ```
 HOST=0.0.0.0
 PUBLIC_BASE_URL=https://siteops.lorzen.link
-DATABASE_URL=postgresql://...
+
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=...
+DB_PASSWORD=...
+DB_NAME=...
+
 SITEOPS_MASTER_KEY=...
 MCP_API_TOKEN=...
 DASHBOARD_USER=kai
 DASHBOARD_PASSWORD=...
+
 GITHUB_BACKUP_REPO=derlorzen/lorzen-site-backups
 GITHUB_BACKUP_TOKEN=...
 BACKUP_REPO_BRANCH=main
@@ -112,12 +131,11 @@ Expected response includes:
 ```json
 {
   "status": "ok",
-  "version": "0.3.0",
-  "database": "ok",
-  "backup": "github-api"
+  "version": "0.4.0",
+  "database": "mysql"
 }
 ```
 
 Then sign in to the dashboard and add the first customer site.
 
-If a backup fails, check Hostinger Node.js runtime logs and verify `DATABASE_URL`, `GITHUB_BACKUP_REPO` and `GITHUB_BACKUP_TOKEN`.
+If startup fails, check Hostinger Node.js runtime logs and verify the five `DB_*` variables first.
