@@ -219,9 +219,9 @@ async function updateSiteConnection(idOrSlug,x){
   }else{
     const protocol=x.protocol??site.protocol,host=String(x.host??site.host??'').trim(),port=Number(x.port??site.port),username=String(x.username??site.username??'').trim(),remoteRoot=String(x.remoteRoot??site.remote_root??'/').trim()||'/';
     let creds=site.encrypted_credentials;
-    if(x.password!==undefined||x.privateKey!==undefined||x.passphrase!==undefined){
+    if(x.password||x.privateKey||x.passphrase){
       const previous=site.encrypted_credentials?decrypt(site.encrypted_credentials):{};
-      creds=encrypt({password:x.password!==undefined?x.password:previous.password,privateKey:x.privateKey!==undefined?x.privateKey:previous.privateKey,passphrase:x.passphrase!==undefined?x.passphrase:previous.passphrase});
+      creds=encrypt({password:x.password||previous.password,privateKey:x.privateKey||previous.privateKey,passphrase:x.passphrase||previous.passphrase});
     }
     if(!creds)throw new Error('Webspace credentials are required');
     const candidate={...site,deployment_mode:'webspace',protocol,host,port,username,remote_root:remoteRoot,encrypted_credentials:creds};
