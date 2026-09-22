@@ -554,6 +554,122 @@ async function getIncident(incidentId){const i=(await q('select i.*,s.slug,s.dom
 let monitorRunning=false;function startMonitor(){setInterval(async()=>{if(monitorRunning)return;monitorRunning=true;try{const sites=(await q(`select s.* from sites s left join monitor_state ms on ms.site_id=s.id where s.enabled=1 and s.monitor_enabled=1 and (ms.last_check_at is null or timestampdiff(second,ms.last_check_at,now())>=s.monitor_interval_seconds)`)).rows;for(const site of sites){try{await processMonitor(site);}catch(e){console.error('monitor',site.domain,e);}}}finally{monitorRunning=false;}},cfg.workerInterval).unref();}
 let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlert(`BACKUP FAILED: ${site.domain}`,msg);console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
 
+
+const SEO_STOPWORDS=new Set('aber alle allem allen aller alles als also am an ander andere anderem anderen anderer anderes and auch auf aus bei bin bis bist da damit dann das dass dein deine dem den denn der des die dies diese diesem diesen dieser dieses doch dort du durch ein eine einem einen einer eines er es etwas für gegen gewesen hat hatte haben hier hin hinter ich im in ist ja jede jedem jeden jeder jedes jener jenes kann kein keine mit muss nach nicht nichts noch nun nur ob oder ohne sehr sein seine selbst sich sie sind so über um und uns unser unsere unter vom von vor war waren was weg weil weiter welche welchem welchen welcher welches wenn werde werden wie wieder will wir wo zu zum zur'.split(/\s+/));
+function seoNormalizeUrl(value,base){
+  try{
+    const u=new URL(value,base);u.hash='';
+    for(const k of [...u.searchParams.keys()])if(/^utm_|^(fbclid|gclid)$/i.test(k))u.searchParams.delete(k);
+    if((u.protocol==='https:'&&u.port==='443')||(u.protocol==='http:'&&u.port==='80'))u.port='';
+    if(u.pathname!=='/'&&u.pathname.endsWith('/'))u.pathname=u.pathname.replace(/\/+$/,'');
+    return u.toString();
+  }catch{return null;}
+}
+function seoTokens(text){
+  return String(text||'').toLocaleLowerCase('de-DE').normalize('NFKC').match(/[\p{L}\p{N}][\p{L}\p{N}-]{2,}/gu)?.filter(x=>!SEO_STOPWORDS.has(x)&&!/^\d+$/.test(x))||[];
+}
+function seoIssues(page){
+  const issues=[];
+  if(page.statusCode!==200)issues.push({level:'error',code:'http_status',text:'HTTP '+page.statusCode});
+  if(!page.title)issues.push({level:'error',code:'title_missing',text:'Title fehlt'});
+  else if(page.title.length<25)issues.push({level:'warn',code:'title_short',text:'Title sehr kurz ('+page.title.length+' Zeichen)'});
+  else if(page.title.length>65)issues.push({level:'warn',code:'title_long',text:'Title lang ('+page.title.length+' Zeichen)'});
+  if(!page.metaDescription)issues.push({level:'warn',code:'description_missing',text:'Meta Description fehlt'});
+  else if(page.metaDescription.length<70)issues.push({level:'info',code:'description_short',text:'Meta Description kurz ('+page.metaDescription.length+' Zeichen)'});
+  else if(page.metaDescription.length>170)issues.push({level:'warn',code:'description_long',text:'Meta Description lang ('+page.metaDescription.length+' Zeichen)'});
+  if(page.h1.length===0)issues.push({level:'error',code:'h1_missing',text:'H1 fehlt'});
+  if(page.h1.length>1)issues.push({level:'warn',code:'h1_multiple',text:page.h1.length+' H1-Überschriften'});
+  if(!page.canonical)issues.push({level:'info',code:'canonical_missing',text:'Canonical fehlt'});
+  if(/noindex/i.test(page.robots||''))issues.push({level:'error',code:'noindex',text:'Seite steht auf noindex'});
+  if(page.wordCount<250)issues.push({level:'warn',code:'thin_content',text:'Wenig Text ('+page.wordCount+' Wörter)'});
+  if(page.imagesMissingAlt>0)issues.push({level:'warn',code:'image_alt',text:page.imagesMissingAlt+' Bilder ohne Alt-Text'});
+  if(page.depth!==null&&page.depth>3)issues.push({level:'info',code:'crawl_depth',text:'Tiefe '+page.depth});
+  return issues;
+}
+function calcPageRank(urls,links){
+  const n=urls.length;if(!n)return new Map();const set=new Set(urls),out=new Map(urls.map(u=>[u,new Set()]));
+  for(const l of links)if(l.internal&&set.has(l.source)&&set.has(l.target)&&l.source!==l.target)out.get(l.source).add(l.target);
+  let rank=new Map(urls.map(u=>[u,1/n]));const damping=.85;
+  for(let iter=0;iter<35;iter++){
+    const next=new Map(urls.map(u=>[u,(1-damping)/n]));
+    let sink=0;
+    for(const u of urls){const targets=out.get(u),r=rank.get(u)||0;if(!targets.size){sink+=r;continue;}for(const t of targets)next.set(t,next.get(t)+damping*r/targets.size);}
+    if(sink)for(const u of urls)next.set(u,next.get(u)+damping*sink/n);
+    rank=next;
+  }
+  return rank;
+}
+function calcWdfIdf(pages){
+  const docs=pages.map(p=>seoTokens(p.text)),N=Math.max(1,pages.length),df=new Map();
+  for(const tokens of docs)for(const t of new Set(tokens))df.set(t,(df.get(t)||0)+1);
+  return docs.map(tokens=>{
+    const counts=new Map();for(const t of tokens)counts.set(t,(counts.get(t)||0)+1);
+    const max=Math.max(1,...counts.values()),rows=[];
+    for(const [term,freq] of counts){const wdf=(1+Math.log2(freq))/(1+Math.log2(max)),idf=Math.log((N+1)/((df.get(term)||0)+1))+1;rows.push({term,freq,wdf:Number(wdf.toFixed(4)),idf:Number(idf.toFixed(4)),score:Number((wdf*idf).toFixed(4))});}
+    return rows.sort((a,b)=>b.score-a.score).slice(0,40);
+  });
+}
+async function pageSpeedAudit(url,strategy='mobile'){
+  if(!cfg.pageSpeedApiKey)return null;
+  const p=new URLSearchParams({url,strategy,key:cfg.pageSpeedApiKey});
+  for(const category of ['PERFORMANCE','ACCESSIBILITY','BEST_PRACTICES','SEO'])p.append('category',category);
+  const res=await fetch('https://www.googleapis.com/pagespeedonline/v5/runPagespeed?'+p.toString(),{signal:AbortSignal.timeout(120000)});
+  const raw=await res.text();let data;try{data=JSON.parse(raw);}catch{data={error:{message:raw.slice(0,500)}};}
+  if(!res.ok)throw new Error('PageSpeed '+strategy+' '+res.status+': '+(data?.error?.message||'unknown error'));
+  const lhr=data.lighthouseResult||{},cats=lhr.categories||{},audits=lhr.audits||{},score=k=>cats[k]?.score==null?null:Math.round(cats[k].score*100),num=id=>audits[id]?.numericValue??null;
+  return{strategy,fetchTime:lhr.fetchTime,finalUrl:lhr.finalUrl,lighthouseVersion:lhr.lighthouseVersion,
+    scores:{performance:score('performance'),accessibility:score('accessibility'),bestPractices:score('best-practices'),seo:score('seo')},
+    metrics:{fcp:num('first-contentful-paint'),lcp:num('largest-contentful-paint'),tbt:num('total-blocking-time'),cls:num('cumulative-layout-shift'),speedIndex:num('speed-index'),tti:num('interactive')},
+    field:data.loadingExperience?.metrics||null};
+}
+async function crawlSeoPage(url,rootHost,depth){
+  const started=Date.now();let res,html='',error=null;
+  try{res=await fetch(url,{redirect:'follow',signal:AbortSignal.timeout(20000),headers:{'User-Agent':cfg.seoUserAgent,accept:'text/html,application/xhtml+xml'}});html=await res.text();}catch(e){error=String(e.message||e);}
+  const statusCode=res?.status??0,responseMs=Date.now()-started,contentBytes=Buffer.byteLength(html||''),contentType=res?.headers?.get('content-type')||'';
+  if(error||!contentType.includes('text/html'))return{url,path:new URL(url).pathname,statusCode,responseMs,contentBytes,error,title:'',metaDescription:'',canonical:'',robots:'',h1:[],h2:[],wordCount:0,imagesTotal:0,imagesMissingAlt:0,structuredData:[],links:[],text:'',depth,issues:[{level:'error',code:error?'fetch_error':'not_html',text:error||'Kein HTML-Dokument'}]};
+  const $=cheerio.load(html);
+  const title=$('title').first().text().replace(/\s+/g,' ').trim(),metaDescription=$('meta[name="description"]').attr('content')?.trim()||'',canonicalHref=$('link[rel="canonical"]').attr('href')||'',canonical=canonicalHref?seoNormalizeUrl(canonicalHref,url):'',robots=$('meta[name="robots"]').attr('content')||'';
+  const h1=$('h1').map((_,e)=>$(e).text().replace(/\s+/g,' ').trim()).get().filter(Boolean),h2=$('h2').map((_,e)=>$(e).text().replace(/\s+/g,' ').trim()).get().filter(Boolean);
+  const structuredData=[];$('script[type="application/ld+json"]').each((_,e)=>{const raw=$(e).text().trim();if(raw){try{structuredData.push(JSON.parse(raw));}catch{structuredData.push({invalid:true,preview:raw.slice(0,300)});}}});
+  const images=$('img').length,imagesMissingAlt=$('img').filter((_,e)=>!($(e).attr('alt')||'').trim()).length;
+  const body=$('main,article').first().length?$('main,article').first().clone():$('body').clone();body.find('script,style,noscript,svg,template').remove();const text=body.text().replace(/\s+/g,' ').trim(),wordCount=seoTokens(text).length;
+  const links=[];$('a[href]').each((_,e)=>{const href=$(e).attr('href');if(!href||/^(mailto:|tel:|javascript:)/i.test(href))return;const target=seoNormalizeUrl(href,url);if(!target)return;const tu=new URL(target),internal=tu.hostname===rootHost,anchor=$(e).text().replace(/\s+/g,' ').trim().slice(0,250),nofollow=/\bnofollow\b/i.test($(e).attr('rel')||'');links.push({source:url,target,anchor,internal,nofollow});});
+  const page={url,path:new URL(url).pathname+(new URL(url).search||''),statusCode,responseMs,contentBytes,title,metaDescription,canonical,robots,h1,h2,wordCount,imagesTotal:images,imagesMissingAlt,structuredData,links,text,depth};
+  page.issues=seoIssues(page);return page;
+}
+async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homepage',pageSpeedMaxPages=10}={}){
+  const root=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!root)throw new Error('Invalid site URL');const rootUrl=new URL(root),rootHost=rootUrl.hostname,queue=[{url:root,depth:0}],queued=new Set([root]),pages=[],links=[];
+  try{
+    while(queue.length&&pages.length<maxPages){
+      const item=queue.shift(),page=await crawlSeoPage(item.url,rootHost,item.depth);pages.push(page);links.push(...page.links);
+      for(const l of page.links)if(l.internal&&!queued.has(l.target)&&pages.length+queue.length<maxPages){queued.add(l.target);queue.push({url:l.target,depth:item.depth+1});}
+    }
+    const pageMap=new Map(pages.map(p=>[p.url,p])),urls=pages.map(p=>p.url),rank=calcPageRank(urls,links),incoming=new Map(urls.map(u=>[u,0]));
+    for(const l of links)if(l.internal&&incoming.has(l.target))incoming.set(l.target,incoming.get(l.target)+1);
+    const wdfidf=calcWdfIdf(pages),titleMap=new Map(),descMap=new Map();
+    pages.forEach((p,i)=>{p.pagerank=rank.get(p.url)||0;p.incomingLinks=incoming.get(p.url)||0;p.internalLinks=p.links.filter(x=>x.internal).length;p.externalLinks=p.links.filter(x=>!x.internal).length;p.wdfidf=wdfidf[i];if(p.title){if(!titleMap.has(p.title))titleMap.set(p.title,[]);titleMap.get(p.title).push(p.url);}if(p.metaDescription){if(!descMap.has(p.metaDescription))descMap.set(p.metaDescription,[]);descMap.get(p.metaDescription).push(p.url);}});
+    for(const p of pages){if(p.title&&(titleMap.get(p.title)?.length||0)>1)p.issues.push({level:'warn',code:'duplicate_title',text:'Title auf '+titleMap.get(p.title).length+' Seiten identisch'});if(p.metaDescription&&(descMap.get(p.metaDescription)?.length||0)>1)p.issues.push({level:'warn',code:'duplicate_description',text:'Meta Description mehrfach identisch'});if(p.canonical&&new URL(p.canonical).hostname!==rootHost)p.issues.push({level:'warn',code:'canonical_external',text:'Canonical zeigt auf andere Domain'});}
+    const psiCandidates=pages.filter(p=>p.statusCode===200).slice(0,pageSpeed==='all'?Math.min(pageSpeedMaxPages,pages.length):pageSpeed==='homepage'?1:0);
+    for(const p of psiCandidates){try{p.lighthouseMobile=await pageSpeedAudit(p.url,'mobile');p.lighthouseDesktop=await pageSpeedAudit(p.url,'desktop');}catch(e){p.issues.push({level:'warn',code:'pagespeed_error',text:String(e.message||e)});}}
+    for(const p of pages){
+      await q(`insert into seo_pages(run_id,site_id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,structured_data,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [runId,site.id,p.url,p.path,p.statusCode,p.responseMs,p.contentBytes,p.title,p.metaDescription,p.canonical,p.robots,JSON.stringify(p.h1),JSON.stringify(p.h2),p.wordCount,p.internalLinks,p.externalLinks,p.incomingLinks,p.depth,p.pagerank,JSON.stringify(p.issues),JSON.stringify(p.wdfidf),JSON.stringify(p.structuredData),p.imagesTotal,p.imagesMissingAlt,p.lighthouseMobile?JSON.stringify(p.lighthouseMobile):null,p.lighthouseDesktop?JSON.stringify(p.lighthouseDesktop):null]);
+    }
+    for(const l of links)await q('insert into seo_links(run_id,site_id,source_url,target_url,anchor_text,internal_link,nofollow) values(?,?,?,?,?,?,?)',[runId,site.id,l.source,l.target,l.anchor,l.internal,l.nofollow]);
+    const summary={pages:pages.length,okPages:pages.filter(p=>p.statusCode===200).length,errorPages:pages.filter(p=>p.statusCode>=400||p.error).length,issues:{error:pages.reduce((n,p)=>n+p.issues.filter(i=>i.level==='error').length,0),warn:pages.reduce((n,p)=>n+p.issues.filter(i=>i.level==='warn').length,0),info:pages.reduce((n,p)=>n+p.issues.filter(i=>i.level==='info').length,0)},avgResponseMs:pages.length?Math.round(pages.reduce((n,p)=>n+p.responseMs,0)/pages.length):0,avgWordCount:pages.length?Math.round(pages.reduce((n,p)=>n+p.wordCount,0)/pages.length):0,strongestPages:[...pages].sort((a,b)=>b.pagerank-a.pagerank).slice(0,10).map(p=>({url:p.url,title:p.title,pagerank:Number(p.pagerank.toFixed(6)),incomingLinks:p.incomingLinks})),pageSpeedEnabled:Boolean(cfg.pageSpeedApiKey),pageSpeedPages:psiCandidates.length};
+    await q('update seo_runs set status=?,pages_crawled=?,summary=?,finished_at=now() where id=?',['completed',pages.length,JSON.stringify(summary),runId]);
+  }catch(e){await q('update seo_runs set status=?,error=?,finished_at=now() where id=?',['failed',String(e.message||e).slice(0,10000),runId]);throw e;}
+}
+async function startSeoAudit(siteId,options={}){
+  const site=await getSite(siteId),runId=crypto.randomUUID(),maxPages=Math.max(1,Math.min(500,Number(options.maxPages||cfg.seoMaxPages||100)));
+  await q('insert into seo_runs(id,site_id,status,max_pages) values(?,?,?,?)',[runId,site.id,'running',maxPages]);
+  setImmediate(()=>runSeoAudit(runId,site,{...options,maxPages}).catch(e=>console.error('seo audit',site.domain,e)));
+  return{id:runId,status:'running',site:site.slug,maxPages,pageSpeed:options.pageSpeed||'homepage',pageSpeedConfigured:Boolean(cfg.pageSpeedApiKey)};
+}
+async function seoRunGet(runId){const run=(await q('select * from seo_runs where id=?',[runId])).rows[0];if(!run)throw new Error('SEO run not found');return run;}
+async function seoLatest(siteId){const site=await getSite(siteId),run=(await q('select * from seo_runs where site_id=? order by started_at desc limit 1',[site.id])).rows[0]||null;if(!run)return{site:site.slug,run:null,pages:[]};const pages=(await q('select id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop from seo_pages where run_id=? order by pagerank desc',[run.id])).rows;return{site:site.slug,run,pages};}
+async function seoPageGet(pageId){const page=(await q('select * from seo_pages where id=?',[pageId])).rows[0];if(!page)throw new Error('SEO page not found');const links=(await q('select source_url,target_url,anchor_text,internal_link,nofollow from seo_links where run_id=? and source_url=?',[page.run_id,page.url])).rows;return{...page,links};}
+
 const toolText=value=>({content:[{type:'text',text:typeof value==='string'?value:JSON.stringify(value,null,2)}]});
 function mcpServer(){
   const s=new McpServer({name:'lorzen-siteops',version:'0.7.1'});
