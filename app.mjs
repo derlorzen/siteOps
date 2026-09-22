@@ -780,6 +780,14 @@ function settingsPage(){
         <div class="buttonrow"><button type="button" class="ghost" id="testAlert">Testbenachrichtigung senden</button><span class="inline-status" id="alertStatus"></span></div>
       </section>
 
+      <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">SEO / Lighthouse</span><h2>SEO-Audits</h2></div><span class="pill ${s.pageSpeedApiKeyConfigured?'ok':''}">${s.pageSpeedApiKeyConfigured?'PAGESPEED AKTIV':'OHNE PAGESPEED'}</span></div>
+        <p class="lead">Der normale SEO-Crawl funktioniert ohne externe API. Für echte Lighthouse-/PageSpeed-Werte kann optional ein Google PageSpeed Insights API-Key hinterlegt werden.</p>
+        <div class="formgrid">
+          <label>Standard: maximale Seiten pro Crawl <small>Schützt große Websites vor sehr langen Crawls. Pro Lauf kann der Wert angepasst werden.</small><input name="seoMaxPages" type="number" min="1" max="500" value="${s.seoMaxPages||100}"></label>
+          <label class="span2">Google PageSpeed Insights API-Key <small>${s.pageSpeedApiKeyConfigured?'API-Key gespeichert – leer lassen für unverändert.':'Optional. Benötigt für Lighthouse Performance, Accessibility, Best Practices und SEO.'}</small><input name="pageSpeedApiKey" type="password" autocomplete="new-password" placeholder="${s.pageSpeedApiKeyConfigured?'API-Key bereits gespeichert':'AIza…'}"></label>
+        </div>
+      </section>
+
       <div class="sticky-save"><button type="submit">Einstellungen speichern</button><span id="configStatus"></span></div>
     </form>
     <script>
@@ -793,7 +801,8 @@ function settingsPage(){
         defaultMonitorIntervalSeconds:Number(fd.get('defaultMonitorIntervalSeconds')),defaultMonitorFailureThreshold:Number(fd.get('defaultMonitorFailureThreshold')),
         defaultSslWarnDays:Number(fd.get('defaultSslWarnDays')),alertEmail:fd.get('alertEmail').trim(),webhook:fd.get('webhook').trim(),
         smtpHost:fd.get('smtpHost').trim(),smtpPort:Number(fd.get('smtpPort')),smtpSecure:form.smtpSecure.checked,smtpUser:fd.get('smtpUser').trim(),
-        smtpPassword:fd.get('smtpPassword'),smtpFrom:fd.get('smtpFrom').trim()
+        smtpPassword:fd.get('smtpPassword'),smtpFrom:fd.get('smtpFrom').trim(),
+        seoMaxPages:Number(fd.get('seoMaxPages')),pageSpeedApiKey:fd.get('pageSpeedApiKey')
       };
     }
     form.onsubmit=async e=>{e.preventDefault();configStatus.textContent='Speichere…';const r=await fetch('/api/settings',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(payload())});const x=await r.json();configStatus.textContent=r.ok?'Gespeichert.':'Fehler: '+(x.message||x.error||JSON.stringify(x));if(r.ok)setTimeout(()=>location.reload(),500);};
@@ -1135,7 +1144,7 @@ const siteCreateSchema=z.discriminatedUnion('deploymentMode',[webspaceSiteSchema
 app.post('/api/sites',async(req,reply)=>{const site=await createSite(siteCreateSchema.parse(req.body));return reply.code(201).send({id:site.id,slug:site.slug});});
 app.post('/api/site-connection-test',async req=>testSiteConnection(siteCreateSchema.parse(req.body)));
 app.get('/api/settings',async()=>publicSettings());
-app.patch('/api/settings',async req=>{const schema=z.object({publicBaseUrl:z.string().url(),githubBackupRepo:z.string().max(255),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().min(1).max(191),backupMaxFileBytes:z.coerce.number().int().min(1048576).max(94371840),defaultBackupIntervalSeconds:z.coerce.number().int().min(900).max(2592000),defaultBackupMaxFiles:z.coerce.number().int().min(100).max(200000),defaultMonitorIntervalSeconds:z.coerce.number().int().min(30).max(86400),defaultMonitorFailureThreshold:z.coerce.number().int().min(1).max(20),defaultSslWarnDays:z.coerce.number().int().min(1).max(365),alertEmail:z.string().max(320),webhook:z.string().max(2000),smtpHost:z.string().max(255),smtpPort:z.coerce.number().int().min(1).max(65535),smtpSecure:z.boolean(),smtpUser:z.string().max(255),smtpPassword:z.string().max(1000).optional(),smtpFrom:z.string().max(500)});return{ok:true,settings:await saveAppSettings(schema.parse(req.body))};});
+app.patch('/api/settings',async req=>{const schema=z.object({publicBaseUrl:z.string().url(),githubBackupRepo:z.string().max(255),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().min(1).max(191),backupMaxFileBytes:z.coerce.number().int().min(1048576).max(94371840),defaultBackupIntervalSeconds:z.coerce.number().int().min(900).max(2592000),defaultBackupMaxFiles:z.coerce.number().int().min(100).max(200000),defaultMonitorIntervalSeconds:z.coerce.number().int().min(30).max(86400),defaultMonitorFailureThreshold:z.coerce.number().int().min(1).max(20),defaultSslWarnDays:z.coerce.number().int().min(1).max(365),alertEmail:z.string().max(320),webhook:z.string().max(2000),smtpHost:z.string().max(255),smtpPort:z.coerce.number().int().min(1).max(65535),smtpSecure:z.boolean(),smtpUser:z.string().max(255),smtpPassword:z.string().max(1000).optional(),smtpFrom:z.string().max(500),seoMaxPages:z.coerce.number().int().min(1).max(500),pageSpeedApiKey:z.string().max(1000).optional()});return{ok:true,settings:await saveAppSettings(schema.parse(req.body))};});
 app.post('/api/settings/github-test',async req=>{const schema=z.object({githubBackupRepo:z.string().max(255).optional(),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().max(191).optional()}),x=schema.parse(req.body||{}),previous={repo:cfg.githubBackupRepo,token:cfg.githubBackupToken,branch:cfg.backupBranch};try{if(x.githubBackupRepo!==undefined)cfg.githubBackupRepo=x.githubBackupRepo.trim().replace(/^\/+|\/+$/g,'');if(x.githubBackupToken)cfg.githubBackupToken=x.githubBackupToken;if(x.backupBranch)cfg.backupBranch=x.backupBranch.trim();backupRepoChecked=false;await ensureBackupRepository();const r=await gh('');return{ok:true,repository:r.full_name,private:r.private,defaultBranch:r.default_branch,branch:cfg.backupBranch};}finally{cfg.githubBackupRepo=previous.repo;cfg.githubBackupToken=previous.token;cfg.backupBranch=previous.branch;backupRepoChecked=false;}});
 app.post('/api/settings/alert-test',async()=>{if(!(cfg.webhook||(cfg.alertEmail&&cfg.smtpHost)))throw new Error('Configure an alert email with SMTP or a webhook first');await sendAlert('TEST','SiteOps test notification from '+cfg.publicBaseUrl);return{ok:true};});app.post('/api/sites/:site/backup',async req=>{const site=await getSite(req.params.site);return fullBackup(site,site.backup_max_files||10000);});app.post('/api/sites/:site/check',async req=>processMonitor(await getSite(req.params.site)));app.patch('/api/sites/:site',async req=>{const schema=z.object({
   name:z.string().min(1).optional(),domain:z.string().min(1).optional(),enabled:z.boolean().optional(),
