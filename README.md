@@ -4,6 +4,9 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 
 ## Features
 
+- Hostinger Git Deploy mode: SiteOps writes a single GitHub commit to the deployment branch instead of modifying production files through SFTP
+- Supports WordPress, PHP/HTML, static sites and Node.js web apps as website types
+
 - Settings UI for GitHub backup target, new-site defaults and alert delivery
 - Guided website setup with SFTP/FTPS/FTP connection test before saving
 
