@@ -4,6 +4,9 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 
 ## Features
 
+- Settings UI for GitHub backup target, new-site defaults and alert delivery
+- Guided website setup with SFTP/FTPS/FTP connection test before saving
+
 - live webspace remains the production source of truth
 - private GitHub repository stores a per-site version history under `sites/<slug>/public`
 - GitHub Git Data API is used directly; no local Git checkout or SSH deploy key is required
