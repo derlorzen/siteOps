@@ -35,7 +35,7 @@ const cfg = {
   seoUserAgent: env('SEO_USER_AGENT','Lorzen-SiteOps-SEO/0.8')
 };
 const db=mysql.createPool(cfg.databaseUrl||{host:cfg.dbHost,port:cfg.dbPort,user:cfg.dbUser,password:cfg.dbPassword,database:cfg.dbName,connectionLimit:5,charset:'utf8mb4'});
-const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details']);
+const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details','summary','issues','wdfidf','structured_data','lighthouse_mobile','lighthouse_desktop']);
 function normalizeRow(row){if(!row||typeof row!=='object')return row;for(const k of jsonFields)if(typeof row[k]==='string'){try{row[k]=JSON.parse(row[k]);}catch{}}return row;}
 async function q(text,params=[]){const [raw]=await db.query(text,params);return{rows:Array.isArray(raw)?raw.map(normalizeRow):[],meta:raw};}
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -75,6 +75,8 @@ async function loadSavedConfig(){
   apply('smtp_user','smtpUser');
   apply('smtp_password','smtpPassword');
   apply('smtp_from','smtpFrom');
+  apply('pagespeed_api_key','pageSpeedApiKey');
+  apply('seo_max_pages','seoMaxPages',Number);
 }
 async function storeSetting(settingKey,value,{secret=false}={}){
   const stored=secret&&value?encrypt(value):String(value??'');
@@ -87,7 +89,7 @@ async function saveAppSettings(x){
     ['default_backup_max_files','defaultBackupMaxFiles'],['default_monitor_interval_seconds','defaultMonitorIntervalSeconds'],
     ['default_monitor_failure_threshold','defaultMonitorFailureThreshold'],['default_ssl_warn_days','defaultSslWarnDays'],
     ['alert_email','alertEmail'],['alert_webhook','webhook'],['smtp_host','smtpHost'],['smtp_port','smtpPort'],
-    ['smtp_secure','smtpSecure'],['smtp_user','smtpUser'],['smtp_from','smtpFrom']
+    ['smtp_secure','smtpSecure'],['smtp_user','smtpUser'],['smtp_from','smtpFrom'],['seo_max_pages','seoMaxPages']
   ];
   for(const [keyName,target] of plain){
     if(x[target]===undefined)continue;
@@ -103,6 +105,10 @@ async function saveAppSettings(x){
     cfg.smtpPassword=x.smtpPassword;
     await storeSetting('smtp_password',x.smtpPassword,{secret:true});
   }
+  if(x.pageSpeedApiKey){
+    cfg.pageSpeedApiKey=x.pageSpeedApiKey;
+    await storeSetting('pagespeed_api_key',x.pageSpeedApiKey,{secret:true});
+  }
   backupRepoChecked=false;
   commitTreeCache.clear();
   return publicSettings();
@@ -115,7 +121,8 @@ function publicSettings(){return{
   defaultMonitorIntervalSeconds:cfg.defaultMonitorIntervalSeconds,defaultMonitorFailureThreshold:cfg.defaultMonitorFailureThreshold,
   defaultSslWarnDays:cfg.defaultSslWarnDays,
   alertEmail:cfg.alertEmail,webhook:cfg.webhook,smtpHost:cfg.smtpHost,smtpPort:cfg.smtpPort,smtpSecure:cfg.smtpSecure,
-  smtpUser:cfg.smtpUser,smtpPasswordConfigured:Boolean(cfg.smtpPassword),smtpFrom:cfg.smtpFrom
+  smtpUser:cfg.smtpUser,smtpPasswordConfigured:Boolean(cfg.smtpPassword),smtpFrom:cfg.smtpFrom,
+  pageSpeedApiKeyConfigured:Boolean(cfg.pageSpeedApiKey),seoMaxPages:cfg.seoMaxPages
 };}
 
 
