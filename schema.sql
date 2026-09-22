@@ -149,3 +149,69 @@ CREATE TABLE IF NOT EXISTS incident_events (
   INDEX idx_incident_events_incident_created (incident_id, created_at),
   INDEX idx_incident_events_site_created (site_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS seo_runs (
+  id CHAR(36) PRIMARY KEY,
+  site_id CHAR(36) NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'running',
+  max_pages INT NOT NULL DEFAULT 100,
+  pages_crawled INT NOT NULL DEFAULT 0,
+  summary LONGTEXT NULL,
+  error LONGTEXT NULL,
+  started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at DATETIME NULL,
+  CONSTRAINT fk_seo_runs_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_seo_runs_site_started (site_id, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS seo_pages (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  run_id CHAR(36) NOT NULL,
+  site_id CHAR(36) NOT NULL,
+  url TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status_code INT NULL,
+  response_ms INT NULL,
+  content_bytes INT NULL,
+  title TEXT NULL,
+  meta_description TEXT NULL,
+  canonical TEXT NULL,
+  robots TEXT NULL,
+  h1 LONGTEXT NULL,
+  h2 LONGTEXT NULL,
+  word_count INT NOT NULL DEFAULT 0,
+  internal_links INT NOT NULL DEFAULT 0,
+  external_links INT NOT NULL DEFAULT 0,
+  incoming_links INT NOT NULL DEFAULT 0,
+  depth INT NULL,
+  pagerank DOUBLE NULL,
+  issues LONGTEXT NULL,
+  wdfidf LONGTEXT NULL,
+  structured_data LONGTEXT NULL,
+  images_total INT NOT NULL DEFAULT 0,
+  images_missing_alt INT NOT NULL DEFAULT 0,
+  lighthouse_mobile LONGTEXT NULL,
+  lighthouse_desktop LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_seo_pages_run FOREIGN KEY (run_id) REFERENCES seo_runs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_seo_pages_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_seo_pages_run (run_id),
+  INDEX idx_seo_pages_site (site_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS seo_links (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  run_id CHAR(36) NOT NULL,
+  site_id CHAR(36) NOT NULL,
+  source_url TEXT NOT NULL,
+  target_url TEXT NOT NULL,
+  anchor_text TEXT NULL,
+  internal_link BOOLEAN NOT NULL DEFAULT TRUE,
+  nofollow BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_seo_links_run FOREIGN KEY (run_id) REFERENCES seo_runs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_seo_links_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_seo_links_run (run_id),
+  INDEX idx_seo_links_site (site_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
