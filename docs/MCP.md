@@ -3,7 +3,7 @@
 Endpoint:
 
 ```
-https://siteops.lorzen.link/mcp
+https://siteops.lorzen.cloud/mcp
 ```
 
 Authentication:
