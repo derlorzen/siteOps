@@ -1,78 +1,111 @@
 # SiteOps MCP
 
-Endpoint:
+Remote endpoint:
 
 ```
 https://siteops.lorzen.cloud/mcp
 ```
 
-Authentication:
+Current authentication:
 
 ```
 Authorization: Bearer <MCP_API_TOKEN>
 ```
 
-SiteOps MCP never returns stored passwords, private keys, GitHub PATs or the SiteOps master key. Secret-bearing update tools accept replacement secrets, but their responses are always redacted.
+The interactive setup guide is available in SiteOps at `/mcp-info`.
 
-## Operations / context
+SiteOps never returns stored passwords, private keys, GitHub PATs, PageSpeed API keys, SMTP passwords or the master key. Secret-bearing update tools accept replacement secrets but responses remain redacted.
 
-- `sites_list` – list managed websites with deployment, monitoring and backup mode
-- `site_get` – redacted configuration for one website
-- `site_overview` – preferred first call for an agent: configuration, deployment state, latest monitor result, open incidents and backup state
-- `deployment_info` – deployment/source information and Git branch HEAD where available
-- `settings_get` – redacted global SiteOps configuration
+## Initial setup
 
-## Monitoring and incidents
+1. Set `MCP_API_TOKEN` as a long random Hostinger environment variable.
+2. Keep `PUBLIC_BASE_URL=https://siteops.lorzen.cloud`.
+3. Redeploy SiteOps.
+4. Verify `/health` no longer lists `MCP_API_TOKEN` in `missingConfig`.
+5. Test the remote server with MCP Inspector using Streamable HTTP and an `Authorization: Bearer ...` header.
 
-- `site_status` – immediate detailed check: HTTP, redirect chain, DNS, SSL, response time, expected text/title and optional WordPress REST API
-- `monitor_history` – recent monitoring results
-- `incidents_list` – recent incidents for a website
-- `incident_get` – complete incident timeline including alerts, repeated failures and recovery
+## Main tools
 
-## Configuration
+### Context and operations
 
-- `site_update` – update non-secret monitoring, backup and operational settings
-- `site_connection_test` – test the currently stored SFTP/FTPS/FTP or Git source connection
-- `site_connection_update` – test and then persist connection/deployment configuration; blank secret fields retain existing secrets
+- `sites_list`
+- `site_get`
+- `site_overview`
+- `deployment_info`
+- `settings_get`
 
-## Files and discovery
+### Monitoring and incidents
 
-For Hostinger Git Deploy sites, “current source of truth” means the configured GitHub source repository. For classic sites, it means the configured live webspace.
+- `site_status`
+- `monitor_history`
+- `incidents_list`
+- `incident_get`
 
-- `files_list` – directory listing
-- `files_find` – bounded recursive filename/path search
-- `text_search` – bounded search through text-file contents
-- `file_read` – read a text file
+### SEO
 
-## Safe changes
+- `seo_start` – asynchronous crawl with on-page analysis, sitemaps, internal link graph and optional PageSpeed
+- `seo_run_status` – crawl progress/result
+- `seo_latest` – latest crawl and page metrics
+- `seo_page` – full details for one crawled URL
+- `seo_graph` – strongest pages and internal link edges
+- `seo_issues` – bounded issue list, optionally by severity
 
-- `change_preview` – prepare and validate file changes without writing
-- `change_apply` – apply an approved preview with pre/post snapshots and post-change health check
-- `history_list` – recent recorded changes
-- `history_diff` – human-readable Git comparison for a change
-- `rollback_preview` – prepare rollback as a new preview
+The WDF×IDF values are calculated against the corpus of the crawled website. They are useful for internal content analysis but are not a competitor SERP corpus.
 
-For a Hostinger Git Deploy site, `change_apply` commits the proposed changes to the configured deployment branch. Hostinger then deploys that branch. For a webspace site, SiteOps writes through its configured SFTP/FTPS/FTP adapter.
+### Connections and configuration
 
-## Backups and restore
+- `site_update`
+- `site_connection_test`
+- `site_connection_update`
 
-- `site_backup` – create a full SiteOps Git-backed snapshot
-- `backup_status` – scheduler state and latest backup
-- `backups_list` – list full backups
-- `backup_restore_preview` – prepare restore from a historical backup
+### Files and discovery
 
-A restore never writes an old backup directly. SiteOps first creates a fresh safety snapshot, creates a normal preview, and only `change_apply` performs the change.
+- `files_list`
+- `files_find`
+- `text_search`
+- `file_read`
+
+For Hostinger Git deployments, the current source of truth is the configured GitHub repository. For classic sites it is the configured live webspace.
+
+### Safe changes
+
+- `change_preview`
+- `change_apply`
+- `history_list`
+- `history_diff`
+- `rollback_preview`
+
+Changes remain two-step. A preview is created first; only `change_apply` writes/commits it.
+
+### Backups and restore
+
+- `site_backup`
+- `backup_status`
+- `backups_list`
+- `backup_restore_preview`
+
+The backup repository is automatically initialized on the first backup even when the GitHub repository is completely empty.
 
 ## Recommended agent workflow
 
-For ordinary work on a website:
-
 1. `site_overview`
-2. `files_find` / `text_search` / `file_read`
-3. `change_preview`
-4. show the user the proposed change and obtain approval
-5. `change_apply`
-6. `site_status`
-7. if needed, use `history_diff` or `rollback_preview`
+2. `files_find` / `text_search`
+3. `file_read`
+4. `change_preview`
+5. obtain human approval
+6. `change_apply`
+7. `site_status`
 
-This keeps discovery, proposed changes, approval and execution separate.
+For SEO:
+
+1. `seo_start`
+2. poll `seo_run_status`
+3. `seo_latest`
+4. inspect important URLs with `seo_page`
+5. use `seo_graph` and `seo_issues` for structure and priorities
+
+## Client notes
+
+SiteOps currently uses static Bearer authentication. MCP clients and API integrations that support a Bearer/authorization token can use it directly.
+
+Native web connector experiences increasingly use OAuth. If a specific ChatGPT or Claude connector UI requires OAuth and does not provide a static Bearer option, SiteOps will need an OAuth authorization layer for that native connection. Do not make the MCP endpoint unauthenticated as a workaround.
