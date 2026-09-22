@@ -25,8 +25,12 @@ CREATE TABLE IF NOT EXISTS sites (
   monitor_interval_seconds INT NOT NULL DEFAULT 60,
   monitor_expected_status INT NOT NULL DEFAULT 200,
   monitor_content TEXT NULL,
+  monitor_expected_title TEXT NULL,
+  monitor_check_dns BOOLEAN NOT NULL DEFAULT TRUE,
+  monitor_check_wordpress BOOLEAN NOT NULL DEFAULT FALSE,
   monitor_timeout_ms INT NOT NULL DEFAULT 10000,
   monitor_failure_threshold INT NOT NULL DEFAULT 3,
+  alert_repeat_minutes INT NOT NULL DEFAULT 60,
   response_warn_ms INT NULL,
   ssl_warn_days INT NOT NULL DEFAULT 14,
   exclude_patterns LONGTEXT NULL,
@@ -128,4 +132,18 @@ CREATE TABLE IF NOT EXISTS app_settings (
   setting_value LONGTEXT NULL,
   encrypted BOOLEAN NOT NULL DEFAULT FALSE,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS incident_events (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  incident_id CHAR(36) NOT NULL,
+  site_id CHAR(36) NOT NULL,
+  event_type VARCHAR(40) NOT NULL,
+  details LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_incident_events_incident FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE,
+  CONSTRAINT fk_incident_events_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_incident_events_incident_created (incident_id, created_at),
+  INDEX idx_incident_events_site_created (site_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
