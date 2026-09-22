@@ -27,7 +27,7 @@ const cfg = {
   workerInterval: Number(env('MONITOR_WORKER_INTERVAL_MS','30000')),
   backupWorkerInterval: Number(env('BACKUP_WORKER_INTERVAL_MS','60000'))
 };
-const db=mysql.createPool(cfg.databaseUrl?{uri:cfg.databaseUrl,connectionLimit:5,multipleStatements:true}:{host:cfg.dbHost,port:cfg.dbPort,user:cfg.dbUser,password:cfg.dbPassword,database:cfg.dbName,connectionLimit:5,multipleStatements:true,charset:'utf8mb4'});
+const db=mysql.createPool(cfg.databaseUrl||{host:cfg.dbHost,port:cfg.dbPort,user:cfg.dbUser,password:cfg.dbPassword,database:cfg.dbName,connectionLimit:5,charset:'utf8mb4'});
 const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details']);
 function normalizeRow(row){if(!row||typeof row!=='object')return row;for(const k of jsonFields)if(typeof row[k]==='string'){try{row[k]=JSON.parse(row[k]);}catch{}}return row;}
 async function q(text,params=[]){const [raw]=await db.query(text,params);return{rows:Array.isArray(raw)?raw.map(normalizeRow):[],meta:raw};}
@@ -39,7 +39,7 @@ function key(){ const raw=Buffer.from(cfg.masterKey,'base64'); if(raw.length!==3
 function encrypt(value){ const iv=crypto.randomBytes(12), cipher=crypto.createCipheriv('aes-256-gcm',key(),iv); const data=Buffer.concat([cipher.update(Buffer.from(JSON.stringify(value))),cipher.final()]); return [iv,cipher.getAuthTag(),data].map(x=>x.toString('base64url')).join('.'); }
 function decrypt(value){ const [iv,tag,data]=value.split('.'); const d=crypto.createDecipheriv('aes-256-gcm',key(),Buffer.from(iv,'base64url')); d.setAuthTag(Buffer.from(tag,'base64url')); return JSON.parse(Buffer.concat([d.update(Buffer.from(data,'base64url')),d.final()]).toString()); }
 const phpParser=new PHPParser({parser:{suppressErrors:false,extractDoc:false},ast:{withPositions:false}});
-async function migrate(){ const sql=await readFile(new URL('./schema.sql', import.meta.url),'utf8'); await db.query(sql); }
+async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);}
 
 function joinRemote(root,path=''){ const clean=String(path).replaceAll('\\','/').replace(/^\/+/, ''); if(clean.split('/').includes('..')) throw new Error('Path traversal rejected'); return `${root.replace(/\/+$/,'')}/${clean}`.replace(/\/$/,'') || '/'; }
 class SftpAdapter { constructor(client){this.client=client;} static async connect(site,cred){ const c=new SftpClient(); await c.connect({host:site.host,port:site.port,username:site.username,password:cred.password,privateKey:cred.privateKey,passphrase:cred.passphrase,readyTimeout:15000}); return new SftpAdapter(c); } async list(path){ return (await this.client.list(path)).map(r=>({name:r.name,path:`${path.replace(/\/$/,'')}/${r.name}`,type:r.type==='d'?'directory':r.type==='l'?'link':'file',size:r.size,modifiedAt:r.modifyTime})); } async read(path){const x=await this.client.get(path);return Buffer.isBuffer(x)?x:Buffer.from(x);} async write(path,content){await this.client.mkdir(pathPosix.dirname(path),true);await this.client.put(content,path);} async exists(path){return Boolean(await this.client.exists(path));} async remove(path){if(await this.exists(path))await this.client.delete(path);} async close(){await this.client.end();} }
