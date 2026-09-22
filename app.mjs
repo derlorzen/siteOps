@@ -42,7 +42,8 @@ function key(){ const raw=Buffer.from(cfg.masterKey,'base64'); if(raw.length!==3
 function encrypt(value){ const iv=crypto.randomBytes(12), cipher=crypto.createCipheriv('aes-256-gcm',key(),iv); const data=Buffer.concat([cipher.update(Buffer.from(JSON.stringify(value))),cipher.final()]); return [iv,cipher.getAuthTag(),data].map(x=>x.toString('base64url')).join('.'); }
 function decrypt(value){ const [iv,tag,data]=value.split('.'); const d=crypto.createDecipheriv('aes-256-gcm',key(),Buffer.from(iv,'base64url')); d.setAuthTag(Buffer.from(tag,'base64url')); return JSON.parse(Buffer.concat([d.update(Buffer.from(data,'base64url')),d.final()]).toString()); }
 const phpParser=new PHPParser({parser:{suppressErrors:false,extractDoc:false},ast:{withPositions:false}});
-async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);}
+async function ensureColumn(table,column,definition){const r=await q(`show columns from ${table} like ?`,[column]);if(!r.rows.length)await db.query(`alter table ${table} add column ${column} ${definition}`);}
+async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);await ensureColumn('sites','deployment_mode',"VARCHAR(30) NOT NULL DEFAULT 'webspace'");await ensureColumn('sites','source_repository','VARCHAR(255) NULL');await ensureColumn('sites','source_branch','VARCHAR(191) NULL');await ensureColumn('sites','source_root','TEXT NULL');await ensureColumn('sites','git_credentials','LONGTEXT NULL');await ensureColumn('sites','hostinger_target_directory','TEXT NULL');}
 async function loadSavedConfig(){
   const rows=(await q('select setting_key,setting_value,encrypted from app_settings')).rows;
   const values={};
@@ -117,7 +118,67 @@ function publicSettings(){return{
 function joinRemote(root,path=''){ const clean=String(path).replaceAll('\\','/').replace(/^\/+/, ''); if(clean.split('/').includes('..')) throw new Error('Path traversal rejected'); return `${root.replace(/\/+$/,'')}/${clean}`.replace(/\/$/,'') || '/'; }
 class SftpAdapter { constructor(client){this.client=client;} static async connect(site,cred){ const c=new SftpClient(); await c.connect({host:site.host,port:site.port,username:site.username,password:cred.password,privateKey:cred.privateKey,passphrase:cred.passphrase,readyTimeout:15000}); return new SftpAdapter(c); } async list(path){ return (await this.client.list(path)).map(r=>({name:r.name,path:`${path.replace(/\/$/,'')}/${r.name}`,type:r.type==='d'?'directory':r.type==='l'?'link':'file',size:r.size,modifiedAt:r.modifyTime})); } async read(path){const x=await this.client.get(path);return Buffer.isBuffer(x)?x:Buffer.from(x);} async write(path,content){await this.client.mkdir(pathPosix.dirname(path),true);await this.client.put(content,path);} async exists(path){return Boolean(await this.client.exists(path));} async remove(path){if(await this.exists(path))await this.client.delete(path);} async close(){await this.client.end();} }
 class FtpAdapter { constructor(client){this.client=client;} static async connect(site,cred,secure){ const c=new FtpClient(15000); await c.access({host:site.host,port:site.port,user:site.username,password:cred.password,secure,secureOptions:secure?{rejectUnauthorized:true}:undefined}); return new FtpAdapter(c); } async list(path){return (await this.client.list(path)).map(r=>({name:r.name,path:`${path.replace(/\/$/,'')}/${r.name}`,type:r.isDirectory?'directory':r.isSymbolicLink?'link':'file',size:r.size,modifiedAt:r.modifiedAt?.getTime()}));} async read(path){const chunks=[];const w=new Writable({write(chunk,_e,cb){chunks.push(Buffer.from(chunk));cb();}});await this.client.downloadTo(w,path);return Buffer.concat(chunks);} async write(path,content){const dir=pathPosix.dirname(path);await this.client.ensureDir(dir);await this.client.uploadFrom(Readable.from(content),pathPosix.basename(path));} async exists(path){try{await this.client.size(path);return true;}catch{return false;}} async remove(path){try{await this.client.remove(path);}catch{}} async close(){this.client.close();} }
-async function connectSite(site){ const cred=decrypt(site.encrypted_credentials); return site.protocol==='sftp'?SftpAdapter.connect(site,cred):FtpAdapter.connect(site,cred,site.protocol==='ftps'); }
+class GitHubSourceAdapter {
+  constructor(site,token,state){this.site=site;this.token=token;this.repo=String(site.source_repository||'').replace(/^\/+|\/+$/g,'');this.branch=site.source_branch||'main';this.headSha=state.headSha;this.rootTreeSha=state.rootTreeSha;this.treeMap=state.treeMap;this.staged=new Map();}
+  static async connect(site,cred){
+    const repo=String(site.source_repository||'').replace(/^\/+|\/+$/g,'');
+    if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))throw new Error('Source repository must be owner/repository');
+    if(!cred?.token)throw new Error('GitHub deploy token is missing');
+    const api=async(path,{method='GET',body,allow404=false}={})=>{
+      const res=await fetch('https://api.github.com/repos/'+repo+path,{method,headers:{accept:'application/vnd.github+json',authorization:'Bearer '+cred.token,'x-github-api-version':'2022-11-28','user-agent':'Lorzen-SiteOps/0.6.0'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
+      const raw=await res.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{data=raw;}}
+      if(allow404&&res.status===404)return null;if(!res.ok)throw new Error('GitHub source '+method+' '+path+' failed ('+res.status+'): '+(data?.message||String(data||'').slice(0,500)));return data;
+    };
+    const meta=await api('');
+    if(meta.archived)throw new Error('Source repository is archived');
+    const branch=encodeURIComponent(site.source_branch||meta.default_branch||'main'),ref=await api('/git/ref/heads/'+branch,{allow404:true});
+    if(!ref)throw new Error('Source branch not found: '+(site.source_branch||'main'));
+    const commit=await api('/git/commits/'+ref.object.sha),tree=await api('/git/trees/'+commit.tree.sha+'?recursive=1');
+    if(tree.truncated)throw new Error('Source repository tree is too large for safe processing');
+    const state={headSha:ref.object.sha,rootTreeSha:commit.tree.sha,treeMap:new Map((tree.tree||[]).filter(x=>x.type==='blob').map(x=>[x.path,x]))};
+    const a=new GitHubSourceAdapter(site,cred.token,state);a.api=api;a.meta=meta;return a;
+  }
+  clean(path){return String(path||'').replaceAll('\\','/').replace(/^\/+|\/+$/g,'');}
+  async list(path){
+    const prefix=this.clean(path),base=prefix?prefix+'/':'',seen=new Map();
+    const paths=new Set([...this.treeMap.keys(),...this.staged.keys()]);
+    for(const full of paths){
+      if(base&&!full.startsWith(base))continue;
+      if(!base&&full.includes('/')){} 
+      const rel=base?full.slice(base.length):full;if(!rel||rel.startsWith('../'))continue;
+      const first=rel.split('/')[0],child=base+first,staged=this.staged.get(child);
+      if(rel.includes('/'))seen.set(first,{name:first,path:'/'+child,type:'directory'});
+      else if(staged!==null)seen.set(first,{name:first,path:'/'+child,type:'file',size:staged?staged.length:undefined});
+    }
+    return[...seen.values()];
+  }
+  async read(path){
+    const p=this.clean(path);if(this.staged.has(p)){const v=this.staged.get(p);if(v===null)throw new Error('File not found: '+p);return v;}
+    const e=this.treeMap.get(p);if(!e)throw new Error('File not found: '+p);const blob=await this.api('/git/blobs/'+e.sha);return Buffer.from(String(blob.content||'').replace(/\n/g,''),'base64');
+  }
+  async exists(path){const p=this.clean(path);if(this.staged.has(p))return this.staged.get(p)!==null;return this.treeMap.has(p);}
+  async write(path,content){this.staged.set(this.clean(path),Buffer.isBuffer(content)?content:Buffer.from(content));}
+  async remove(path){this.staged.set(this.clean(path),null);}
+  async close(){
+    if(!this.staged.size)return;
+    const changes=[];
+    for(const [path,content] of this.staged){
+      if(content===null){if(this.treeMap.has(path))changes.push({path,mode:'100644',type:'blob',sha:null});continue;}
+      const existing=this.treeMap.get(path),sha=gitBlobSha(content);if(existing?.sha===sha)continue;
+      const blob=await this.api('/git/blobs',{method:'POST',body:{content:content.toString('base64'),encoding:'base64'}});
+      changes.push({path,mode:'100644',type:'blob',sha:blob.sha});
+    }
+    if(!changes.length){this.staged.clear();return;}
+    const tree=await this.api('/git/trees',{method:'POST',body:{base_tree:this.rootTreeSha,tree:changes}});
+    const commit=await this.api('/git/commits',{method:'POST',body:{message:'SiteOps: update '+this.site.domain,tree:tree.sha,parents:[this.headSha]}});
+    await this.api('/git/refs/heads/'+encodeURIComponent(this.branch),{method:'PATCH',body:{sha:commit.sha,force:false}});
+    this.headSha=commit.sha;this.rootTreeSha=tree.sha;for(const ch of changes){if(ch.sha===null)this.treeMap.delete(ch.path);else this.treeMap.set(ch.path,{path:ch.path,type:'blob',sha:ch.sha});}this.staged.clear();
+  }
+}
+async function connectSite(site){
+  if(site.deployment_mode==='hostinger_git'){const cred=site.git_credentials?decrypt(site.git_credentials):{};return GitHubSourceAdapter.connect(site,cred);}
+  const cred=decrypt(site.encrypted_credentials);return site.protocol==='sftp'?SftpAdapter.connect(site,cred):FtpAdapter.connect(site,cred,site.protocol==='ftps');
+}
 async function listSites(){return (await q('select * from sites order by name')).rows;}
 async function getSite(idOrSlug){const r=await q('select * from sites where id=? or slug=? limit 1',[idOrSlug,idOrSlug]);if(!r.rows[0])throw new Error(`Unknown site ${idOrSlug}`);return r.rows[0];}
 async function createSite(x){const id=crypto.randomUUID();await q(`insert into sites(id,slug,name,domain,protocol,host,port,username,encrypted_credentials,remote_root,site_type,monitor_url,exclude_patterns) values(?,?,?,?,?,?,?,?,?,?,?,?,?)`,[id,x.slug,x.name,x.domain,x.protocol,x.host,x.port,x.username,encrypt({password:x.password,privateKey:x.privateKey,passphrase:x.passphrase}),x.remoteRoot,x.siteType||'php',x.monitorUrl||`https://${x.domain}`,JSON.stringify(['.git','node_modules','wp-content/cache','wp-content/uploads'])]);await updateSite(id,{backup_enabled:x.backupEnabled??true,backup_interval_seconds:x.backupIntervalSeconds??cfg.defaultBackupIntervalSeconds,backup_max_files:x.backupMaxFiles??cfg.defaultBackupMaxFiles,monitor_enabled:x.monitorEnabled??true,monitor_interval_seconds:x.monitorIntervalSeconds??cfg.defaultMonitorIntervalSeconds,monitor_failure_threshold:x.monitorFailureThreshold??cfg.defaultMonitorFailureThreshold,ssl_warn_days:x.sslWarnDays??cfg.defaultSslWarnDays});return getSite(id);}
