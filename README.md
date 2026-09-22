@@ -12,7 +12,12 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 - per-site operations dashboard for monitoring, backup, incidents and audit history
 - DNS, redirect-chain, title/content, SSL, response-time and optional WordPress REST monitoring
 - incident event timeline with repeated alert escalation and recovery delivery
-- expanded MCP toolkit for site overview, configuration, connection testing, file discovery, monitoring, incidents, backups and safe changes
+- expanded MCP toolkit for site overview, configuration, connection testing, file discovery, monitoring, incidents, backups, SEO and safe changes
+- SEO crawler with robots.txt/sitemap discovery, technical on-page checks, internal-link graph and crawl depth
+- PageRank-style internal page-strength analysis and per-page site-corpus WDF×IDF terms
+- optional Google PageSpeed Insights / Lighthouse mobile and desktop audits
+- per-page SEO detail views for metadata, headings, image-alt issues, link anchors, WDF×IDF and Lighthouse
+- in-app MCP setup guide for SiteOps, MCP Inspector, ChatGPT and Claude/API
 - Guided website setup with SFTP/FTPS/FTP connection test before saving
 
 - live webspace remains the production source of truth
@@ -36,7 +41,7 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 
 ## Hosting
 
-SiteOps 0.7 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository.
+SiteOps 0.8 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository.
 
 The application now uses the MySQL database included with Hostinger Cloud Startup. No Supabase or external PostgreSQL service is required.
 
