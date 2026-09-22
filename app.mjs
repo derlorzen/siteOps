@@ -109,7 +109,7 @@ async function saveAppSettings(x){
     cfg.pageSpeedApiKey=x.pageSpeedApiKey;
     await storeSetting('pagespeed_api_key',x.pageSpeedApiKey,{secret:true});
   }
-  backupRepoChecked=false;
+  backupRepoChecked=false;backupRepoMeta=null;
   commitTreeCache.clear();
   return publicSettings();
 }
@@ -136,7 +136,7 @@ class GitHubSourceAdapter {
     if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))throw new Error('Source repository must be owner/repository');
     if(!cred?.token)throw new Error('GitHub deploy token is missing');
     const api=async(path,{method='GET',body,allow404=false}={})=>{
-      const res=await fetch('https://api.github.com/repos/'+repo+path,{method,headers:{accept:'application/vnd.github+json',authorization:'Bearer '+cred.token,'x-github-api-version':'2022-11-28','user-agent':'Lorzen-SiteOps/0.8.0'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
+      const res=await fetch('https://api.github.com/repos/'+repo+path,{method,headers:{accept:'application/vnd.github+json',authorization:'Bearer '+cred.token,'x-github-api-version':'2022-11-28','user-agent':'Lorzen-SiteOps/0.8.1'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
       const raw=await res.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{data=raw;}}
       if(allow404&&res.status===404)return null;if(!res.ok)throw new Error('GitHub source '+method+' '+path+' failed ('+res.status+'): '+(data?.message||String(data||'').slice(0,500)));return data;
     };
@@ -277,7 +277,7 @@ async function gh(path,{method='GET',body,allow404=false,allow409=false}={}){
       accept:'application/vnd.github+json',
       authorization:'Bearer '+cfg.githubBackupToken,
       'x-github-api-version':'2022-11-28',
-      'user-agent':'Lorzen-SiteOps/0.8.0'
+      'user-agent':'Lorzen-SiteOps/0.8.1'
     },
     body:body===undefined?undefined:JSON.stringify(body),
     signal:AbortSignal.timeout(30000)
@@ -290,22 +290,52 @@ async function gh(path,{method='GET',body,allow404=false,allow409=false}={}){
   if(!res.ok)throw new Error('GitHub '+method+' '+path+' failed ('+res.status+'): '+(data?.message||String(data||'').slice(0,500)));
   return data;
 }
-let backupRepoChecked=false;
+let backupRepoChecked=false,backupRepoMeta=null;
 async function ensureBackupRepository(){
   cfg.githubBackupRepo=String(cfg.githubBackupRepo||'').trim().replace(/^\/+|\/+$/g,'');
   if(!cfg.githubBackupRepo||!cfg.githubBackupToken)throw new Error('GitHub backup is not configured. Set GITHUB_BACKUP_REPO and GITHUB_BACKUP_TOKEN.');
   if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(cfg.githubBackupRepo))throw new Error('GITHUB_BACKUP_REPO must be owner/repository');
-  if(backupRepoChecked)return;
+  if(backupRepoChecked&&backupRepoMeta)return backupRepoMeta;
   const r=await gh('');
   if(!r.private)throw new Error('Backup repository must be private');
   if(r.archived)throw new Error('Backup repository is archived');
-  backupRepoChecked=true;
+  backupRepoMeta=r;backupRepoChecked=true;return r;
+}
+async function initializeEmptyBackupRepository(repoMeta){
+  const marker=Buffer.from('SiteOps backup repository\n').toString('base64');
+  try{
+    await gh('/contents/.siteops',{method:'PUT',body:{message:'Initialize SiteOps backup repository',content:marker}});
+  }catch(e){
+    // A concurrent request may have initialized the repository in the meantime.
+    const defaultBranch=encodeURIComponent(repoMeta?.default_branch||'main');
+    const existing=await gh('/git/ref/heads/'+defaultBranch,{allow404:true,allow409:true});
+    if(!existing)throw e;
+  }
 }
 async function branchState(){
-  await ensureBackupRepository();
-  const branch=encodeURIComponent(cfg.backupBranch);
-  const ref=await gh('/git/ref/heads/'+branch,{allow404:true,allow409:true});
-  if(!ref)return{headSha:null,rootTreeSha:null,treeMap:new Map(),emptyRepository:true};
+  const repoMeta=await ensureBackupRepository();
+  const configuredBranch=String(cfg.backupBranch||repoMeta.default_branch||'main');
+  const defaultBranch=String(repoMeta.default_branch||'main');
+
+  let ref=await gh('/git/ref/heads/'+encodeURIComponent(configuredBranch),{allow404:true,allow409:true});
+  if(!ref){
+    let defaultRef=await gh('/git/ref/heads/'+encodeURIComponent(defaultBranch),{allow404:true,allow409:true});
+    if(!defaultRef){
+      await initializeEmptyBackupRepository(repoMeta);
+      defaultRef=await gh('/git/ref/heads/'+encodeURIComponent(defaultBranch),{allow404:true});
+      if(!defaultRef)throw new Error('Backup repository initialization succeeded but no default branch is available');
+    }
+    if(configuredBranch===defaultBranch)ref=defaultRef;
+    else{
+      try{await gh('/git/refs',{method:'POST',body:{ref:'refs/heads/'+configuredBranch,sha:defaultRef.object.sha}});}
+      catch(e){
+        const raced=await gh('/git/ref/heads/'+encodeURIComponent(configuredBranch),{allow404:true});
+        if(!raced)throw e;
+      }
+      ref=await gh('/git/ref/heads/'+encodeURIComponent(configuredBranch));
+    }
+  }
+
   const commit=await gh('/git/commits/'+ref.object.sha);
   const tree=await gh('/git/trees/'+commit.tree.sha+'?recursive=1');
   if(tree.truncated)throw new Error('Backup repository tree is too large for safe recursive processing');
@@ -318,21 +348,12 @@ async function createGitBlob(content){
   return gh('/git/blobs',{method:'POST',body:{content:b.toString('base64'),encoding:'base64'}});
 }
 async function commitTreeChanges(state,changes,message){
-  if(!changes.length&&state.headSha)return state.headSha;
-  if(!changes.length&&!state.headSha){
-    const marker=await createGitBlob(Buffer.from('SiteOps backup repository\n'));
-    changes=[{path:'.siteops',mode:'100644',type:'blob',sha:marker.sha}];
-  }
-  const treeBody={tree:changes};
-  if(state.rootTreeSha)treeBody.base_tree=state.rootTreeSha;
+  if(!changes.length)return state.headSha;
+  const treeBody={tree:changes,base_tree:state.rootTreeSha};
   const tree=await gh('/git/trees',{method:'POST',body:treeBody});
-  if(state.rootTreeSha&&tree.sha===state.rootTreeSha)return state.headSha;
-  const commitBody={message,tree:tree.sha};
-  if(state.headSha)commitBody.parents=[state.headSha];
-  const commit=await gh('/git/commits',{method:'POST',body:commitBody});
-  const branch=encodeURIComponent(cfg.backupBranch);
-  if(state.headSha)await gh('/git/refs/heads/'+branch,{method:'PATCH',body:{sha:commit.sha,force:false}});
-  else await gh('/git/refs',{method:'POST',body:{ref:'refs/heads/'+cfg.backupBranch,sha:commit.sha}});
+  if(tree.sha===state.rootTreeSha)return state.headSha;
+  const commit=await gh('/git/commits',{method:'POST',body:{message,tree:tree.sha,parents:[state.headSha]}});
+  await gh('/git/refs/heads/'+encodeURIComponent(cfg.backupBranch),{method:'PATCH',body:{sha:commit.sha,force:false}});
   return commit.sha;
 }
 async function commitPaths(site,paths,message){
@@ -427,7 +448,7 @@ async function sslDays(url){if(!url.startsWith('https:'))return null;const u=new
 async function fetchWithRedirectTrace(url,timeoutMs){
   const redirects=[];let current=url,response=null;
   for(let i=0;i<8;i++){
-    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/0.8.0'}});
+    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/0.8.1'}});
     if(response.status>=300&&response.status<400){
       const location=response.headers.get('location');if(!location)break;
       const next=new URL(location,current).toString();redirects.push({status:response.status,from:current,to:next});current=next;continue;
@@ -449,7 +470,7 @@ async function checkSiteNow(site){
     }
     if(!error&&site.monitor_check_wordpress){
       try{
-        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.8.0'}});
+        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.8.1'}});
         wp={ok:wpRes.ok,status:wpRes.status};
       }catch(e){wp={ok:false,error:String(e.message||e)};}
     }
@@ -739,7 +760,7 @@ async function seoIssuesList(siteId,{level,limit=200}={}){
 
 const toolText=value=>({content:[{type:'text',text:typeof value==='string'?value:JSON.stringify(value,null,2)}]});
 function mcpServer(){
-  const s=new McpServer({name:'lorzen-siteops',version:'0.8.0'});
+  const s=new McpServer({name:'lorzen-siteops',version:'0.8.1'});
   s.registerTool('sites_list',{description:'List managed websites with deployment and monitor mode. Never returns credentials.',inputSchema:z.object({})},async()=>toolText((await listSites()).map(x=>({id:x.id,slug:x.slug,name:x.name,domain:x.domain,site_type:x.site_type,deployment_mode:x.deployment_mode,protocol:x.deployment_mode==='hostinger_git'?null:x.protocol,monitor_enabled:Boolean(x.monitor_enabled),backup_enabled:Boolean(x.backup_enabled)}))));
   s.registerTool('site_get',{description:'Get redacted SiteOps configuration for one website. Secrets are represented only as configured/not configured.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(publicSite(await getSite(site))));
   s.registerTool('site_overview',{description:'Get the main operational picture for a website in one call: redacted config, deployment, latest monitor state, open incidents and backup state.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await siteOverview(site)));
@@ -788,7 +809,7 @@ function mcpServer(){
 
 function dashboardAuth(req,reply){if(!cfg.dashboardUser||!cfg.dashboardPassword){reply.code(503).send('SiteOps dashboard authentication is not configured');return false;}const h=req.headers.authorization||'';if(!h.startsWith('Basic ')){reply.header('WWW-Authenticate','Basic realm="SiteOps"');reply.code(401).send('Authentication required');return false;}const decoded=Buffer.from(h.slice(6),'base64').toString(),i=decoded.indexOf(':'),u=i>=0?decoded.slice(0,i):'',p=i>=0?decoded.slice(i+1):'';if(!safeEqual(u,cfg.dashboardUser)||!safeEqual(p,cfg.dashboardPassword)){reply.header('WWW-Authenticate','Basic realm="SiteOps"');reply.code(401).send('Authentication required');return false;}return true;}
 function mcpAuth(req,reply){if(!cfg.mcpToken){reply.code(503).send({error:'MCP_API_TOKEN is not configured'});return false;}const h=req.headers.authorization||'',t=h.startsWith('Bearer ')?h.slice(7):'';if(!safeEqual(t,cfg.mcpToken)){reply.code(401).send({error:'unauthorized'});return false;}return true;}
-function page(title,body){return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=0.8.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main></body></html>`;}
+function page(title,body){return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=0.8.1"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main></body></html>`;}
 
 function mcpInfoPage(){
   const base=String(cfg.publicBaseUrl||'https://siteops.lorzen.cloud').replace(/\/$/,'');
@@ -806,7 +827,7 @@ function mcpInfoPage(){
   const ps='$bytes = New-Object byte[] 32\n$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()\n$rng.GetBytes($bytes)\n($bytes | ForEach-Object { $_.ToString("x2") }) -join ""';
   const claude='mcp_servers: [{\n  type: "url",\n  url: "'+endpoint+'",\n  name: "siteops",\n  authorization_token: "DEIN_MCP_API_TOKEN"\n}]';
   let html='<header><div><span class="eyebrow">AI / AUTOMATION</span><h1>MCP einrichten</h1><p>SiteOps als Remote-MCP für Website-Betrieb, Backups, SEO, Monitoring und freigegebene Änderungen.</p></div><span class="pill '+(cfg.mcpToken?'ok':'bad')+'">'+(cfg.mcpToken?'AUTH KONFIGURIERT':'TOKEN FEHLT')+'</span></header>';
-  html+='<div class="metrics big mcp-metrics"><span>Streamable HTTP<em>Transport</em></span><span>'+(cfg.mcpToken?'aktiv':'fehlt')+'<em>Bearer Auth</em></span><span>'+groups.reduce((n,g)=>n+g[1].split(', ').length,0)+'<em>Tools</em></span><span>0.8.0<em>SiteOps MCP</em></span></div>';
+  html+='<div class="metrics big mcp-metrics"><span>Streamable HTTP<em>Transport</em></span><span>'+(cfg.mcpToken?'aktiv':'fehlt')+'<em>Bearer Auth</em></span><span>'+groups.reduce((n,g)=>n+g[1].split(', ').length,0)+'<em>Tools</em></span><span>0.8.1<em>SiteOps MCP</em></span></div>';
   html+='<section><div class="sectionhead"><div><span class="eyebrow">1 · SiteOps</span><h2>Server vorbereiten</h2></div></div><ol class="setup-steps"><li><strong>MCP_API_TOKEN in Hostinger setzen.</strong><span>Environment Variable der Node.js-App. Der Wert sollte lang und zufällig sein.</span></li><li><strong>PUBLIC_BASE_URL prüfen.</strong><span>Bei dir: <code>'+esc(base)+'</code></span></li><li><strong>Neu deployen.</strong><span>Danach muss <code>'+esc(health)+'</code> bei <code>missingConfig</code> keinen MCP_API_TOKEN mehr melden.</span></li><li><strong>MCP-Endpunkt verwenden.</strong><span><code>'+esc(endpoint)+'</code></span></li></ol><h3>Token unter Windows erzeugen</h3><pre class="codeblock"><code>'+esc(ps)+'</code></pre><div class="notice"><strong>Token nicht in Git speichern.</strong><span>Der MCP_API_TOKEN bleibt als Hostinger-Environment-Variable. SiteOps zeigt ihn absichtlich nirgendwo wieder an.</span></div></section>';
   html+='<section><div class="sectionhead"><div><span class="eyebrow">2 · Test</span><h2>MCP Inspector</h2></div></div><ol class="setup-steps"><li><strong>Inspector starten:</strong><span><code>npx @modelcontextprotocol/inspector</code></span></li><li><strong>Transport wählen:</strong><span>Streamable HTTP</span></li><li><strong>URL:</strong><span><code>'+esc(endpoint)+'</code></span></li><li><strong>Authorization Header:</strong><span><code>Bearer DEIN_MCP_API_TOKEN</code></span></li><li><strong>Verbinden und Tools prüfen.</strong><span>Mindestens <code>sites_list</code>, <code>site_overview</code>, <code>change_preview</code>, <code>seo_start</code> und <code>site_backup</code> sollten sichtbar sein.</span></li></ol></section>';
   html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">3 · ChatGPT</span><h2>Custom MCP App</h2></div></div><ol class="setup-steps"><li>Entwicklermodus für Custom Apps/MCP aktivieren.</li><li>Unter <strong>Apps → Create</strong> eine neue App anlegen.</li><li>Remote-Endpunkt <code>'+esc(endpoint)+'</code> eintragen.</li><li>Authentifizierung auswählen und anschließend <strong>Scan Tools</strong> ausführen.</li><li>Die App als Draft testen und bei Schreibaktionen die Freigabe kontrollieren.</li></ol><div class="callout"><strong>Aktueller ChatGPT-Stand:</strong> Vollständige MCP-Schreib-/Änderungsaktionen werden derzeit für Business, Enterprise und Edu bereitgestellt; Pro kann Custom MCP im Entwicklermodus für Read/Fetch nutzen. Die genaue UI kann sich ändern.</div><div class="notice"><strong>Bearer-Hinweis</strong><span>SiteOps nutzt derzeit statischen Bearer-Token. Falls die ChatGPT-App-Erstellung in deinem Workspace dafür keine passende Auth-Option anbietet, ist für die native Verbindung ein OAuth-Flow die nächste SiteOps-Ausbaustufe.</span></div></section>';
@@ -1272,7 +1293,7 @@ async function incidentPage(id){
 }
 async function dashboard(){const sites=await listSites(),checks=(await q('select mc.site_id,mc.ok,mc.http_status,mc.response_ms,mc.ssl_days,mc.created_at from monitor_checks mc join (select site_id,max(created_at) created_at from monitor_checks group by site_id) latest on latest.site_id=mc.site_id and latest.created_at=mc.created_at')).rows,checkMap=new Map(checks.map(x=>[x.site_id,x])),backups=(await q('select b.site_id,b.git_commit,b.file_count,b.created_at from backups b join (select site_id,max(created_at) created_at from backups group by site_id) latest on latest.site_id=b.site_id and latest.created_at=b.created_at')).rows,backupMap=new Map(backups.map(x=>[x.site_id,x])),incidents=(await q("select i.*,s.domain from incidents i join sites s on s.id=i.site_id where i.status='open' order by i.created_at desc")).rows,changes=(await q('select c.*,s.domain from changes c join sites s on s.id=c.site_id order by c.created_at desc limit 20')).rows;const cards=sites.map(s=>{const c=checkMap.get(s.id),b=backupMap.get(s.id),deploy=s.deployment_mode==='hostinger_git'?'HOSTINGER GIT':s.protocol.toUpperCase();return `<a class="card" href="/sites/${esc(s.slug)}"><div class="row"><strong>${esc(s.name)}</strong><span class="pill ${c?.ok?'ok':'bad'}">${c?c.ok?'ONLINE':'ALARM':'NO DATA'}</span></div><small>${esc(s.domain)} · ${esc(deploy)}</small><div class="metrics"><span>${c?.response_ms??'–'} ms<em>Response</em></span><span>${c?.ssl_days??'–'} d<em>SSL</em></span><span>${s.monitor_enabled?'ON':'OFF'}<em>Monitor</em></span><span>${b?.created_at?new Date(b.created_at).toLocaleDateString('de-DE'):'–'}<em>Backup</em></span></div></a>`}).join('');const inc=incidents.length?incidents.map(i=>`<li><b>${esc(i.domain)}</b> ${esc(i.title)}<small>${new Date(i.created_at).toLocaleString('de-DE')}</small></li>`).join(''):'<li>Keine offenen Incidents.</li>',hist=changes.map(c=>`<li><b>${esc(c.domain)}</b> ${esc(c.description)} <span class="pill">${esc(c.status)}</span><small>${new Date(c.created_at).toLocaleString('de-DE')} · ${esc(c.actor)}</small></li>`).join('')||'<li>Noch keine Änderungen.</li>';return page('SiteOps',`<header><div><span class="eyebrow">Lorzen</span><h1>SiteOps</h1><p>Websites, Backups, Monitoring und Rollbacks.</p></div><div class="actions"><a class="ghost btn" href="/settings">Einstellungen</a><a class="btn" href="/setup">+ Website</a></div></header><section><h2>Websites</h2><div class="grid">${cards}</div></section><div class="twocol"><section><h2>Offene Incidents</h2><ul>${inc}</ul></section><section><h2>Letzte Änderungen</h2><ul>${hist}</ul></section></div>`);}
 
-async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'0.8.0',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{if(req.url==='/health'||req.url.startsWith('/assets/'))return;if(req.url.startsWith('/mcp')){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
+async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'0.8.1',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0];if(path==='/health'||path.startsWith('/assets/'))return;if(path==='/mcp'){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
 app.get('/api/sites/:site',async req=>publicSite(await getSite(req.params.site)));
 app.get('/api/sites/:site/overview',async req=>siteOverview(req.params.site));
 app.post('/api/sites/:site/connection-test',async req=>testStoredConnection(await getSite(req.params.site)));
@@ -1299,7 +1320,7 @@ app.post('/api/sites',async(req,reply)=>{const site=await createSite(siteCreateS
 app.post('/api/site-connection-test',async req=>testSiteConnection(siteCreateSchema.parse(req.body)));
 app.get('/api/settings',async()=>publicSettings());
 app.patch('/api/settings',async req=>{const schema=z.object({publicBaseUrl:z.string().url(),githubBackupRepo:z.string().max(255),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().min(1).max(191),backupMaxFileBytes:z.coerce.number().int().min(1048576).max(94371840),defaultBackupIntervalSeconds:z.coerce.number().int().min(900).max(2592000),defaultBackupMaxFiles:z.coerce.number().int().min(100).max(200000),defaultMonitorIntervalSeconds:z.coerce.number().int().min(30).max(86400),defaultMonitorFailureThreshold:z.coerce.number().int().min(1).max(20),defaultSslWarnDays:z.coerce.number().int().min(1).max(365),alertEmail:z.string().max(320),webhook:z.string().max(2000),smtpHost:z.string().max(255),smtpPort:z.coerce.number().int().min(1).max(65535),smtpSecure:z.boolean(),smtpUser:z.string().max(255),smtpPassword:z.string().max(1000).optional(),smtpFrom:z.string().max(500),seoMaxPages:z.coerce.number().int().min(1).max(500),pageSpeedApiKey:z.string().max(1000).optional()});return{ok:true,settings:await saveAppSettings(schema.parse(req.body))};});
-app.post('/api/settings/github-test',async req=>{const schema=z.object({githubBackupRepo:z.string().max(255).optional(),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().max(191).optional()}),x=schema.parse(req.body||{}),previous={repo:cfg.githubBackupRepo,token:cfg.githubBackupToken,branch:cfg.backupBranch};try{if(x.githubBackupRepo!==undefined)cfg.githubBackupRepo=x.githubBackupRepo.trim().replace(/^\/+|\/+$/g,'');if(x.githubBackupToken)cfg.githubBackupToken=x.githubBackupToken;if(x.backupBranch)cfg.backupBranch=x.backupBranch.trim();backupRepoChecked=false;await ensureBackupRepository();const r=await gh('');return{ok:true,repository:r.full_name,private:r.private,defaultBranch:r.default_branch,branch:cfg.backupBranch};}finally{cfg.githubBackupRepo=previous.repo;cfg.githubBackupToken=previous.token;cfg.backupBranch=previous.branch;backupRepoChecked=false;}});
+app.post('/api/settings/github-test',async req=>{const schema=z.object({githubBackupRepo:z.string().max(255).optional(),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().max(191).optional()}),x=schema.parse(req.body||{}),previous={repo:cfg.githubBackupRepo,token:cfg.githubBackupToken,branch:cfg.backupBranch};try{if(x.githubBackupRepo!==undefined)cfg.githubBackupRepo=x.githubBackupRepo.trim().replace(/^\/+|\/+$/g,'');if(x.githubBackupToken)cfg.githubBackupToken=x.githubBackupToken;if(x.backupBranch)cfg.backupBranch=x.backupBranch.trim();backupRepoChecked=false;backupRepoMeta=null;await ensureBackupRepository();const r=await gh('');return{ok:true,repository:r.full_name,private:r.private,defaultBranch:r.default_branch,branch:cfg.backupBranch};}finally{cfg.githubBackupRepo=previous.repo;cfg.githubBackupToken=previous.token;cfg.backupBranch=previous.branch;backupRepoChecked=false;backupRepoMeta=null;}});
 app.post('/api/settings/alert-test',async()=>{if(!(cfg.webhook||(cfg.alertEmail&&cfg.smtpHost)))throw new Error('Configure an alert email with SMTP or a webhook first');await sendAlert('TEST','SiteOps test notification from '+cfg.publicBaseUrl);return{ok:true};});app.post('/api/settings/pagespeed-test',async req=>{const schema=z.object({pageSpeedApiKey:z.string().max(1000).optional(),url:z.string().url()}),x=schema.parse(req.body||{}),previous=cfg.pageSpeedApiKey;try{if(x.pageSpeedApiKey)cfg.pageSpeedApiKey=x.pageSpeedApiKey;if(!cfg.pageSpeedApiKey)throw new Error('Kein PageSpeed API-Key konfiguriert');return{ok:true,result:await pageSpeedAudit(x.url,'mobile')};}finally{cfg.pageSpeedApiKey=previous;}});app.post('/api/sites/:site/backup',async req=>{const site=await getSite(req.params.site);return fullBackup(site,site.backup_max_files||10000);});app.post('/api/sites/:site/check',async req=>processMonitor(await getSite(req.params.site)));app.patch('/api/sites/:site',async req=>{const schema=z.object({
   name:z.string().min(1).optional(),domain:z.string().min(1).optional(),enabled:z.boolean().optional(),
   backup_enabled:z.boolean().optional(),backup_interval_seconds:z.coerce.number().int().min(900).max(2592000).optional(),backup_max_files:z.coerce.number().int().min(100).max(200000).optional(),
