@@ -1,22 +1,30 @@
-# MCP
-Endpoint: `https://siteops.lorzen.link/mcp`
+# SiteOps MCP
 
-V1 uses `Authorization: Bearer <MCP_API_TOKEN>`. Configure write-tool approvals so `change_apply` requires explicit approval.
+Endpoint:
 
-Tools:
-- `sites_list`
-- `site_status`
-- `files_list`
-- `file_read`
-- `change_preview`
-- `change_apply`
-- `history_list`
-- `history_diff`
-- `rollback_preview`
-- `site_backup`
-- `backups_list`
-- `backup_restore_preview`
+```
+https://siteops.lorzen.link/mcp
+```
 
-`backup_restore_preview` is intentionally two-step. It first creates a fresh full safety backup of the current live webspace and then prepares a normal change preview for the requested historical backup. Production is not changed until `change_apply` is approved.
+Authentication:
 
-For a published ChatGPT workspace plugin with account linking, add OAuth 2.1 protected-resource and authorization-server metadata as the next hardening phase. The core SiteOps API is intentionally independent of a specific AI client.
+```
+Authorization: Bearer <MCP_API_TOKEN>
+```
+
+## Tools
+
+- `sites_list` – managed sites
+- `site_status` – immediate HTTP/SSL check
+- `files_list` – live remote directory listing
+- `file_read` – live text file read
+- `change_preview` – prepare and validate a file change without writing production
+- `change_apply` – apply an approved preview with pre/post GitHub snapshots
+- `history_list` – recent changes
+- `history_diff` – human-readable GitHub comparison for a change
+- `rollback_preview` – prepare rollback as a new preview
+- `site_backup` – create a full GitHub-backed site snapshot
+- `backups_list` – list full backups
+- `backup_restore_preview` – create a safe restore preview from a historical backup
+
+A restore never writes an old backup directly to production. SiteOps first creates a fresh safety snapshot of the current live files, then creates a normal preview, and only `change_apply` performs the write.
