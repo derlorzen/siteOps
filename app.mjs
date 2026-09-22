@@ -44,7 +44,7 @@ function encrypt(value){ const iv=crypto.randomBytes(12), cipher=crypto.createCi
 function decrypt(value){ const [iv,tag,data]=value.split('.'); const d=crypto.createDecipheriv('aes-256-gcm',key(),Buffer.from(iv,'base64url')); d.setAuthTag(Buffer.from(tag,'base64url')); return JSON.parse(Buffer.concat([d.update(Buffer.from(data,'base64url')),d.final()]).toString()); }
 const phpParser=new PHPParser({parser:{suppressErrors:false,extractDoc:false},ast:{withPositions:false}});
 async function ensureColumn(table,column,definition){const r=await q(`show columns from ${table} like ?`,[column]);if(!r.rows.length)await db.query(`alter table ${table} add column ${column} ${definition}`);}
-async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);await ensureColumn('sites','deployment_mode',"VARCHAR(30) NOT NULL DEFAULT 'webspace'");await ensureColumn('sites','source_repository','VARCHAR(255) NULL');await ensureColumn('sites','source_branch','VARCHAR(191) NULL');await ensureColumn('sites','source_root','TEXT NULL');await ensureColumn('sites','git_credentials','LONGTEXT NULL');await ensureColumn('sites','hostinger_target_directory','TEXT NULL');await ensureColumn('sites','monitor_expected_title','TEXT NULL');await ensureColumn('sites','monitor_check_dns','BOOLEAN NOT NULL DEFAULT TRUE');await ensureColumn('sites','monitor_check_wordpress','BOOLEAN NOT NULL DEFAULT FALSE');await ensureColumn('sites','alert_repeat_minutes','INT NOT NULL DEFAULT 60');}
+async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);await ensureColumn('sites','deployment_mode',"VARCHAR(30) NOT NULL DEFAULT 'webspace'");await ensureColumn('sites','source_repository','VARCHAR(255) NULL');await ensureColumn('sites','source_branch','VARCHAR(191) NULL');await ensureColumn('sites','source_root','TEXT NULL');await ensureColumn('sites','git_credentials','LONGTEXT NULL');await ensureColumn('sites','hostinger_target_directory','TEXT NULL');await ensureColumn('sites','monitor_expected_title','TEXT NULL');await ensureColumn('sites','monitor_check_dns','BOOLEAN NOT NULL DEFAULT TRUE');await ensureColumn('sites','monitor_check_wordpress','BOOLEAN NOT NULL DEFAULT FALSE');await ensureColumn('sites','alert_repeat_minutes','INT NOT NULL DEFAULT 60');await ensureColumn('monitor_state','last_alert_at','DATETIME NULL');await ensureColumn('monitor_state','alert_count','INT NOT NULL DEFAULT 0');}
 async function loadSavedConfig(){
   const rows=(await q('select setting_key,setting_value,encrypted from app_settings')).rows;
   const values={};
@@ -409,9 +409,93 @@ async function changeDiff(changeId){const r=await q('select * from changes where
 async function rollbackPreview(changeId,actor='mcp'){const r=await q('select * from changes where id=?',[changeId]),ch=r.rows[0];if(!ch)throw new Error('Change not found');const site=await getSite(ch.site_id),files=await changedFiles(site,ch.pre_commit,ch.post_commit),proposed=[];for(const path of files){const old=await readCommitMaybe(site,path,ch.pre_commit);proposed.push(old===null?{path,content:null}:{path,sourceCommit:ch.pre_commit});}return createPreview(site.id,proposed,`Rollback ${changeId}: ${ch.description}`,actor);}
 
 async function sslDays(url){if(!url.startsWith('https:'))return null;const u=new URL(url);return new Promise(resolve=>{const s=tls.connect(Number(u.port||443),u.hostname,{servername:u.hostname,rejectUnauthorized:true,timeout:7000},()=>{const cert=s.getPeerCertificate();s.end();resolve(cert.valid_to?Math.floor((new Date(cert.valid_to).getTime()-Date.now())/86400000):null);});s.on('error',()=>resolve(null));s.on('timeout',()=>{s.destroy();resolve(null);});});}
-async function checkSiteNow(site){const url=site.monitor_url||`https://${site.domain}`,started=Date.now();let status=null,error=null,body='';try{const res=await fetch(url,{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.6.2'}});status=res.status;body=(await res.text()).slice(0,262144);}catch(e){error=e.message||String(e);}const responseMs=Date.now()-started,ssl=await sslDays(url),checks={http:status===site.monitor_expected_status,content:!site.monitor_content||body.includes(site.monitor_content),speed:!site.response_warn_ms||responseMs<=site.response_warn_ms,ssl:ssl===null||ssl>=site.ssl_warn_days},ok=!error&&Object.values(checks).every(Boolean);return{ok,url,status,responseMs,sslDays:ssl,error,checks,checkedAt:new Date().toISOString()};}
-async function sendAlert(subject,text){const jobs=[];if(cfg.alertEmail&&cfg.smtpHost){const t=nodemailer.createTransport({host:cfg.smtpHost,port:cfg.smtpPort,secure:cfg.smtpSecure,auth:cfg.smtpUser?{user:cfg.smtpUser,pass:cfg.smtpPassword}:undefined});jobs.push(t.sendMail({from:cfg.smtpFrom,to:cfg.alertEmail,subject:`[SiteOps] ${subject}`,text}));}if(cfg.webhook)jobs.push(fetch(cfg.webhook,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:'siteops',subject,text,timestamp:new Date().toISOString()})}));await Promise.allSettled(jobs);}
-async function processMonitor(site){const result=await checkSiteNow(site);await q('insert into monitor_checks(site_id,ok,http_status,response_ms,ssl_days,error,details) values(?,?,?,?,?,?,?)',[site.id,result.ok,result.status,result.responseMs,result.sslDays,result.error,JSON.stringify(result)]);const state=(await q('select * from monitor_state where site_id=?',[site.id])).rows[0],open=state?.incident_id||null;let failures=state?.consecutive_failures||0;if(result.ok){if(open){await q("update incidents set resolved_at=now(),status='resolved' where id=?",[open]);await sendAlert(`RECOVERED: ${site.domain}`,`${site.domain} is healthy again. Response ${result.responseMs} ms.`);}await q(`insert into monitor_state(site_id,consecutive_failures,last_check_at,last_ok_at,incident_id) values(?,0,now(),now(),null) on duplicate key update consecutive_failures=0,last_check_at=now(),last_ok_at=now(),incident_id=null`,[site.id]);}else{failures++;let incidentId=open;if(failures>=site.monitor_failure_threshold&&!open){incidentId=crypto.randomUUID();await q(`insert into incidents(id,site_id,status,title,details) values(?,?,'open',?,?)`,[incidentId,site.id,`${site.domain} unhealthy`,JSON.stringify(result)]);await sendAlert(`DOWN: ${site.domain}`,JSON.stringify(result,null,2));}await q(`insert into monitor_state(site_id,consecutive_failures,last_check_at,incident_id) values(?,?,now(),?) on duplicate key update consecutive_failures=?,last_check_at=now(),incident_id=?`,[site.id,failures,incidentId,failures,incidentId]);}return result;}
+async function fetchWithRedirectTrace(url,timeoutMs){
+  const redirects=[];let current=url,response=null;
+  for(let i=0;i<8;i++){
+    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/0.7.0'}});
+    if(response.status>=300&&response.status<400){
+      const location=response.headers.get('location');if(!location)break;
+      const next=new URL(location,current).toString();redirects.push({status:response.status,from:current,to:next});current=next;continue;
+    }
+    break;
+  }
+  return{response,finalUrl:current,redirects};
+}
+function htmlTitle(body){const m=String(body||'').match(/<title[^>]*>([\s\S]*?)<\/title>/i);return m?m[1].replace(/\s+/g,' ').trim():null;}
+async function checkSiteNow(site){
+  const url=site.monitor_url||`https://${site.domain}`,started=Date.now();let status=null,error=null,body='',finalUrl=url,redirects=[],dns=null,wp=null,title=null;
+  try{
+    const host=new URL(url).hostname;
+    if(site.monitor_check_dns){try{dns=(await dnsLookup(host,{all:true})).map(x=>x.address);}catch(e){dns=[];error='DNS: '+String(e.message||e);}}
+    if(!error){
+      const traced=await fetchWithRedirectTrace(url,site.monitor_timeout_ms);status=traced.response?.status??null;finalUrl=traced.finalUrl;redirects=traced.redirects;
+      if(traced.response)body=(await traced.response.text()).slice(0,262144);
+      title=htmlTitle(body);
+    }
+    if(!error&&site.monitor_check_wordpress){
+      try{
+        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.7.0'}});
+        wp={ok:wpRes.ok,status:wpRes.status};
+      }catch(e){wp={ok:false,error:String(e.message||e)};}
+    }
+  }catch(e){error=e.message||String(e);}
+  const responseMs=Date.now()-started,ssl=await sslDays(finalUrl||url);
+  const checks={
+    dns:!site.monitor_check_dns||(Array.isArray(dns)&&dns.length>0),
+    http:status===site.monitor_expected_status,
+    content:!site.monitor_content||body.includes(site.monitor_content),
+    title:!site.monitor_expected_title||title===site.monitor_expected_title,
+    wordpress:!site.monitor_check_wordpress||Boolean(wp?.ok),
+    speed:!site.response_warn_ms||responseMs<=site.response_warn_ms,
+    ssl:ssl===null||ssl>=site.ssl_warn_days
+  };
+  const ok=!error&&Object.values(checks).every(Boolean);
+  return{ok,url,finalUrl,status,responseMs,sslDays:ssl,title,dns,redirects,wordpress:wp,error,checks,checkedAt:new Date().toISOString()};
+}
+async function sendAlert(subject,text){
+  const jobs=[];
+  if(cfg.alertEmail&&cfg.smtpHost){const t=nodemailer.createTransport({host:cfg.smtpHost,port:cfg.smtpPort,secure:cfg.smtpSecure,auth:cfg.smtpUser?{user:cfg.smtpUser,pass:cfg.smtpPassword}:undefined});jobs.push({channel:'email',promise:t.sendMail({from:cfg.smtpFrom,to:cfg.alertEmail,subject:`[SiteOps] ${subject}`,text})});}
+  if(cfg.webhook)jobs.push({channel:'webhook',promise:fetch(cfg.webhook,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:'siteops',subject,text,timestamp:new Date().toISOString()})})});
+  const settled=await Promise.allSettled(jobs.map(x=>x.promise));
+  return jobs.map((x,i)=>({channel:x.channel,ok:settled[i]?.status==='fulfilled',error:settled[i]?.status==='rejected'?String(settled[i].reason?.message||settled[i].reason):null}));
+}
+async function incidentEvent(incidentId,siteId,eventType,details){await q('insert into incident_events(incident_id,site_id,event_type,details) values(?,?,?,?)',[incidentId,siteId,eventType,details?JSON.stringify(details):null]);}
+async function processMonitor(site){
+  const result=await checkSiteNow(site);
+  await q('insert into monitor_checks(site_id,ok,http_status,response_ms,ssl_days,error,details) values(?,?,?,?,?,?,?)',[site.id,result.ok,result.status,result.responseMs,result.sslDays,result.error,JSON.stringify(result)]);
+  const state=(await q('select * from monitor_state where site_id=?',[site.id])).rows[0],open=state?.incident_id||null;let failures=state?.consecutive_failures||0;
+  if(result.ok){
+    if(open){
+      await q("update incidents set resolved_at=now(),status='resolved' where id=?",[open]);
+      await incidentEvent(open,site.id,'recovered',{responseMs:result.responseMs,status:result.status});
+      const alertResult=await sendAlert(`RECOVERED: ${site.domain}`,`${site.domain} is healthy again. Response ${result.responseMs} ms.`);
+      await incidentEvent(open,site.id,'recovery_alert',alertResult);
+    }
+    await q(`insert into monitor_state(site_id,consecutive_failures,last_check_at,last_ok_at,last_alert_at,alert_count,incident_id) values(?,0,now(),now(),null,0,null) on duplicate key update consecutive_failures=0,last_check_at=now(),last_ok_at=now(),last_alert_at=null,alert_count=0,incident_id=null`,[site.id]);
+  }else{
+    failures++;let incidentId=open,alertCount=Number(state?.alert_count||0),lastAlert=state?.last_alert_at?new Date(state.last_alert_at).getTime():0;
+    if(!open&&failures>=site.monitor_failure_threshold){
+      incidentId=crypto.randomUUID();
+      await q(`insert into incidents(id,site_id,status,title,details) values(?,?,'open',?,?)`,[incidentId,site.id,`${site.domain} unhealthy`,JSON.stringify(result)]);
+      await incidentEvent(incidentId,site.id,'opened',{failureCount:failures,result});
+      const alertResult=await sendAlert(`DOWN: ${site.domain}`,JSON.stringify(result,null,2));
+      alertCount=1;lastAlert=Date.now();await incidentEvent(incidentId,site.id,'alert',alertResult);
+    }else if(incidentId){
+      await incidentEvent(incidentId,site.id,'check_failed',{failureCount:failures,result});
+      const repeatMs=Math.max(1,Number(site.alert_repeat_minutes||60))*60000;
+      if(!lastAlert||Date.now()-lastAlert>=repeatMs){
+        const alertResult=await sendAlert(`STILL DOWN: ${site.domain}`,JSON.stringify({failures,result},null,2));
+        alertCount++;lastAlert=Date.now();await incidentEvent(incidentId,site.id,'repeat_alert',{alertCount,delivery:alertResult});
+      }
+    }
+    await q(`insert into monitor_state(site_id,consecutive_failures,last_check_at,last_alert_at,alert_count,incident_id) values(?,?,now(),?,?,?) on duplicate key update consecutive_failures=?,last_check_at=now(),last_alert_at=?,alert_count=?,incident_id=?`,
+      [site.id,failures,lastAlert?new Date(lastAlert):null,alertCount,incidentId,failures,lastAlert?new Date(lastAlert):null,alertCount,incidentId]);
+  }
+  return result;
+}
+async function listMonitorChecks(siteId,limit=50){const site=await getSite(siteId);return(await q('select id,ok,http_status,response_ms,ssl_days,error,details,created_at from monitor_checks where site_id=? order by created_at desc limit ?',[site.id,limit])).rows;}
+async function listIncidents(siteId,limit=50){const site=await getSite(siteId);return(await q('select id,status,title,details,created_at,resolved_at from incidents where site_id=? order by created_at desc limit ?',[site.id,limit])).rows;}
+async function getIncident(incidentId){const i=(await q('select i.*,s.slug,s.domain from incidents i join sites s on s.id=i.site_id where i.id=?',[incidentId])).rows[0];if(!i)throw new Error('Incident not found');const events=(await q('select id,event_type,details,created_at from incident_events where incident_id=? order by created_at asc',[incidentId])).rows;return{...i,events};}
 let monitorRunning=false;function startMonitor(){setInterval(async()=>{if(monitorRunning)return;monitorRunning=true;try{const sites=(await q(`select s.* from sites s left join monitor_state ms on ms.site_id=s.id where s.enabled=1 and s.monitor_enabled=1 and (ms.last_check_at is null or timestampdiff(second,ms.last_check_at,now())>=s.monitor_interval_seconds)`)).rows;for(const site of sites){try{await processMonitor(site);}catch(e){console.error('monitor',site.domain,e);}}}finally{monitorRunning=false;}},cfg.workerInterval).unref();}
 let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlert(`BACKUP FAILED: ${site.domain}`,msg);console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
 
