@@ -56,3 +56,9 @@ section+section{margin-top:20px}
 @media(max-width:650px){.ops-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.event-json{max-width:72vw}}
 
 .ops-grid>section+section{margin-top:0}
+
+.tool-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.tool-card{border:1px solid #e4e9ec;border-radius:12px;padding:16px;background:#f8fafb}
+.tool-card p{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 0}
+.workflow{padding-left:22px;margin:0}.workflow li{list-style:decimal;padding:6px 0;border:0}
+@media(max-width:850px){.tool-grid{grid-template-columns:1fr}}
