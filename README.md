@@ -7,7 +7,7 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 - live webspace remains the production source of truth
 - private GitHub repository stores a per-site version history under `sites/<slug>/public`
 - GitHub Git Data API is used directly; no local Git checkout or SSH deploy key is required
-- PostgreSQL stores sites, previews, changes, backups, monitor checks and incidents
+- Hostinger MySQL stores sites, previews, changes, backups, monitor checks and incidents
 - two-step `change_preview` → `change_apply`
 - live hash conflict detection before writes
 - automatic restoration of touched files if a transfer or post-change snapshot fails
@@ -25,9 +25,9 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 
 ## Hosting
 
-SiteOps 0.3 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository. The runtime does not depend on persistent local storage.
+SiteOps 0.4 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository.
 
-Hostinger Cloud/Web hosting does not provide PostgreSQL itself, so use an external PostgreSQL service such as a dedicated Supabase project.
+The application now uses the MySQL database included with Hostinger Cloud Startup. No Supabase or external PostgreSQL service is required.
 
 The customer snapshot repository must be **private**. SiteOps refuses to write backups to a public repository.
 
