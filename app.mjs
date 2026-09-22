@@ -495,6 +495,51 @@ async function processMonitor(site){
 }
 async function listMonitorChecks(siteId,limit=50){const site=await getSite(siteId);return(await q('select id,ok,http_status,response_ms,ssl_days,error,details,created_at from monitor_checks where site_id=? order by created_at desc limit ?',[site.id,limit])).rows;}
 async function listIncidents(siteId,limit=50){const site=await getSite(siteId);return(await q('select id,status,title,details,created_at,resolved_at from incidents where site_id=? order by created_at desc limit ?',[site.id,limit])).rows;}
+async function deploymentInfo(siteId){
+  const site=await getSite(siteId);
+  if(site.deployment_mode!=='hostinger_git')return{mode:'webspace',protocol:site.protocol,host:site.host,port:site.port,remoteRoot:site.remote_root};
+  let headSha=null,repositoryReachable=false,error=null;
+  try{const remote=await connectSite(site);headSha=remote.headSha||null;repositoryReachable=true;await remote.close();}catch(e){error=String(e.message||e);}
+  return{mode:'hostinger_git',repository:site.source_repository,branch:site.source_branch||'main',sourceRoot:site.source_root||'',hostingerTargetDirectory:site.hostinger_target_directory||'public_html',repositoryReachable,headSha,error};
+}
+async function backupStatus(siteId){
+  const site=await getSite(siteId),state=(await q('select * from backup_state where site_id=?',[site.id])).rows[0]||null,last=(await q('select id,git_commit,backup_type,file_count,changed,created_at from backups where site_id=? order by created_at desc limit 1',[site.id])).rows[0]||null;
+  return{enabled:Boolean(site.backup_enabled),intervalSeconds:site.backup_interval_seconds,maxFiles:site.backup_max_files,state,last};
+}
+async function siteOverview(siteId){
+  const site=await getSite(siteId),latestCheck=(await q('select id,ok,http_status,response_ms,ssl_days,error,details,created_at from monitor_checks where site_id=? order by created_at desc limit 1',[site.id])).rows[0]||null,state=(await q('select * from monitor_state where site_id=?',[site.id])).rows[0]||null,openIncidents=(await q("select id,status,title,created_at from incidents where site_id=? and status='open' order by created_at desc",[site.id])).rows;
+  return{site:publicSite(site),deployment:await deploymentInfo(site.id),monitor:{latestCheck,state,openIncidents},backup:await backupStatus(site.id)};
+}
+async function findFiles(siteId,needle,limit=100){
+  const site=await getSite(siteId),remote=await connectSite(site),results=[],qneedle=String(needle||'').toLowerCase(),patterns=Array.isArray(site.exclude_patterns)?site.exclude_patterns:[];
+  const excluded=p=>patterns.some(x=>p.includes(x));
+  async function walk(rel=''){
+    if(results.length>=limit)return;
+    for(const e of await remote.list(joinRemote(site.remote_root,rel))){
+      if(results.length>=limit)break;
+      const child=rel?rel+'/'+e.name:e.name;if(excluded(child))continue;
+      if(child.toLowerCase().includes(qneedle))results.push({path:child,type:e.type,size:e.size??null});
+      if(e.type==='directory')await walk(child);
+    }
+  }
+  try{await walk();return results;}finally{await remote.close();}
+}
+async function searchText(siteId,needle,{maxFiles=50,maxBytes=524288}={}){
+  const site=await getSite(siteId),remote=await connectSite(site),matches=[],patterns=Array.isArray(site.exclude_patterns)?site.exclude_patterns:[],term=String(needle||'').toLowerCase();let scanned=0;
+  const excluded=p=>patterns.some(x=>p.includes(x));
+  async function walk(rel=''){
+    if(scanned>=maxFiles)return;
+    for(const e of await remote.list(joinRemote(site.remote_root,rel))){
+      if(scanned>=maxFiles)break;
+      const child=rel?rel+'/'+e.name:e.name;if(excluded(child))continue;
+      if(e.type==='directory'){await walk(child);continue;}
+      if(e.type!=='file'||Number(e.size||0)>maxBytes)continue;
+      scanned++;try{const b=await remote.read(joinRemote(site.remote_root,child));if(b.includes(0))continue;const txt=b.toString('utf8'),idx=txt.toLowerCase().indexOf(term);if(idx>=0)matches.push({path:child,index:idx,excerpt:txt.slice(Math.max(0,idx-100),Math.min(txt.length,idx+term.length+180)).replace(/\s+/g,' ')});}catch{}
+    }
+  }
+  try{await walk();return{needle,scanned,matches};}finally{await remote.close();}
+}
+
 async function getIncident(incidentId){const i=(await q('select i.*,s.slug,s.domain from incidents i join sites s on s.id=i.site_id where i.id=?',[incidentId])).rows[0];if(!i)throw new Error('Incident not found');const events=(await q('select id,event_type,details,created_at from incident_events where incident_id=? order by created_at asc',[incidentId])).rows;return{...i,events};}
 let monitorRunning=false;function startMonitor(){setInterval(async()=>{if(monitorRunning)return;monitorRunning=true;try{const sites=(await q(`select s.* from sites s left join monitor_state ms on ms.site_id=s.id where s.enabled=1 and s.monitor_enabled=1 and (ms.last_check_at is null or timestampdiff(second,ms.last_check_at,now())>=s.monitor_interval_seconds)`)).rows;for(const site of sites){try{await processMonitor(site);}catch(e){console.error('monitor',site.domain,e);}}}finally{monitorRunning=false;}},cfg.workerInterval).unref();}
 let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlert(`BACKUP FAILED: ${site.domain}`,msg);console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
