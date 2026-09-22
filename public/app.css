@@ -54,3 +54,5 @@ textarea{width:100%;padding:10px;border:1px solid #ccd5da;border-radius:7px;marg
 section+section{margin-top:20px}
 @media(max-width:1000px){.ops-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:650px){.ops-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.event-json{max-width:72vw}}
+
+.ops-grid>section+section{margin-top:0}
