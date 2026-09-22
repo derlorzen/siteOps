@@ -672,19 +672,34 @@ async function crawlSeoPage(url,rootHost,depth){
   page.issues=seoIssues(page);return page;
 }
 async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homepage',pageSpeedMaxPages=10}={}){
-  const root=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!root)throw new Error('Invalid site URL');const rootUrl=new URL(root),rootHost=rootUrl.hostname,queue=[{url:root,depth:0}],queued=new Set([root]),pages=[],links=[];
-  const sitemap=await seoDiscoverSitemaps(root,Math.min(maxPages*3,1500));
-  for(const url of sitemap.pages)if(!queued.has(url)&&queue.length<maxPages*2){queued.add(url);queue.push({url,depth:null});}
+  const configured=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!configured)throw new Error('Invalid site URL');const configuredUrl=new URL(configured),root=seoNormalizeUrl(configuredUrl.origin+'/'),rootUrl=new URL(root),rootHost=rootUrl.hostname,queue=[{url:root,depth:0}],queued=new Set([root]),crawled=new Set(),pages=[],links=[];
+  const sitemap=await seoDiscoverSitemaps(root,Math.min(maxPages*3,1500)),sitemapPending=sitemap.pages.filter(url=>url!==root);
   try{
-    while(queue.length&&pages.length<maxPages){
-      const item=queue.shift(),page=await crawlSeoPage(item.url,rootHost,item.depth);pages.push(page);links.push(...page.links);
-      for(const l of page.links)if(l.internal&&seoCrawlableUrl(l.target,rootHost)&&!queued.has(l.target)&&pages.length+queue.length<maxPages){queued.add(l.target);queue.push({url:l.target,depth:item.depth==null?1:item.depth+1});}
+    while((queue.length||sitemapPending.length)&&pages.length<maxPages){
+      if(!queue.length){
+        let candidate=null;
+        while(sitemapPending.length&&!candidate){const next=sitemapPending.shift();if(!crawled.has(next)&&!queued.has(next))candidate=next;}
+        if(!candidate)break;queued.add(candidate);queue.push({url:candidate,depth:null});
+      }
+      const item=queue.shift();queued.delete(item.url);if(crawled.has(item.url))continue;crawled.add(item.url);
+      const page=await crawlSeoPage(item.url,rootHost,item.depth);pages.push(page);links.push(...page.links);
+      for(const l of page.links){
+        if(!l.internal||!seoCrawlableUrl(l.target,rootHost)||crawled.has(l.target))continue;
+        const linkedDepth=item.depth==null?1:item.depth+1,existing=queue.find(x=>x.url===l.target);
+        if(existing){if(existing.depth==null||linkedDepth<existing.depth)existing.depth=linkedDepth;continue;}
+        if(pages.length+queue.length<maxPages){queued.add(l.target);queue.push({url:l.target,depth:linkedDepth});}
+      }
     }
     const pageMap=new Map(pages.map(p=>[p.url,p])),urls=pages.map(p=>p.url),rank=calcPageRank(urls,links),incoming=new Map(urls.map(u=>[u,0]));
     for(const l of links)if(l.internal&&incoming.has(l.target))incoming.set(l.target,incoming.get(l.target)+1);
     const wdfidf=calcWdfIdf(pages),titleMap=new Map(),descMap=new Map();
     pages.forEach((p,i)=>{p.pagerank=rank.get(p.url)||0;p.incomingLinks=incoming.get(p.url)||0;p.internalLinks=p.links.filter(x=>x.internal).length;p.externalLinks=p.links.filter(x=>!x.internal).length;p.wdfidf=wdfidf[i];if(p.title){if(!titleMap.has(p.title))titleMap.set(p.title,[]);titleMap.get(p.title).push(p.url);}if(p.metaDescription){if(!descMap.has(p.metaDescription))descMap.set(p.metaDescription,[]);descMap.get(p.metaDescription).push(p.url);}});
-    for(const p of pages){if(p.title&&(titleMap.get(p.title)?.length||0)>1)p.issues.push({level:'warn',code:'duplicate_title',text:'Title auf '+titleMap.get(p.title).length+' Seiten identisch'});if(p.metaDescription&&(descMap.get(p.metaDescription)?.length||0)>1)p.issues.push({level:'warn',code:'duplicate_description',text:'Meta Description mehrfach identisch'});if(p.canonical&&new URL(p.canonical).hostname!==rootHost)p.issues.push({level:'warn',code:'canonical_external',text:'Canonical zeigt auf andere Domain'});}
+    for(const p of pages){
+      if(p.depth==null&&p.url!==root&&p.incomingLinks===0)p.issues.push({level:'warn',code:'orphan_page',text:'In Sitemap gefunden, aber von keiner gecrawlten Seite intern verlinkt'});
+      if(p.title&&(titleMap.get(p.title)?.length||0)>1)p.issues.push({level:'warn',code:'duplicate_title',text:'Title auf '+titleMap.get(p.title).length+' Seiten identisch'});
+      if(p.metaDescription&&(descMap.get(p.metaDescription)?.length||0)>1)p.issues.push({level:'warn',code:'duplicate_description',text:'Meta Description mehrfach identisch'});
+      if(p.canonical){try{if(new URL(p.canonical).hostname!==rootHost)p.issues.push({level:'warn',code:'canonical_external',text:'Canonical zeigt auf andere Domain'});}catch{p.issues.push({level:'warn',code:'canonical_invalid',text:'Canonical ist ungültig'});}}
+    }
     const psiCandidates=pages.filter(p=>p.statusCode===200).slice(0,pageSpeed==='all'?Math.min(pageSpeedMaxPages,pages.length):pageSpeed==='homepage'?1:0);
     for(const p of psiCandidates){try{p.lighthouseMobile=await pageSpeedAudit(p.url,'mobile');p.lighthouseDesktop=await pageSpeedAudit(p.url,'desktop');}catch(e){p.issues.push({level:'warn',code:'pagespeed_error',text:String(e.message||e)});}}
     for(const p of pages){
