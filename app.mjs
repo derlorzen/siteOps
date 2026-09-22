@@ -13,6 +13,7 @@ import PHPParser from 'php-parser';
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
+import * as cheerio from 'cheerio';
 
 function env(name, fallback = undefined) { const value = process.env[name] ?? fallback; if (value === undefined) throw new Error(`Missing env ${name}`); return value; }
 const cfg = {
@@ -29,7 +30,9 @@ const cfg = {
   smtpSecure: env('SMTP_SECURE','false') === 'true', smtpUser: process.env.SMTP_USER || '', smtpPassword: process.env.SMTP_PASSWORD || '',
   smtpFrom: env('SMTP_FROM','SiteOps <siteops@localhost>'), webhook: process.env.ALERT_WEBHOOK_URL || '',
   workerInterval: Number(env('MONITOR_WORKER_INTERVAL_MS','30000')),
-  backupWorkerInterval: Number(env('BACKUP_WORKER_INTERVAL_MS','60000'))
+  backupWorkerInterval: Number(env('BACKUP_WORKER_INTERVAL_MS','60000')),
+  pageSpeedApiKey: process.env.PAGESPEED_API_KEY || '', seoMaxPages: Number(env('SEO_MAX_PAGES','100')),
+  seoUserAgent: env('SEO_USER_AGENT','Lorzen-SiteOps-SEO/0.8')
 };
 const db=mysql.createPool(cfg.databaseUrl||{host:cfg.dbHost,port:cfg.dbPort,user:cfg.dbUser,password:cfg.dbPassword,database:cfg.dbName,connectionLimit:5,charset:'utf8mb4'});
 const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details']);
