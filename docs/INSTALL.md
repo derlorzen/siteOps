@@ -75,7 +75,7 @@ Hostinger supports GitHub deployment for Node.js applications and can rebuild th
 
 ```
 HOST=0.0.0.0
-PUBLIC_BASE_URL=https://siteops.lorzen.link
+PUBLIC_BASE_URL=https://siteops.lorzen.cloud
 
 DB_HOST=localhost
 DB_PORT=3306
@@ -123,7 +123,7 @@ Uploads are excluded because storing a large media library in Git is usually ine
 Open:
 
 ```
-https://siteops.lorzen.link/health
+https://siteops.lorzen.cloud/health
 ```
 
 Expected response includes:
