@@ -19,3 +19,24 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:850px){.navinner{align-items:flex-start;padding:12px 0;flex-direction:column;gap:9px}.navlinks{width:100%;overflow-x:auto;padding-bottom:2px}.formgrid{grid-template-columns:1fr}.formgrid .span2{grid-column:auto}.sticky-save{bottom:8px}.form-card{padding:18px}.buttonrow button{width:100%}}
 
 .callout{margin-top:18px;padding:14px 16px;border-left:4px solid #1489a8;background:#f1f8fa;border-radius:8px;color:#385865;line-height:1.55}.deployment-summary{margin-bottom:20px}
+
+[hidden]{display:none!important}
+section[data-visible="false"]{display:none!important}
+body{overflow-x:hidden}
+.topnav{width:100%}
+.navinner{box-sizing:border-box}
+main{max-width:1180px}
+header>div{min-width:0}
+header p{max-width:820px;line-height:1.55}
+.config-form{width:100%;max-width:none}
+.form-card{width:100%;min-width:0}
+.formgrid>*{min-width:0}
+.formgrid input,.formgrid select{min-width:0}
+.formgrid label{display:block;line-height:1.35}
+.formgrid label>small{display:block;margin-top:4px;margin-bottom:2px}
+.notice{line-height:1.5}
+@media(max-width:850px){
+  main{width:min(100% - 24px,1180px);padding-top:24px}
+  .navinner{width:min(100% - 24px,1180px)}
+  h1{font-size:34px}
+}
