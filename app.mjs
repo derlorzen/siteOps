@@ -270,14 +270,14 @@ let backupLock=Promise.resolve();
 function withBackupLock(fn){const next=backupLock.then(fn,fn);backupLock=next.catch(()=>{});return next;}
 function backupRepoPath(path=''){return '/repos/'+cfg.githubBackupRepo+path;}
 function gitBlobSha(content){const b=Buffer.isBuffer(content)?content:Buffer.from(content),header=Buffer.from('blob '+b.length+'\0');return crypto.createHash('sha1').update(header).update(b).digest('hex');}
-async function gh(path,{method='GET',body,allow404=false}={}){
+async function gh(path,{method='GET',body,allow404=false,allow409=false}={}){
   const res=await fetch('https://api.github.com'+backupRepoPath(path),{
     method,
     headers:{
       accept:'application/vnd.github+json',
       authorization:'Bearer '+cfg.githubBackupToken,
       'x-github-api-version':'2022-11-28',
-      'user-agent':'Lorzen-SiteOps/0.7.1'
+      'user-agent':'Lorzen-SiteOps/0.8.0'
     },
     body:body===undefined?undefined:JSON.stringify(body),
     signal:AbortSignal.timeout(30000)
@@ -286,6 +286,7 @@ async function gh(path,{method='GET',body,allow404=false}={}){
   let data=null;
   if(raw){try{data=JSON.parse(raw);}catch{data=raw;}}
   if(allow404&&res.status===404)return null;
+  if(allow409&&res.status===409)return null;
   if(!res.ok)throw new Error('GitHub '+method+' '+path+' failed ('+res.status+'): '+(data?.message||String(data||'').slice(0,500)));
   return data;
 }
@@ -303,8 +304,8 @@ async function ensureBackupRepository(){
 async function branchState(){
   await ensureBackupRepository();
   const branch=encodeURIComponent(cfg.backupBranch);
-  const ref=await gh('/git/ref/heads/'+branch,{allow404:true});
-  if(!ref)return{headSha:null,rootTreeSha:null,treeMap:new Map()};
+  const ref=await gh('/git/ref/heads/'+branch,{allow404:true,allow409:true});
+  if(!ref)return{headSha:null,rootTreeSha:null,treeMap:new Map(),emptyRepository:true};
   const commit=await gh('/git/commits/'+ref.object.sha);
   const tree=await gh('/git/trees/'+commit.tree.sha+'?recursive=1');
   if(tree.truncated)throw new Error('Backup repository tree is too large for safe recursive processing');
@@ -317,7 +318,11 @@ async function createGitBlob(content){
   return gh('/git/blobs',{method:'POST',body:{content:b.toString('base64'),encoding:'base64'}});
 }
 async function commitTreeChanges(state,changes,message){
-  if(!changes.length)return state.headSha;
+  if(!changes.length&&state.headSha)return state.headSha;
+  if(!changes.length&&!state.headSha){
+    const marker=await createGitBlob(Buffer.from('SiteOps backup repository\n'));
+    changes=[{path:'.siteops',mode:'100644',type:'blob',sha:marker.sha}];
+  }
   const treeBody={tree:changes};
   if(state.rootTreeSha)treeBody.base_tree=state.rootTreeSha;
   const tree=await gh('/git/trees',{method:'POST',body:treeBody});
