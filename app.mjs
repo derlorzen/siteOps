@@ -187,7 +187,7 @@ async function fullBackup(site,maxFiles=10000){
       if(metaExisting?.sha!==gitBlobSha(meta)){const blob=await createGitBlob(meta);changes.push({path:metaPath,mode:'100644',type:'blob',sha:blob.sha});}
       for(const p of state.treeMap.keys())if(p.startsWith(prefix)&&!seen.has(p))changes.push({path:p,mode:'100644',type:'blob',sha:null});
       const commit=await commitTreeChanges(state,changes,'['+site.domain+'] Full backup'),changed=commit!==state.headSha;
-      await q('insert into backups(site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?)',[site.id,commit,'full',count,changed]);
+      const backupId=crypto.randomUUID();await q('insert into backups(id,site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?,?)',[backupId,site.id,commit,'full',count,changed]);
       return{commit,files:count,changed};
     }finally{try{await remote.close();}catch{}}
   });
