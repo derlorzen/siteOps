@@ -1,55 +1,117 @@
-create extension if not exists pgcrypto;
-create table if not exists sites(
- id uuid primary key default gen_random_uuid(), slug text not null unique, name text not null, domain text not null,
- protocol text not null check(protocol in('sftp','ftps','ftp')), host text not null, port int not null, username text not null,
- encrypted_credentials text not null, remote_root text not null, site_type text not null default 'php', enabled boolean not null default true,
- backup_enabled boolean not null default true, backup_interval_seconds int not null default 86400, backup_max_files int not null default 10000,
- monitor_enabled boolean not null default true, monitor_url text,
- monitor_interval_seconds int not null default 60, monitor_expected_status int not null default 200, monitor_content text,
- monitor_timeout_ms int not null default 10000, monitor_failure_threshold int not null default 3, response_warn_ms int,
- ssl_warn_days int not null default 14, exclude_patterns jsonb not null default '[".git","node_modules","wp-content/cache","wp-content/uploads"]',
- created_at timestamptz not null default now(), updated_at timestamptz not null default now()
-);
-create table if not exists change_previews(
- id uuid primary key default gen_random_uuid(), site_id uuid not null references sites(id) on delete cascade,
- description text not null, actor text not null, changes jsonb not null, validation jsonb,
- status text not null default 'pending', expires_at timestamptz not null, created_at timestamptz not null default now()
-);
-create table if not exists changes(
- id uuid primary key default gen_random_uuid(), site_id uuid not null references sites(id) on delete cascade,
- preview_id uuid references change_previews(id), description text not null, actor text not null,
- files jsonb not null default '[]', pre_commit text, post_commit text, status text not null,
- health_result jsonb, created_at timestamptz not null default now()
-);
-create table if not exists backups(
- id uuid primary key default gen_random_uuid(), site_id uuid not null references sites(id) on delete cascade,
- git_commit text not null, backup_type text not null, file_count int, changed boolean not null default false,
- created_at timestamptz not null default now()
-);
-create table if not exists monitor_checks(
- id bigserial primary key, site_id uuid not null references sites(id) on delete cascade,
- ok boolean not null, http_status int, response_ms int, ssl_days int, error text, details jsonb,
- created_at timestamptz not null default now()
-);
-create index if not exists idx_monitor_checks_site_created on monitor_checks(site_id,created_at desc);
-create table if not exists incidents(
- id uuid primary key default gen_random_uuid(), site_id uuid not null references sites(id) on delete cascade,
- status text not null default 'open', title text not null, details jsonb,
- created_at timestamptz not null default now(), resolved_at timestamptz
-);
-create table if not exists monitor_state(
- site_id uuid primary key references sites(id) on delete cascade, consecutive_failures int not null default 0,
- last_check_at timestamptz, last_ok_at timestamptz, incident_id uuid references incidents(id)
-);
+CREATE TABLE IF NOT EXISTS sites (
+  id CHAR(36) PRIMARY KEY,
+  slug VARCHAR(191) NOT NULL UNIQUE,
+  name VARCHAR(255) NOT NULL,
+  domain VARCHAR(255) NOT NULL,
+  protocol ENUM('sftp','ftps','ftp') NOT NULL,
+  host VARCHAR(255) NOT NULL,
+  port INT NOT NULL,
+  username VARCHAR(255) NOT NULL,
+  encrypted_credentials LONGTEXT NOT NULL,
+  remote_root TEXT NOT NULL,
+  site_type VARCHAR(50) NOT NULL DEFAULT 'php',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  backup_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  backup_interval_seconds INT NOT NULL DEFAULT 86400,
+  backup_max_files INT NOT NULL DEFAULT 10000,
+  monitor_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  monitor_url TEXT NULL,
+  monitor_interval_seconds INT NOT NULL DEFAULT 60,
+  monitor_expected_status INT NOT NULL DEFAULT 200,
+  monitor_content TEXT NULL,
+  monitor_timeout_ms INT NOT NULL DEFAULT 10000,
+  monitor_failure_threshold INT NOT NULL DEFAULT 3,
+  response_warn_ms INT NULL,
+  ssl_warn_days INT NOT NULL DEFAULT 14,
+  exclude_patterns LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Forward-compatible migrations for existing installations.
-alter table sites add column if not exists backup_interval_seconds int not null default 86400;
-alter table sites add column if not exists backup_max_files int not null default 10000;
+CREATE TABLE IF NOT EXISTS change_previews (
+  id CHAR(36) PRIMARY KEY,
+  site_id CHAR(36) NOT NULL,
+  description TEXT NOT NULL,
+  actor VARCHAR(100) NOT NULL,
+  changes LONGTEXT NOT NULL,
+  validation LONGTEXT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'pending',
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_change_previews_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_change_previews_site_created (site_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-create table if not exists backup_state(
- site_id uuid primary key references sites(id) on delete cascade,
- last_attempt_at timestamptz,
- last_success_at timestamptz,
- last_error text,
- updated_at timestamptz not null default now()
-);
+CREATE TABLE IF NOT EXISTS changes (
+  id CHAR(36) PRIMARY KEY,
+  site_id CHAR(36) NOT NULL,
+  preview_id CHAR(36) NULL,
+  description TEXT NOT NULL,
+  actor VARCHAR(100) NOT NULL,
+  files LONGTEXT NOT NULL,
+  pre_commit VARCHAR(64) NULL,
+  post_commit VARCHAR(64) NULL,
+  status VARCHAR(50) NOT NULL,
+  health_result LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_changes_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  CONSTRAINT fk_changes_preview FOREIGN KEY (preview_id) REFERENCES change_previews(id) ON DELETE SET NULL,
+  INDEX idx_changes_site_created (site_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS backups (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  site_id CHAR(36) NOT NULL,
+  git_commit VARCHAR(64) NOT NULL,
+  backup_type VARCHAR(30) NOT NULL,
+  file_count INT NULL,
+  changed BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_backups_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_backups_site_created (site_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS monitor_checks (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  site_id CHAR(36) NOT NULL,
+  ok BOOLEAN NOT NULL,
+  http_status INT NULL,
+  response_ms INT NULL,
+  ssl_days INT NULL,
+  error TEXT NULL,
+  details LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_monitor_checks_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_monitor_checks_site_created (site_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS incidents (
+  id CHAR(36) PRIMARY KEY,
+  site_id CHAR(36) NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'open',
+  title TEXT NOT NULL,
+  details LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  resolved_at DATETIME NULL,
+  CONSTRAINT fk_incidents_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_incidents_site_created (site_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS monitor_state (
+  site_id CHAR(36) PRIMARY KEY,
+  consecutive_failures INT NOT NULL DEFAULT 0,
+  last_check_at DATETIME NULL,
+  last_ok_at DATETIME NULL,
+  incident_id CHAR(36) NULL,
+  CONSTRAINT fk_monitor_state_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  CONSTRAINT fk_monitor_state_incident FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS backup_state (
+  site_id CHAR(36) PRIMARY KEY,
+  last_attempt_at DATETIME NULL,
+  last_success_at DATETIME NULL,
+  last_error LONGTEXT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_backup_state_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
