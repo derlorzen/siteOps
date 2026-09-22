@@ -674,6 +674,22 @@ async function startSeoAudit(siteId,options={}){
 async function seoRunGet(runId){const run=(await q('select * from seo_runs where id=?',[runId])).rows[0];if(!run)throw new Error('SEO run not found');return run;}
 async function seoLatest(siteId){const site=await getSite(siteId),run=(await q('select * from seo_runs where site_id=? order by started_at desc limit 1',[site.id])).rows[0]||null;if(!run)return{site:site.slug,run:null,pages:[]};const pages=(await q('select id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop from seo_pages where run_id=? order by pagerank desc',[run.id])).rows;return{site:site.slug,run,pages};}
 async function seoPageGet(pageId){const page=(await q('select * from seo_pages where id=?',[pageId])).rows[0];if(!page)throw new Error('SEO page not found');const links=(await q('select source_url,target_url,anchor_text,internal_link,nofollow from seo_links where run_id=? and source_url=?',[page.run_id,page.url])).rows;return{...page,links};}
+async function seoGraph(siteId,limit=30){
+  const site=await getSite(siteId),run=(await q("select * from seo_runs where site_id=? and status='completed' order by started_at desc limit 1",[site.id])).rows[0];
+  if(!run)return{run:null,nodes:[],edges:[]};
+  const nodes=(await q('select id,url,path,title,depth,pagerank,incoming_links,internal_links,status_code from seo_pages where run_id=? order by pagerank desc limit ?',[run.id,limit])).rows;
+  const set=new Set(nodes.map(n=>n.url));
+  const links=(await q('select source_url,target_url,anchor_text,nofollow from seo_links where run_id=? and internal_link=1',[run.id])).rows;
+  const edges=links.filter(l=>set.has(l.source_url)&&set.has(l.target_url)).slice(0,300);
+  return{run:{id:run.id,started_at:run.started_at,finished_at:run.finished_at},nodes,edges};
+}
+async function seoIssuesList(siteId,{level,limit=200}={}){
+  const latest=await seoLatest(siteId);if(!latest.run)return{run:null,issues:[]};
+  const issues=[];
+  for(const p of latest.pages)for(const issue of (Array.isArray(p.issues)?p.issues:[]))if(!level||issue.level===level)issues.push({pageId:p.id,url:p.url,path:p.path,title:p.title,...issue});
+  return{run:latest.run,issues:issues.slice(0,limit)};
+}
+
 
 const toolText=value=>({content:[{type:'text',text:typeof value==='string'?value:JSON.stringify(value,null,2)}]});
 function mcpServer(){
@@ -714,6 +730,12 @@ function mcpServer(){
   s.registerTool('backup_status',{description:'Get scheduled backup state and the latest backup.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await backupStatus(site)));
   s.registerTool('backups_list',{description:'List full backups.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(1).max(100).default(30)})},async({site,limit})=>toolText(await listBackups(await getSite(site),limit)));
   s.registerTool('backup_restore_preview',{description:'Create a safe restore preview from a full backup. A fresh safety backup is created first.',inputSchema:z.object({backup_id:z.string().uuid()})},async({backup_id})=>toolText(await backupRestorePreview(backup_id)));
+  s.registerTool('seo_start',{description:'Start an asynchronous SEO crawl. Includes on-page checks, internal link graph, PageRank-style link strength and site-corpus WDF-IDF. Optional PageSpeed/Lighthouse requires a configured API key.',inputSchema:z.object({site:z.string(),max_pages:z.number().int().min(1).max(500).optional(),page_speed:z.enum(['none','homepage','all']).default('homepage'),page_speed_max_pages:z.number().int().min(1).max(50).default(10)})},async({site,max_pages,page_speed,page_speed_max_pages})=>toolText(await startSeoAudit(site,{maxPages:max_pages,pageSpeed:page_speed,pageSpeedMaxPages:page_speed_max_pages})));
+  s.registerTool('seo_run_status',{description:'Get status and summary of an SEO audit run.',inputSchema:z.object({run_id:z.string().uuid()})},async({run_id})=>toolText(await seoRunGet(run_id)));
+  s.registerTool('seo_latest',{description:'Get the latest SEO audit and page-level metrics for a website.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await seoLatest(site)));
+  s.registerTool('seo_page',{description:'Get full SEO details, WDF-IDF terms, Lighthouse values and outgoing links for one crawled page.',inputSchema:z.object({page_id:z.number().int().positive()})},async({page_id})=>toolText(await seoPageGet(page_id)));
+  s.registerTool('seo_graph',{description:'Get strongest pages and internal links from the latest completed crawl for graphing/site-structure analysis.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(5).max(100).default(30)})},async({site,limit})=>toolText(await seoGraph(site,limit)));
+  s.registerTool('seo_issues',{description:'List SEO issues from the latest crawl, optionally filtered by severity.',inputSchema:z.object({site:z.string(),level:z.enum(['error','warn','info']).optional(),limit:z.number().int().min(1).max(500).default(200)})},async({site,level,limit})=>toolText(await seoIssuesList(site,{level,limit})));
   s.registerTool('settings_get',{description:'Get redacted global SiteOps settings. Secrets are never returned.',inputSchema:z.object({})},async()=>toolText(publicSettings()));
   return s;
 }
@@ -1137,6 +1159,12 @@ app.get('/api/sites/:site/incidents',async req=>listIncidents(req.params.site,Ma
 app.get('/api/incidents/:id',async req=>getIncident(req.params.id));
 app.get('/api/sites/:site/deployment',async req=>deploymentInfo(req.params.site));
 app.get('/api/sites/:site/backup-status',async req=>backupStatus(req.params.site));
+app.post('/api/sites/:site/seo-runs',async req=>{const schema=z.object({maxPages:z.coerce.number().int().min(1).max(500).optional(),pageSpeed:z.enum(['none','homepage','all']).default('homepage'),pageSpeedMaxPages:z.coerce.number().int().min(1).max(50).default(10)});return startSeoAudit(req.params.site,schema.parse(req.body||{}));});
+app.get('/api/sites/:site/seo/latest',async req=>seoLatest(req.params.site));
+app.get('/api/sites/:site/seo/graph',async req=>seoGraph(req.params.site,Math.min(100,Math.max(5,Number(req.query?.limit||30)))));
+app.get('/api/sites/:site/seo/issues',async req=>seoIssuesList(req.params.site,{level:req.query?.level||undefined,limit:Math.min(500,Math.max(1,Number(req.query?.limit||200)))}));
+app.get('/api/seo-runs/:id',async req=>seoRunGet(req.params.id));
+app.get('/api/seo-pages/:id',async req=>seoPageGet(Number(req.params.id)));
 const siteCommonSchema=z.object({slug:z.string().regex(/^[a-z0-9-]+$/),name:z.string().min(1),domain:z.string().min(1),siteType:z.enum(['wordpress','php','static','node']).default('php'),monitorUrl:z.string().url().optional(),backupEnabled:z.boolean().optional(),backupIntervalSeconds:z.coerce.number().int().min(900).max(2592000).optional(),backupMaxFiles:z.coerce.number().int().min(100).max(200000).optional(),monitorEnabled:z.boolean().optional(),monitorIntervalSeconds:z.coerce.number().int().min(30).max(86400).optional(),monitorFailureThreshold:z.coerce.number().int().min(1).max(20).optional(),sslWarnDays:z.coerce.number().int().min(1).max(365).optional()});
 const webspaceSiteSchema=siteCommonSchema.extend({deploymentMode:z.literal('webspace'),protocol:z.enum(['sftp','ftps','ftp']),host:z.string().min(1),port:z.coerce.number().int().min(1).max(65535),username:z.string().min(1),password:z.string().optional(),privateKey:z.string().optional(),passphrase:z.string().optional(),remoteRoot:z.string().min(1),sourceRepository:z.string().optional(),sourceBranch:z.string().optional(),sourceRoot:z.string().optional(),gitToken:z.string().optional(),hostingerTargetDirectory:z.string().optional()});
 const hostingerGitSiteSchema=siteCommonSchema.extend({deploymentMode:z.literal('hostinger_git'),sourceRepository:z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),sourceBranch:z.string().min(1),sourceRoot:z.string().optional(),gitToken:z.string().min(1),hostingerTargetDirectory:z.string().optional(),protocol:z.enum(['sftp','ftps','ftp']).optional(),host:z.string().optional(),port:z.coerce.number().optional(),username:z.string().optional(),password:z.string().optional(),remoteRoot:z.string().optional()});
