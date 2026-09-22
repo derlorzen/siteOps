@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import mysql from 'mysql2/promise';
 import crypto from 'node:crypto';
 import tls from 'node:tls';
+import { lookup as dnsLookup } from 'node:dns/promises';
 import { readFile } from 'node:fs/promises';
 import { posix as pathPosix } from 'node:path';
 import SftpClient from 'ssh2-sftp-client';
@@ -43,7 +44,7 @@ function encrypt(value){ const iv=crypto.randomBytes(12), cipher=crypto.createCi
 function decrypt(value){ const [iv,tag,data]=value.split('.'); const d=crypto.createDecipheriv('aes-256-gcm',key(),Buffer.from(iv,'base64url')); d.setAuthTag(Buffer.from(tag,'base64url')); return JSON.parse(Buffer.concat([d.update(Buffer.from(data,'base64url')),d.final()]).toString()); }
 const phpParser=new PHPParser({parser:{suppressErrors:false,extractDoc:false},ast:{withPositions:false}});
 async function ensureColumn(table,column,definition){const r=await q(`show columns from ${table} like ?`,[column]);if(!r.rows.length)await db.query(`alter table ${table} add column ${column} ${definition}`);}
-async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);await ensureColumn('sites','deployment_mode',"VARCHAR(30) NOT NULL DEFAULT 'webspace'");await ensureColumn('sites','source_repository','VARCHAR(255) NULL');await ensureColumn('sites','source_branch','VARCHAR(191) NULL');await ensureColumn('sites','source_root','TEXT NULL');await ensureColumn('sites','git_credentials','LONGTEXT NULL');await ensureColumn('sites','hostinger_target_directory','TEXT NULL');}
+async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);await ensureColumn('sites','deployment_mode',"VARCHAR(30) NOT NULL DEFAULT 'webspace'");await ensureColumn('sites','source_repository','VARCHAR(255) NULL');await ensureColumn('sites','source_branch','VARCHAR(191) NULL');await ensureColumn('sites','source_root','TEXT NULL');await ensureColumn('sites','git_credentials','LONGTEXT NULL');await ensureColumn('sites','hostinger_target_directory','TEXT NULL');await ensureColumn('sites','monitor_expected_title','TEXT NULL');await ensureColumn('sites','monitor_check_dns','BOOLEAN NOT NULL DEFAULT TRUE');await ensureColumn('sites','monitor_check_wordpress','BOOLEAN NOT NULL DEFAULT FALSE');await ensureColumn('sites','alert_repeat_minutes','INT NOT NULL DEFAULT 60');}
 async function loadSavedConfig(){
   const rows=(await q('select setting_key,setting_value,encrypted from app_settings')).rows;
   const values={};
@@ -181,6 +182,56 @@ async function connectSite(site){
 }
 async function listSites(){return (await q('select * from sites order by name')).rows;}
 async function getSite(idOrSlug){const r=await q('select * from sites where id=? or slug=? limit 1',[idOrSlug,idOrSlug]);if(!r.rows[0])throw new Error(`Unknown site ${idOrSlug}`);return r.rows[0];}
+function publicSite(site){
+  return {
+    id:site.id,slug:site.slug,name:site.name,domain:site.domain,siteType:site.site_type,deploymentMode:site.deployment_mode||'webspace',
+    enabled:Boolean(site.enabled),protocol:site.protocol,host:site.deployment_mode==='hostinger_git'?null:site.host,port:site.deployment_mode==='hostinger_git'?null:site.port,
+    username:site.deployment_mode==='hostinger_git'?null:site.username,remoteRoot:site.deployment_mode==='hostinger_git'?null:site.remote_root,
+    credentialsConfigured:Boolean(site.encrypted_credentials),
+    sourceRepository:site.source_repository,sourceBranch:site.source_branch,sourceRoot:site.source_root,gitTokenConfigured:Boolean(site.git_credentials),
+    hostingerTargetDirectory:site.hostinger_target_directory,
+    monitor:{enabled:Boolean(site.monitor_enabled),url:site.monitor_url,intervalSeconds:site.monitor_interval_seconds,expectedStatus:site.monitor_expected_status,
+      expectedContent:site.monitor_content,expectedTitle:site.monitor_expected_title,checkDns:Boolean(site.monitor_check_dns),checkWordPress:Boolean(site.monitor_check_wordpress),
+      timeoutMs:site.monitor_timeout_ms,failureThreshold:site.monitor_failure_threshold,alertRepeatMinutes:site.alert_repeat_minutes,responseWarnMs:site.response_warn_ms,sslWarnDays:site.ssl_warn_days},
+    backup:{enabled:Boolean(site.backup_enabled),intervalSeconds:site.backup_interval_seconds,maxFiles:site.backup_max_files},
+    exclusions:Array.isArray(site.exclude_patterns)?site.exclude_patterns:[],createdAt:site.created_at,updatedAt:site.updated_at
+  };
+}
+async function testStoredConnection(site){
+  const remote=await connectSite(site);
+  try{
+    const entries=await remote.list(joinRemote(site.remote_root,''));
+    return {ok:true,mode:site.deployment_mode||'webspace',path:site.remote_root,repository:site.source_repository||undefined,branch:site.source_branch||undefined,entries:entries.slice(0,20).map(e=>({name:e.name,type:e.type}))};
+  }finally{await remote.close();}
+}
+async function updateSiteConnection(idOrSlug,x){
+  const site=await getSite(idOrSlug),mode=x.deploymentMode||site.deployment_mode||'webspace';
+  if(mode==='hostinger_git'){
+    const repo=String(x.sourceRepository??site.source_repository??'').trim().replace(/^\/+|\/+$/g,'');
+    const branch=String(x.sourceBranch??site.source_branch??'main').trim()||'main',root=String(x.sourceRoot??site.source_root??'').trim().replace(/^\/+|\/+$/g,'');
+    let creds=site.git_credentials;
+    if(x.gitToken)creds=encrypt({token:x.gitToken});
+    if(!creds)throw new Error('GitHub source token is required');
+    const candidate={...site,deployment_mode:'hostinger_git',source_repository:repo,source_branch:branch,source_root:root,remote_root:root?'/'+root:'/',git_credentials:creds,hostinger_target_directory:x.hostingerTargetDirectory??site.hostinger_target_directory??'public_html'};
+    await testStoredConnection(candidate);
+    await q('update sites set deployment_mode=?,source_repository=?,source_branch=?,source_root=?,remote_root=?,git_credentials=?,hostinger_target_directory=?,updated_at=now() where id=?',
+      ['hostinger_git',repo,branch,root,candidate.remote_root,creds,candidate.hostinger_target_directory,site.id]);
+  }else{
+    const protocol=x.protocol??site.protocol,host=String(x.host??site.host??'').trim(),port=Number(x.port??site.port),username=String(x.username??site.username??'').trim(),remoteRoot=String(x.remoteRoot??site.remote_root??'/').trim()||'/';
+    let creds=site.encrypted_credentials;
+    if(x.password!==undefined||x.privateKey!==undefined||x.passphrase!==undefined){
+      const previous=site.encrypted_credentials?decrypt(site.encrypted_credentials):{};
+      creds=encrypt({password:x.password!==undefined?x.password:previous.password,privateKey:x.privateKey!==undefined?x.privateKey:previous.privateKey,passphrase:x.passphrase!==undefined?x.passphrase:previous.passphrase});
+    }
+    if(!creds)throw new Error('Webspace credentials are required');
+    const candidate={...site,deployment_mode:'webspace',protocol,host,port,username,remote_root:remoteRoot,encrypted_credentials:creds};
+    await testStoredConnection(candidate);
+    await q('update sites set deployment_mode=?,protocol=?,host=?,port=?,username=?,remote_root=?,encrypted_credentials=?,updated_at=now() where id=?',
+      ['webspace',protocol,host,port,username,remoteRoot,creds,site.id]);
+  }
+  return getSite(site.id);
+}
+
 async function createSite(x){
   const id=crypto.randomUUID(),gitMode=x.deploymentMode==='hostinger_git',sourceRoot=String(x.sourceRoot||'').replace(/^\/+|\/+$/g,'');
   const remoteRoot=gitMode?(sourceRoot?'/'+sourceRoot:'/'):(x.remoteRoot||'/');
