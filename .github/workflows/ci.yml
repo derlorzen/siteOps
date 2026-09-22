@@ -29,7 +29,6 @@ jobs:
         run: npm run check
       - name: Runtime import check
         env:
-          DATABASE_URL: postgresql://siteops:siteops@127.0.0.1:5432/siteops
           SITEOPS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           MCP_API_TOKEN: ci-token
           DASHBOARD_USER: ci
