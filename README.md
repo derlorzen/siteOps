@@ -5,7 +5,8 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 ## Features
 
 - live webspace remains the production source of truth
-- private Git repository stores a per-site version history under `sites/<slug>/public`
+- private GitHub repository stores a per-site version history under `sites/<slug>/public`
+- GitHub Git Data API is used directly; no local Git checkout or SSH deploy key is required
 - PostgreSQL stores sites, previews, changes, backups, monitor checks and incidents
 - two-step `change_preview` → `change_apply`
 - live hash conflict detection before writes
@@ -15,15 +16,20 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 - manual and scheduled full backups per customer project
 - restore creates a fresh safety snapshot before applying an older state
 - binary-safe backup and rollback handling
+- PHP syntax validation runs in Node.js and does not require a PHP CLI
 - per-site backup interval, file limit and monitoring settings
 - uptime/status/content/SSL/response-time monitoring
 - incident + recovery alerts by SMTP and/or generic webhook
 - lightweight operations dashboard plus Streamable HTTP MCP endpoint
-- credentials encrypted with AES-256-GCM
+- customer host credentials encrypted with AES-256-GCM
 
 ## Hosting
 
-SiteOps is intended to run as a managed Node.js web app on Hostinger Cloud Startup, deployed directly from this GitHub repository.
+SiteOps 0.3 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository. The runtime does not depend on persistent local storage.
+
+Hostinger Cloud/Web hosting does not provide PostgreSQL itself, so use an external PostgreSQL service such as a dedicated Supabase project.
+
+The customer snapshot repository must be **private**. SiteOps refuses to write backups to a public repository.
 
 Prefer SFTP for managed customer websites. FTPS exists for legacy hosts; plain FTP should only be used where unavoidable.
 
