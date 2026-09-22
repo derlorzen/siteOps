@@ -844,6 +844,128 @@ function setupPage(){
     });
     </script>`);
 }
+async function siteOperationsPage(slug){
+  const site=await getSite(slug),hist=await listHistory(site.id,30),backups=await listBackups(site,30),checks=await listMonitorChecks(site.id,50),incidents=await listIncidents(site.id,30),backupState=(await q('select * from backup_state where site_id=?',[site.id])).rows[0]||null,monitorState=(await q('select * from monitor_state where site_id=?',[site.id])).rows[0]||null;
+  const latest=checks[0]||null,latestDetails=latest?.details||{},uptime=checks.length?Math.round(checks.filter(x=>x.ok).length/checks.length*10000)/100:'–';
+  const mode=site.deployment_mode||'webspace',isGit=mode==='hostinger_git',openIncidents=incidents.filter(x=>x.status==='open');
+  const checkRows=checks.slice(0,20).map(x=>{const d=x.details||{};return `<tr><td>${new Date(x.created_at).toLocaleString('de-DE')}</td><td><span class="pill ${x.ok?'ok':'bad'}">${x.ok?'OK':'FEHLER'}</span></td><td>${x.http_status??'–'}</td><td>${x.response_ms??'–'} ms</td><td>${x.ssl_days??'–'} d</td><td>${esc(d.finalUrl||'–')}</td><td>${Array.isArray(d.redirects)?d.redirects.length:0}</td></tr>`}).join('')||'<tr><td colspan="7">Noch keine Prüfungen.</td></tr>';
+  const incidentRows=incidents.map(i=>{const ended=i.resolved_at?new Date(i.resolved_at):null,started=new Date(i.created_at),duration=ended?Math.max(0,Math.round((ended-started)/60000))+' min':'laufend';return `<tr><td><a href="/incidents/${i.id}">${esc(i.title)}</a></td><td><span class="pill ${i.status==='open'?'bad':'ok'}">${esc(i.status.toUpperCase())}</span></td><td>${started.toLocaleString('de-DE')}</td><td>${ended?ended.toLocaleString('de-DE'):'–'}</td><td>${duration}</td></tr>`}).join('')||'<tr><td colspan="5">Keine Incidents.</td></tr>';
+  const backupRows=backups.map(b=>`<tr><td>${new Date(b.created_at).toLocaleString('de-DE')}</td><td><code>${esc(String(b.git_commit).slice(0,8))}</code></td><td>${b.file_count??'–'}</td><td>${b.changed?'geändert':'identisch'}</td><td><button class="ghost" onclick="restoreBackup('${b.id}')">Restore</button></td></tr>`).join('')||'<tr><td colspan="5">Noch keine Backups.</td></tr>';
+  const historyRows=hist.map(h=>`<tr><td>${new Date(h.created_at).toLocaleString('de-DE')}</td><td>${esc(h.description)}</td><td>${esc(h.actor)}</td><td><span class="pill">${esc(h.status)}</span></td><td><button class="ghost" onclick="rollback('${h.id}')">Rollback</button></td></tr>`).join('')||'<tr><td colspan="5">Noch keine Änderungen.</td></tr>';
+  return page(site.name,`
+    <a class="backlink" href="/">← Übersicht</a>
+    <header><div><span class="eyebrow">${isGit?'HOSTINGER GIT':esc(site.protocol.toUpperCase())} · ${site.enabled?'AKTIV':'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit?esc(site.source_repository+' @ '+(site.source_branch||'main')):esc(site.remote_root)}</p></div><div class="actions"><button class="ghost" id="checkNow">Jetzt prüfen</button><button id="backupNow">Backup jetzt</button></div></header>
+    ${openIncidents.length?`<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span>${esc(openIncidents[0].title)} · seit ${new Date(openIncidents[0].created_at).toLocaleString('de-DE')}</span></div>`:''}
+    ${backupState?.last_error?`<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span></div>`:''}
+    <div class="metrics big ops-metrics"><span>${uptime}%<em>Uptime letzte ${checks.length} Checks</em></span><span>${latest?.response_ms??'–'} ms<em>Response</em></span><span>${latest?.ssl_days??'–'} d<em>SSL</em></span><span>${latest?.http_status??'–'}<em>HTTP</em></span><span>${backups[0]?.created_at?new Date(backups[0].created_at).toLocaleString('de-DE'):'–'}<em>Letztes Backup</em></span></div>
+
+    <div class="twocol ops-grid">
+      <section>
+        <div class="sectionhead"><div><span class="eyebrow">Zugriff</span><h2>Verbindung & Deployment</h2></div><span class="pill ${isGit?'ok':''}">${isGit?'GIT SOURCE':'WEBSPACE'}</span></div>
+        <p class="lead">Änderungen an Zugangsdaten werden vor dem Speichern getestet. Leere Secret-Felder behalten das bisher gespeicherte Secret.</p>
+        <form id="connectionForm" class="inner-form">
+          <label>Deployment-Methode<select name="deploymentMode"><option value="webspace" ${!isGit?'selected':''}>Direkter Webspace</option><option value="hostinger_git" ${isGit?'selected':''}>Hostinger Git Deploy</option></select></label>
+          <div id="connWeb" ${isGit?'hidden':''}>
+            <div class="formgrid">
+              <label>Protokoll<select name="protocol"><option value="sftp" ${site.protocol==='sftp'?'selected':''}>SFTP</option><option value="ftps" ${site.protocol==='ftps'?'selected':''}>FTPS</option><option value="ftp" ${site.protocol==='ftp'?'selected':''}>FTP</option></select></label>
+              <label>Port<input name="port" type="number" value="${site.port||22}"></label>
+              <label class="span2">Host<input name="host" value="${esc(isGit?'':site.host||'')}"></label>
+              <label>Benutzer<input name="username" value="${esc(isGit?'':site.username||'')}"></label>
+              <label>Neues Passwort <small>${site.encrypted_credentials?'Zugangsdaten gespeichert. Leer lassen = unverändert.':'Noch keine Zugangsdaten.'}</small><input name="password" type="password" autocomplete="new-password"></label>
+              <label class="span2">Remote Root<input name="remoteRoot" value="${esc(isGit?'/':site.remote_root||'/')}"></label>
+            </div>
+          </div>
+          <div id="connGit" ${!isGit?'hidden':''}>
+            <div class="formgrid">
+              <label class="span2">Repository<input name="sourceRepository" value="${esc(site.source_repository||'')}" placeholder="owner/repository"></label>
+              <label>Branch<input name="sourceBranch" value="${esc(site.source_branch||'main')}"></label>
+              <label>Repository-Unterordner<input name="sourceRoot" value="${esc(site.source_root||'')}"></label>
+              <label class="span2">Neuer GitHub PAT <small>${site.git_credentials?'Token gespeichert. Leer lassen = unverändert.':'Noch kein Token gespeichert.'}</small><input name="gitToken" type="password" autocomplete="new-password"></label>
+              <label class="span2">Hostinger Zielverzeichnis<input name="hostingerTargetDirectory" value="${esc(site.hostinger_target_directory||'public_html')}"></label>
+            </div>
+          </div>
+          <div class="buttonrow"><button type="button" class="ghost" id="testStoredConnection">Aktuelle Verbindung testen</button><button type="submit">Testen & speichern</button><span id="connectionState" class="inline-status"></span></div>
+        </form>
+      </section>
+
+      <section>
+        <div class="sectionhead"><div><span class="eyebrow">Betrieb</span><h2>Monitoring & Alarmierung</h2></div><span class="pill ${latest?.ok?'ok':latest?'bad':''}">${latest?latest.ok?'HEALTHY':'UNHEALTHY':'NO DATA'}</span></div>
+        <form id="monitorForm" class="inner-form">
+          <label class="check"><input type="checkbox" name="enabled" ${site.enabled?'checked':''}> Website aktiv verwalten</label>
+          <label class="check"><input type="checkbox" name="monitor_enabled" ${site.monitor_enabled?'checked':''}> Monitoring aktiv</label>
+          <label>Monitor-URL<input name="monitor_url" value="${esc(site.monitor_url||'https://'+site.domain)}"></label>
+          <div class="formgrid">
+            <label>Erwarteter HTTP-Status<input name="monitor_expected_status" type="number" value="${site.monitor_expected_status}"></label>
+            <label>Prüfintervall (Sek.)<input name="monitor_interval_seconds" type="number" min="30" value="${site.monitor_interval_seconds}"></label>
+            <label>Erwarteter Seitentitel <small>Leer = nicht prüfen.</small><input name="monitor_expected_title" value="${esc(site.monitor_expected_title||'')}"></label>
+            <label>Erwarteter Text <small>Leer = nicht prüfen.</small><input name="monitor_content" value="${esc(site.monitor_content||'')}"></label>
+            <label>Timeout (ms)<input name="monitor_timeout_ms" type="number" min="1000" value="${site.monitor_timeout_ms}"></label>
+            <label>Response-Warnung (ms)<input name="response_warn_ms" type="number" min="1" value="${site.response_warn_ms??''}" placeholder="optional"></label>
+            <label>Fehler bis Alarm<input name="monitor_failure_threshold" type="number" min="1" value="${site.monitor_failure_threshold}"></label>
+            <label>Alarm wiederholen (Min.)<input name="alert_repeat_minutes" type="number" min="1" value="${site.alert_repeat_minutes||60}"></label>
+            <label>SSL-Warnung (Tage)<input name="ssl_warn_days" type="number" min="1" value="${site.ssl_warn_days}"></label>
+          </div>
+          <label class="check"><input type="checkbox" name="monitor_check_dns" ${site.monitor_check_dns?'checked':''}> DNS-Auflösung prüfen</label>
+          <label class="check"><input type="checkbox" name="monitor_check_wordpress" ${site.monitor_check_wordpress?'checked':''}> WordPress REST API unter <code>/wp-json/</code> prüfen</label>
+          <button>Monitoring speichern</button><span id="monitorState" class="inline-status"></span>
+        </form>
+      </section>
+    </div>
+
+    <div class="twocol ops-grid">
+      <section>
+        <div class="sectionhead"><div><span class="eyebrow">Sicherung</span><h2>Backup</h2></div></div>
+        <form id="backupForm" class="inner-form">
+          <label class="check"><input type="checkbox" name="backup_enabled" ${site.backup_enabled?'checked':''}> Automatische Backups</label>
+          <label>Backup-Intervall (Sek.)<input name="backup_interval_seconds" type="number" min="900" value="${site.backup_interval_seconds}"></label>
+          <label>Max. Dateien<input name="backup_max_files" type="number" min="100" value="${site.backup_max_files}"></label>
+          <label>Ausschlüsse <small>Eine Zeile pro Muster. Standardmäßig u. a. Cache und Uploads.</small><textarea name="exclude_patterns" rows="6">${esc((Array.isArray(site.exclude_patterns)?site.exclude_patterns:[]).join('\n'))}</textarea></label>
+          <button>Backup-Einstellungen speichern</button><span id="backupState" class="inline-status"></span>
+        </form>
+        <dl class="facts compact-facts"><div><dt>Letzter Versuch</dt><dd>${backupState?.last_attempt_at?new Date(backupState.last_attempt_at).toLocaleString('de-DE'):'–'}</dd></div><div><dt>Letzter Erfolg</dt><dd>${backupState?.last_success_at?new Date(backupState.last_success_at).toLocaleString('de-DE'):'–'}</dd></div><div><dt>Backup-Pfad</dt><dd><code>sites/${esc(site.slug)}/public</code></dd></div></dl>
+      </section>
+      <section>
+        <div class="sectionhead"><div><span class="eyebrow">Letzter Check</span><h2>Diagnose</h2></div></div>
+        <dl class="facts compact-facts">
+          <div><dt>Finale URL</dt><dd>${esc(latestDetails.finalUrl||'–')}</dd></div>
+          <div><dt>Titel</dt><dd>${esc(latestDetails.title||'–')}</dd></div>
+          <div><dt>DNS</dt><dd>${Array.isArray(latestDetails.dns)?esc(latestDetails.dns.join(', ')):'–'}</dd></div>
+          <div><dt>Redirects</dt><dd>${Array.isArray(latestDetails.redirects)?latestDetails.redirects.length:0}</dd></div>
+          <div><dt>WordPress</dt><dd>${latestDetails.wordpress?latestDetails.wordpress.ok?'OK':'Fehler':'nicht geprüft'}</dd></div>
+          <div><dt>Fehler in Folge</dt><dd>${monitorState?.consecutive_failures||0}</dd></div>
+          <div><dt>Alerts im Incident</dt><dd>${monitorState?.alert_count||0}</dd></div>
+        </dl>
+      </section>
+    </div>
+
+    <section><div class="sectionhead"><div><span class="eyebrow">Verfügbarkeit</span><h2>Monitoring-Verlauf</h2></div><small>Letzte 20 von ${checks.length} geladenen Prüfungen.</small></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Status</th><th>HTTP</th><th>Response</th><th>SSL</th><th>Finale URL</th><th>Redirects</th></tr></thead><tbody>${checkRows}</tbody></table></div></section>
+    <section><div class="sectionhead"><div><span class="eyebrow">Alarmierung</span><h2>Incidents</h2></div><small>Öffnen für vollständige Ereignis- und Alert-Timeline.</small></div><div class="tablewrap"><table><thead><tr><th>Incident</th><th>Status</th><th>Start</th><th>Ende</th><th>Dauer</th></tr></thead><tbody>${incidentRows}</tbody></table></div></section>
+    <section><div class="sectionhead"><div><span class="eyebrow">Versionen</span><h2>Backups</h2></div><small>Restore erstellt zuerst automatisch einen Safety-Snapshot.</small></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Commit</th><th>Dateien</th><th>Stand</th><th></th></tr></thead><tbody>${backupRows}</tbody></table></div></section>
+    <section><div class="sectionhead"><div><span class="eyebrow">Audit</span><h2>Änderungen</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Änderung</th><th>Quelle</th><th>Status</th><th></th></tr></thead><tbody>${historyRows}</tbody></table></div></section>
+
+    <script>
+    const slug=${JSON.stringify(site.slug)};
+    const byId=id=>document.getElementById(id);
+    const connectionForm=byId('connectionForm'),monitorForm=byId('monitorForm'),backupForm=byId('backupForm');
+    const cfield=name=>connectionForm.elements.namedItem(name);
+    function syncConnectionMode(){const git=cfield('deploymentMode').value==='hostinger_git';byId('connWeb').hidden=git;byId('connGit').hidden=!git;}
+    cfield('deploymentMode').addEventListener('change',syncConnectionMode);syncConnectionMode();
+    byId('testStoredConnection').addEventListener('click',async()=>{byId('connectionState').textContent='Prüfe…';const r=await fetch('/api/sites/'+encodeURIComponent(slug)+'/connection-test',{method:'POST'}),x=await r.json();byId('connectionState').textContent=r.ok?'✓ Verbindung OK':'✗ '+(x.message||x.error||JSON.stringify(x));});
+    connectionForm.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(connectionForm),git=fd.get('deploymentMode')==='hostinger_git',data={deploymentMode:fd.get('deploymentMode')};if(git){data.sourceRepository=String(fd.get('sourceRepository')||'').trim();data.sourceBranch=String(fd.get('sourceBranch')||'main').trim();data.sourceRoot=String(fd.get('sourceRoot')||'').trim();data.gitToken=String(fd.get('gitToken')||'');data.hostingerTargetDirectory=String(fd.get('hostingerTargetDirectory')||'public_html').trim();}else{data.protocol=fd.get('protocol');data.host=String(fd.get('host')||'').trim();data.port=Number(fd.get('port'));data.username=String(fd.get('username')||'').trim();data.password=String(fd.get('password')||'');data.remoteRoot=String(fd.get('remoteRoot')||'/').trim();}byId('connectionState').textContent='Teste & speichere…';const r=await fetch('/api/sites/'+encodeURIComponent(slug)+'/connection',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(data)}),x=await r.json();byId('connectionState').textContent=r.ok?'✓ Verbindung geprüft und gespeichert':'✗ '+(x.message||x.error||JSON.stringify(x));if(r.ok)setTimeout(()=>location.reload(),500);});
+    monitorForm.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(monitorForm),warn=String(fd.get('response_warn_ms')||'').trim();const data={enabled:cbox(monitorForm,'enabled'),monitor_enabled:cbox(monitorForm,'monitor_enabled'),monitor_url:String(fd.get('monitor_url')||''),monitor_expected_status:Number(fd.get('monitor_expected_status')),monitor_interval_seconds:Number(fd.get('monitor_interval_seconds')),monitor_expected_title:String(fd.get('monitor_expected_title')||'').trim()||null,monitor_content:String(fd.get('monitor_content')||'').trim()||null,monitor_check_dns:cbox(monitorForm,'monitor_check_dns'),monitor_check_wordpress:cbox(monitorForm,'monitor_check_wordpress'),monitor_timeout_ms:Number(fd.get('monitor_timeout_ms')),response_warn_ms:warn?Number(warn):null,monitor_failure_threshold:Number(fd.get('monitor_failure_threshold')),alert_repeat_minutes:Number(fd.get('alert_repeat_minutes')),ssl_warn_days:Number(fd.get('ssl_warn_days'))};byId('monitorState').textContent='Speichere…';const r=await fetch('/api/sites/'+encodeURIComponent(slug),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(data)}),x=await r.json();byId('monitorState').textContent=r.ok?'✓ Gespeichert':'✗ '+(x.message||x.error||JSON.stringify(x));});
+    backupForm.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(backupForm),patterns=String(fd.get('exclude_patterns')||'').split('\n').map(x=>x.trim()).filter(Boolean),data={backup_enabled:cbox(backupForm,'backup_enabled'),backup_interval_seconds:Number(fd.get('backup_interval_seconds')),backup_max_files:Number(fd.get('backup_max_files')),exclude_patterns:patterns};byId('backupState').textContent='Speichere…';const r=await fetch('/api/sites/'+encodeURIComponent(slug),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(data)}),x=await r.json();byId('backupState').textContent=r.ok?'✓ Gespeichert':'✗ '+(x.message||x.error||JSON.stringify(x));});
+    function cbox(form,name){return Boolean(form.elements.namedItem(name)?.checked);}
+    byId('backupNow').addEventListener('click',async()=>{const r=await fetch('/api/sites/'+encodeURIComponent(slug)+'/backup',{method:'POST'}),x=await r.json();alert(r.ok?'Backup erstellt: '+String(x.commit||'').slice(0,8):JSON.stringify(x));if(r.ok)location.reload();});
+    byId('checkNow').addEventListener('click',async()=>{const r=await fetch('/api/sites/'+encodeURIComponent(slug)+'/check',{method:'POST'}),x=await r.json();alert(x.ok?'Website ist erreichbar':'Prüfung fehlgeschlagen: '+JSON.stringify(x));location.reload();});
+    async function rollback(id){const r=await fetch('/api/changes/'+id+'/rollback-preview',{method:'POST'}),p=await r.json();if(!r.ok)return alert(JSON.stringify(p));if(confirm('Rollback-Preview '+p.previewId+' anwenden?')){const a=await fetch('/api/previews/'+p.previewId+'/apply',{method:'POST'});alert(JSON.stringify(await a.json()));location.reload();}}
+    async function restoreBackup(id){if(!confirm('Diesen Backup-Stand vorbereiten? Vorher wird automatisch ein aktueller Safety-Snapshot erstellt.'))return;const r=await fetch('/api/backups/'+id+'/restore-preview',{method:'POST'}),p=await r.json();if(!r.ok)return alert(JSON.stringify(p));if(p.noChanges)return alert(p.message);if(confirm('Restore-Preview '+p.previewId+' jetzt anwenden?')){const a=await fetch('/api/previews/'+p.previewId+'/apply',{method:'POST'});alert(JSON.stringify(await a.json()));location.reload();}}
+    </script>`);
+}
+async function incidentPage(id){
+  const incident=await getIncident(id);
+  const eventRows=incident.events.map(e=>`<tr><td>${new Date(e.created_at).toLocaleString('de-DE')}</td><td><span class="pill">${esc(e.event_type)}</span></td><td><pre class="event-json">${esc(e.details?JSON.stringify(e.details,null,2):'–')}</pre></td></tr>`).join('')||'<tr><td colspan="3">Keine Events.</td></tr>';
+  return page('Incident',`<a class="backlink" href="/sites/${esc(incident.slug)}">← ${esc(incident.domain)}</a><header><div><span class="eyebrow">INCIDENT · ${esc(incident.status.toUpperCase())}</span><h1>${esc(incident.title)}</h1><p>Gestartet ${new Date(incident.created_at).toLocaleString('de-DE')}${incident.resolved_at?' · beendet '+new Date(incident.resolved_at).toLocaleString('de-DE'):''}</p></div></header><section><div class="sectionhead"><div><span class="eyebrow">Timeline</span><h2>Ereignisse & Alerts</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Typ</th><th>Details</th></tr></thead><tbody>${eventRows}</tbody></table></div></section>`);
+}
 async function dashboard(){const sites=await listSites(),checks=(await q('select mc.site_id,mc.ok,mc.http_status,mc.response_ms,mc.ssl_days,mc.created_at from monitor_checks mc join (select site_id,max(created_at) created_at from monitor_checks group by site_id) latest on latest.site_id=mc.site_id and latest.created_at=mc.created_at')).rows,checkMap=new Map(checks.map(x=>[x.site_id,x])),backups=(await q('select b.site_id,b.git_commit,b.file_count,b.created_at from backups b join (select site_id,max(created_at) created_at from backups group by site_id) latest on latest.site_id=b.site_id and latest.created_at=b.created_at')).rows,backupMap=new Map(backups.map(x=>[x.site_id,x])),incidents=(await q("select i.*,s.domain from incidents i join sites s on s.id=i.site_id where i.status='open' order by i.created_at desc")).rows,changes=(await q('select c.*,s.domain from changes c join sites s on s.id=c.site_id order by c.created_at desc limit 20')).rows;const cards=sites.map(s=>{const c=checkMap.get(s.id),b=backupMap.get(s.id),deploy=s.deployment_mode==='hostinger_git'?'HOSTINGER GIT':s.protocol.toUpperCase();return `<a class="card" href="/sites/${esc(s.slug)}"><div class="row"><strong>${esc(s.name)}</strong><span class="pill ${c?.ok?'ok':'bad'}">${c?c.ok?'ONLINE':'ALARM':'NO DATA'}</span></div><small>${esc(s.domain)} · ${esc(deploy)}</small><div class="metrics"><span>${c?.response_ms??'–'} ms<em>Response</em></span><span>${c?.ssl_days??'–'} d<em>SSL</em></span><span>${s.monitor_enabled?'ON':'OFF'}<em>Monitor</em></span><span>${b?.created_at?new Date(b.created_at).toLocaleDateString('de-DE'):'–'}<em>Backup</em></span></div></a>`}).join('');const inc=incidents.length?incidents.map(i=>`<li><b>${esc(i.domain)}</b> ${esc(i.title)}<small>${new Date(i.created_at).toLocaleString('de-DE')}</small></li>`).join(''):'<li>Keine offenen Incidents.</li>',hist=changes.map(c=>`<li><b>${esc(c.domain)}</b> ${esc(c.description)} <span class="pill">${esc(c.status)}</span><small>${new Date(c.created_at).toLocaleString('de-DE')} · ${esc(c.actor)}</small></li>`).join('')||'<li>Noch keine Änderungen.</li>';return page('SiteOps',`<header><div><span class="eyebrow">Lorzen</span><h1>SiteOps</h1><p>Websites, Backups, Monitoring und Rollbacks.</p></div><div class="actions"><a class="ghost btn" href="/settings">Einstellungen</a><a class="btn" href="/setup">+ Website</a></div></header><section><h2>Websites</h2><div class="grid">${cards}</div></section><div class="twocol"><section><h2>Offene Incidents</h2><ul>${inc}</ul></section><section><h2>Letzte Änderungen</h2><ul>${hist}</ul></section></div>`);}
 
 async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'0.6.2',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{if(req.url==='/health'||req.url.startsWith('/assets/'))return;if(req.url.startsWith('/mcp')){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
