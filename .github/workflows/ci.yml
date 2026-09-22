@@ -27,3 +27,13 @@ jobs:
         run: npm install --ignore-scripts
       - name: Syntax check
         run: npm run check
+      - name: Runtime import check
+        env:
+          DATABASE_URL: postgresql://siteops:siteops@127.0.0.1:5432/siteops
+          SITEOPS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          MCP_API_TOKEN: ci-token
+          DASHBOARD_USER: ci
+          DASHBOARD_PASSWORD: ci-password
+          GITHUB_BACKUP_REPO: example/siteops-backups
+          GITHUB_BACKUP_TOKEN: ci-token
+        run: npm run check:runtime
