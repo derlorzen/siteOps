@@ -112,6 +112,8 @@ CREATE TABLE IF NOT EXISTS monitor_state (
   consecutive_failures INT NOT NULL DEFAULT 0,
   last_check_at DATETIME NULL,
   last_ok_at DATETIME NULL,
+  last_alert_at DATETIME NULL,
+  alert_count INT NOT NULL DEFAULT 0,
   incident_id CHAR(36) NULL,
   CONSTRAINT fk_monitor_state_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
   CONSTRAINT fk_monitor_state_incident FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE SET NULL
