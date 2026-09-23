@@ -4,8 +4,9 @@ Self-hosted website operations for monitoring, backups, SEO/quality analysis, sa
 
 SiteOps is intended for people or agencies that manage multiple customer websites across classic SFTP/FTPS hosting and Git-based deployments. It provides one operational dashboard while keeping the live website or deployment repository as the source of truth.
 
-> **Current version:** 1.1  
-> **License:** GNU AGPL-3.0-only  
+> **Current version:** 1.1.1  
+> **License:** PolyForm Noncommercial 1.0.0  
+> **Model:** source-available, free for noncommercial use  
 > **Runtime:** Node.js 22+ / Fastify / MySQL  
 > **Browser automation:** optional separate Playwright/Chromium runner  
 > **MCP:** Streamable HTTP with built-in OAuth 2.1 for ChatGPT and Claude
@@ -1045,8 +1046,12 @@ The example configuration in this repository intentionally contains placeholders
 
 # License
 
-SiteOps is licensed under the **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**. See [LICENSE](LICENSE).
+**SiteOps 1.1.1 and later are licensed under the PolyForm Noncommercial License 1.0.0.** See [LICENSE](LICENSE).
 
-You may use, study, modify and redistribute SiteOps under the terms of the AGPL. If you modify SiteOps and make that modified version available to users over a network, the AGPL requires that those users are offered the corresponding source code of the version they are using under the same license.
+You may use, study, modify and redistribute SiteOps for **noncommercial purposes** under the terms of that license. Commercial use is not granted. In particular, the current SiteOps source must not be sold, offered as a paid hosted service, used as part of a commercial product/service, or otherwise used for an anticipated commercial application unless the copyright holder separately grants permission.
 
-This makes SiteOps suitable for self-hosting and commercial services while preserving source availability for network-deployed modifications.
+This repository is therefore **source-available**, not OSI Open Source. The Open Source Definition requires licenses to allow commercial fields of endeavor.
+
+## License history
+
+SiteOps 1.1.0 was previously published under **AGPL-3.0-only**. Rights already granted for that historical version remain governed by its license. The noncommercial terms apply to SiteOps 1.1.1 and subsequent versions released under the current [LICENSE](LICENSE).
