@@ -225,3 +225,45 @@ CREATE TABLE IF NOT EXISTS seo_links (
   INDEX idx_seo_links_run (run_id),
   INDEX idx_seo_links_site (site_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS synthetic_tests (
+  id CHAR(36) PRIMARY KEY,
+  site_id CHAR(36) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  start_url TEXT NOT NULL,
+  steps LONGTEXT NOT NULL,
+  encrypted_secrets LONGTEXT NULL,
+  interval_seconds INT NOT NULL DEFAULT 3600,
+  timeout_ms INT NOT NULL DEFAULT 30000,
+  viewport_width INT NOT NULL DEFAULT 1440,
+  viewport_height INT NOT NULL DEFAULT 1000,
+  visual_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  visual_threshold DOUBLE NOT NULL DEFAULT 0.01,
+  baseline_image MEDIUMTEXT NULL,
+  baseline_hash CHAR(64) NULL,
+  last_run_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_synthetic_tests_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_synthetic_tests_site (site_id),
+  INDEX idx_synthetic_tests_schedule (enabled,last_run_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS synthetic_runs (
+  id CHAR(36) PRIMARY KEY,
+  test_id CHAR(36) NOT NULL,
+  site_id CHAR(36) NOT NULL,
+  status VARCHAR(30) NOT NULL,
+  duration_ms INT NULL,
+  error LONGTEXT NULL,
+  result LONGTEXT NULL,
+  visual_mismatch DOUBLE NULL,
+  screenshot_image MEDIUMTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_synthetic_runs_test FOREIGN KEY (test_id) REFERENCES synthetic_tests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_synthetic_runs_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_synthetic_runs_test_created (test_id,created_at),
+  INDEX idx_synthetic_runs_site_created (site_id,created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
