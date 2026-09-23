@@ -10,6 +10,7 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
   process.env.SITEOPS_MASTER_KEY ||= 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
   process.env.DASHBOARD_USER ||= 'test';
   process.env.DASHBOARD_PASSWORD ||= 'test-password';
+  process.env.SITEOPS_TEST_NO_AUTOSTART = '1';
   const { migrate, q, db } = await import('../app.mjs');
 
   await migrate();
