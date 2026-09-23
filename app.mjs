@@ -1541,6 +1541,37 @@ async function incidentEvent(incidentId, siteId, eventType, details) {
     details ? JSON.stringify(details) : null
   ]);
 }
+async function recordAudit(entry) {
+  try {
+    await q(
+      'insert into audit_log(actor_type,actor,client_id,method,path,mcp_tool,status_code,ip) values(?,?,?,?,?,?,?,?)',
+      [
+        entry.actorType || 'unknown',
+        entry.actor || null,
+        entry.clientId || null,
+        entry.method,
+        entry.path,
+        entry.mcpTool || null,
+        entry.statusCode ?? null,
+        entry.ip || null
+      ]
+    );
+  } catch (e) {
+    console.error('audit log write failed', e);
+  }
+}
+async function auditLogList(limit = 200) {
+  return (
+    await q(
+      'select id,actor_type,actor,client_id,method,path,mcp_tool,status_code,ip,created_at from audit_log order by created_at desc limit ?',
+      [Math.min(500, Math.max(1, Number(limit) || 200))]
+    )
+  ).rows;
+}
+function mcpToolFromBody(body) {
+  const msg = Array.isArray(body) ? body[0] : body;
+  return msg && msg.method === 'tools/call' && typeof msg.params?.name === 'string' ? msg.params.name : null;
+}
 async function processMonitor(site) {
   const result = await checkSiteNow(site);
   await q(
@@ -3987,6 +4018,7 @@ function dashboardAuth(req, reply) {
     reply.code(401).send('Authentication required');
     return false;
   }
+  req.siteopsAuth = { type: 'dashboard', subject: cfg.dashboardUser };
   return true;
 }
 
@@ -4565,7 +4597,10 @@ async function oauthConnections() {
 async function mcpAuth(req, reply) {
   const h = String(req.headers.authorization || ''),
     t = h.startsWith('Bearer ') ? h.slice(7) : '';
-  if (t && cfg.mcpToken && safeEqual(t, cfg.mcpToken)) return true;
+  if (t && cfg.mcpToken && safeEqual(t, cfg.mcpToken)) {
+    req.siteopsAuth = { type: 'legacy_bearer' };
+    return true;
+  }
   if (t) {
     const row = (
       await q(
@@ -4699,13 +4734,15 @@ function mcpInfoPage() {
   html +=
     '<section><div class="sectionhead"><div><span class="eyebrow">Verbindungen</span><h2>Aktive OAuth-Clients</h2></div><button class="ghost" id="oauthRevokeAll" type="button">Alle OAuth-Tokens widerrufen</button></div><div id="oauthConnections" class="oauth-connections"><div class="empty-state">Lade Verbindungen…</div></div></section>';
   html +=
+    '<section><div class="sectionhead"><div><span class="eyebrow">Audit</span><h2>Audit-Log</h2></div><small>Letzte 100 schreibenden Zugriffe über Dashboard und MCP.</small></div><div id="auditLog" class="tablewrap"><div class="empty-state">Lade Audit-Log…</div></div></section>';
+  html +=
     '<section><div class="sectionhead"><div><span class="eyebrow">Tools</span><h2>Verfügbare Bereiche</h2></div></div><div class="tool-grid">' +
     tools +
     '</div></section>';
   html +=
     '<div class="notice"><strong>Änderungsschutz bleibt bestehen.</strong><span>OAuth ersetzt nur die Anmeldung am MCP. Dateiänderungen laufen weiterhin über <code>change_preview</code> und werden erst nach Freigabe mit <code>change_apply</code> geschrieben.</span></div>';
   html +=
-    '<script>async function loadOauthConnections(){const box=document.getElementById("oauthConnections"),r=await fetch("/api/oauth/connections"),rows=await r.json();if(!Array.isArray(rows)||!rows.length){box.innerHTML="<div class=\"empty-state\"><strong>Noch keine OAuth-Verbindung.</strong><p>Verbinde ChatGPT oder Claude mit dem MCP-Endpunkt.</p></div>";return;}box.innerHTML=rows.map(x=>"<div class=\"oauth-connection\"><div><strong>"+String(x.clientName||"MCP Client").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</strong><small>"+String(x.clientId||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</small></div><span class=\"pill "+(x.activeRefresh||x.activeAccess?"ok":"")+"\">"+x.activeAccess+" Access · "+x.activeRefresh+" Refresh</span><button type=\"button\" class=\"ghost\" data-client=\""+encodeURIComponent(x.clientId)+"\">Widerrufen</button></div>").join("");box.querySelectorAll("[data-client]").forEach(b=>b.onclick=async()=>{await fetch("/api/oauth/revoke-client",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({clientId:decodeURIComponent(b.dataset.client)})});loadOauthConnections();});}document.getElementById("oauthRevokeAll").onclick=async()=>{if(!confirm("Alle OAuth-Verbindungen widerrufen? ChatGPT und Claude müssen sich danach neu verbinden."))return;await fetch("/api/oauth/revoke-all",{method:"POST"});loadOauthConnections();};loadOauthConnections();</script>';
+    '<script>async function loadOauthConnections(){const box=document.getElementById("oauthConnections"),r=await fetch("/api/oauth/connections"),rows=await r.json();if(!Array.isArray(rows)||!rows.length){box.innerHTML="<div class=\"empty-state\"><strong>Noch keine OAuth-Verbindung.</strong><p>Verbinde ChatGPT oder Claude mit dem MCP-Endpunkt.</p></div>";return;}box.innerHTML=rows.map(x=>"<div class=\"oauth-connection\"><div><strong>"+String(x.clientName||"MCP Client").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</strong><small>"+String(x.clientId||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</small></div><span class=\"pill "+(x.activeRefresh||x.activeAccess?"ok":"")+"\">"+x.activeAccess+" Access · "+x.activeRefresh+" Refresh</span><button type=\"button\" class=\"ghost\" data-client=\""+encodeURIComponent(x.clientId)+"\">Widerrufen</button></div>").join("");box.querySelectorAll("[data-client]").forEach(b=>b.onclick=async()=>{await fetch("/api/oauth/revoke-client",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({clientId:decodeURIComponent(b.dataset.client)})});loadOauthConnections();});}document.getElementById("oauthRevokeAll").onclick=async()=>{if(!confirm("Alle OAuth-Verbindungen widerrufen? ChatGPT und Claude müssen sich danach neu verbinden."))return;await fetch("/api/oauth/revoke-all",{method:"POST"});loadOauthConnections();};loadOauthConnections();async function loadAuditLog(){const box=document.getElementById("auditLog"),r=await fetch("/api/audit-log?limit=100"),rows=await r.json(),esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));if(!Array.isArray(rows)||!rows.length){box.innerHTML="<div class=\"empty-state\">Noch keine Audit-Einträge.</div>";return;}box.innerHTML="<table><thead><tr><th>Zeit</th><th>Wer</th><th>Methode</th><th>Pfad / Tool</th><th>Status</th><th>IP</th></tr></thead><tbody>"+rows.map(x=>"<tr><td>"+esc(new Date(x.created_at).toLocaleString("de-DE"))+"</td><td>"+esc(x.actor_type)+(x.actor?" · "+esc(x.actor):"")+(x.client_id?"<small class=\"table-sub\">"+esc(x.client_id)+"</small>":"")+"</td><td>"+esc(x.method)+"</td><td>"+esc(x.mcp_tool||x.path)+"</td><td>"+esc(x.status_code)+"</td><td>"+esc(x.ip)+"</td></tr>").join("")+"</tbody></table>";}loadAuditLog();</script>';
   return page('MCP & OAuth', html);
 }
 function settingsPage() {
@@ -5899,6 +5936,22 @@ async function start() {
       if (!(await mcpAuth(req, reply))) return reply;
     } else if (!dashboardAuth(req, reply)) return reply;
   });
+  app.addHook('onResponse', async (req, reply) => {
+    if (req.method === 'GET') return;
+    const path = req.url.split('?')[0];
+    if (path.startsWith('/assets/')) return;
+    const auth = req.siteopsAuth;
+    await recordAudit({
+      actorType: auth?.type || 'unknown',
+      actor: auth?.subject || null,
+      clientId: auth?.clientId || null,
+      method: req.method,
+      path,
+      mcpTool: path === '/mcp' ? mcpToolFromBody(req.body) : null,
+      statusCode: reply.statusCode,
+      ip: req.ip
+    });
+  });
   app.get('/.well-known/oauth-protected-resource', async () => oauthProtectedResourceMetadata());
   app.get('/.well-known/oauth-protected-resource/mcp', async () => oauthProtectedResourceMetadata());
   app.get('/.well-known/oauth-authorization-server', async () => oauthAuthorizationServerMetadata());
@@ -6069,6 +6122,7 @@ async function start() {
   app.post('/api/site-connection-test', async req => testSiteConnection(siteCreateSchema.parse(req.body)));
   app.get('/api/settings', async () => publicSettings());
   app.get('/api/oauth/connections', async () => oauthConnections());
+  app.get('/api/audit-log', async req => auditLogList(req.query?.limit));
   app.post('/api/oauth/revoke-all', async () => {
     const r = await q('update oauth_tokens set revoked_at=now() where revoked_at is null');
     return { ok: true, revoked: r.meta.affectedRows || 0 };

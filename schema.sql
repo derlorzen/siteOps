@@ -315,3 +315,18 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   INDEX idx_oauth_tokens_expires (expires_at),
   INDEX idx_oauth_tokens_type (token_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  actor_type VARCHAR(20) NOT NULL,
+  actor VARCHAR(255) NULL,
+  client_id VARCHAR(255) NULL,
+  method VARCHAR(10) NOT NULL,
+  path VARCHAR(255) NOT NULL,
+  mcp_tool VARCHAR(100) NULL,
+  status_code INT NULL,
+  ip VARCHAR(64) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_audit_log_created (created_at),
+  INDEX idx_audit_log_actor (actor_type, actor, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
