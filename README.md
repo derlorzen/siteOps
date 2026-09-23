@@ -1,52 +1,80 @@
 # Lorzen SiteOps
 
-Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
+Central operations and Site Intelligence hub for customer websites on SFTP/FTPS/FTP or Git-based Hostinger deployments.
 
-## Features
+## SiteOps 0.9
 
-- Hostinger Git Deploy mode: SiteOps writes a single GitHub commit to the deployment branch instead of modifying production files through SFTP
-- Supports WordPress, PHP/HTML, static sites and Node.js web apps as website types
+SiteOps combines website operations, safe changes, monitoring, Git-backed backups and a technical SEO / Site Intelligence suite in one dashboard and one MCP server.
 
-- Settings UI for GitHub backup target, new-site defaults and alert delivery
+### Operations
+
+- Hostinger Git Deploy mode: SiteOps writes one GitHub commit to the configured deployment branch instead of modifying production files through SFTP
+- WordPress, PHP/HTML, static sites and Node.js web apps
 - editable connection credentials and deployment settings with test-before-save
-- per-site operations dashboard for monitoring, backup, incidents and audit history
-- DNS, redirect-chain, title/content, SSL, response-time and optional WordPress REST monitoring
-- incident event timeline with repeated alert escalation and recovery delivery
-- expanded MCP toolkit for site overview, configuration, connection testing, file discovery, monitoring, incidents, backups, SEO and safe changes
-- SEO crawler with robots.txt/sitemap discovery, technical on-page checks, internal-link graph and crawl depth
-- PageRank-style internal page-strength analysis and per-page site-corpus WDF×IDF terms
-- optional Google PageSpeed Insights / Lighthouse mobile and desktop audits
-- per-page SEO detail views for metadata, headings, image-alt issues, link anchors, WDF×IDF and Lighthouse
-- in-app MCP setup guide for SiteOps, MCP Inspector, ChatGPT and Claude/API
-- Guided website setup with SFTP/FTPS/FTP connection test before saving
-
-- live webspace remains the production source of truth
-- private GitHub repository stores a per-site version history under `sites/<slug>/public`
-- GitHub Git Data API is used directly; no local Git checkout or SSH deploy key is required
-- Hostinger MySQL stores sites, previews, changes, backups, monitor checks and incidents
+- live webspace or configured Git repository remains the source of truth
 - two-step `change_preview` → `change_apply`
 - live hash conflict detection before writes
-- automatic restoration of touched files if a transfer or post-change snapshot fails
-- Git pre/post snapshots and human-readable diffs
-- rollback is itself a preview before it can be applied
+- automatic restoration of touched files if transfer or post-change snapshots fail
+- Git pre/post snapshots, human-readable diffs and rollback previews
 - manual and scheduled full backups per customer project
-- restore creates a fresh safety snapshot before applying an older state
+- restore creates a fresh safety snapshot before an older state can be applied
 - binary-safe backup and rollback handling
-- PHP syntax validation runs in Node.js and does not require a PHP CLI
-- per-site backup interval, file limit and monitoring settings
-- uptime/status/content/SSL/response-time monitoring
-- incident + recovery alerts by SMTP and/or generic webhook
-- lightweight operations dashboard plus Streamable HTTP MCP endpoint
-- customer host credentials encrypted with AES-256-GCM
+- private GitHub snapshot repository under `sites/<slug>/public`
+- GitHub Git Data API; no local Git checkout or deploy key required
+
+### Monitoring & incidents
+
+- uptime, HTTP status, redirect chain and response-time monitoring
+- SSL expiry, DNS, expected title/content and optional WordPress REST checks
+- incident timeline, repeated alert escalation and recovery notifications
+- SMTP and generic webhook alert delivery
+- domain/DNS/mail hygiene checks, including A/AAAA, MX, SPF, DMARC, CAA and nameservers
+- RDAP-based domain expiry visibility
+- HTTP security-header baseline and cookie flag inspection
+- technology fingerprinting
+
+### SEO Suite
+
+- crawler using internal links, robots.txt and XML sitemaps
+- crawl-depth and orphan-page discovery
+- indexability, canonical and robots/X-Robots analysis
+- title, meta description, H1/H2 and heading hierarchy checks
+- duplicate titles, descriptions, H1s and content fingerprints
+- internal PageRank-style page-strength graph
+- per-page site-corpus WDF×IDF
+- image alt, dimensions and lazy-loading checks
+- mobile viewport and html language checks
+- hreflang validation
+- Open Graph and Twitter/X Card checks
+- JSON-LD discovery and syntax validation
+- mixed-content, HTML-size and response-time checks
+- internal and external Link Health with HTTP status, redirect and response-time data
+- optional Google PageSpeed Insights / Lighthouse mobile and desktop audits
+- SEO Health Score, category scores, prioritized remediation recommendations and audit-to-audit comparison
+
+### AI Search / GEO
+
+- robots.txt accessibility checks for OAI-SearchBot, Claude-SearchBot and PerplexityBot
+- separate visibility of training/grounding controls for GPTBot, ClaudeBot and Google-Extended
+- llms.txt discovery without treating it as a Google ranking factor
+- AI Search score kept separate from training opt-in/opt-out choices
+
+### Reporting & MCP
+
+- printable client report combining uptime, incidents, backups, changes, SEO health and Site Intelligence
+- per-site Site Intelligence dashboard
+- Streamable HTTP MCP endpoint with Bearer authentication
+- MCP tools for operations, monitoring, files, safe changes, backups, SEO, Link Health, Site Intelligence and client-report data
+- in-app MCP setup guide for MCP Inspector, ChatGPT and Claude/API
 
 ## Hosting
 
-SiteOps 0.8 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository.
+SiteOps 0.9 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository.
 
-The application now uses the MySQL database included with Hostinger Cloud Startup. No Supabase or external PostgreSQL service is required.
+It uses the MySQL database included with Hostinger Cloud Startup. No Supabase, PostgreSQL, VPS, Docker or persistent application filesystem is required.
 
 The customer snapshot repository must be **private**. SiteOps refuses to write backups to a public repository.
 
-Prefer SFTP for managed customer websites. FTPS exists for legacy hosts; plain FTP should only be used where unavoidable.
+Prefer SFTP for classic managed customer websites. FTPS exists for legacy hosts; plain FTP should only be used where unavoidable.
 
 See `docs/INSTALL.md` and `docs/MCP.md`.
