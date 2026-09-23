@@ -65,3 +65,7 @@ jobs:
           curl -fsS             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"baseUrl":"http://127.0.0.1:8123/","steps":[{"action":"assertTitle","contains":"SiteOps Smoke"},{"action":"click","selector":"#go"},{"action":"assertText","selector":"#result","text":"OK"},{"action":"assertCount","selector":"button","count":1}],"captureScreenshot":true}'             http://127.0.0.1:3299/run > /tmp/siteops-run.json
 
           node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/siteops-run.json','utf8')); if(!x.ok||!x.screenshotHash||x.steps.length!==4) { console.error(x); process.exit(1); } console.log({ok:x.ok,durationMs:x.durationMs,screenshotHash:x.screenshotHash,httpErrors:x.httpErrors});"
+
+          curl -fsS             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"url":"http://127.0.0.1:8123/"}'             http://127.0.0.1:3299/render > /tmp/siteops-render.json
+
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/siteops-render.json','utf8')); if(!x.ok||!x.html||!x.html.includes('SiteOps Smoke')) { console.error(x); process.exit(1); } console.log({ok:x.ok,statusCode:x.statusCode,finalUrl:x.finalUrl});"
