@@ -268,3 +268,50 @@ CREATE TABLE IF NOT EXISTS synthetic_runs (
   INDEX idx_synthetic_runs_test_created (test_id,created_at),
   INDEX idx_synthetic_runs_site_created (site_id,created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  id CHAR(36) PRIMARY KEY,
+  client_id_hash CHAR(64) NOT NULL UNIQUE,
+  client_id TEXT NOT NULL,
+  client_name VARCHAR(255) NULL,
+  client_secret_hash CHAR(64) NULL,
+  token_endpoint_auth_method VARCHAR(50) NOT NULL DEFAULT 'none',
+  redirect_uris LONGTEXT NOT NULL,
+  metadata LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_oauth_clients_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+  id CHAR(36) PRIMARY KEY,
+  code_hash CHAR(64) NOT NULL UNIQUE,
+  client_id TEXT NOT NULL,
+  redirect_uri TEXT NOT NULL,
+  code_challenge VARCHAR(191) NOT NULL,
+  code_challenge_method VARCHAR(20) NOT NULL DEFAULT 'S256',
+  scope TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  consumed_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_oauth_codes_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  id CHAR(36) PRIMARY KEY,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  token_type VARCHAR(20) NOT NULL,
+  client_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  revoked_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_oauth_tokens_client_created (created_at),
+  INDEX idx_oauth_tokens_expires (expires_at),
+  INDEX idx_oauth_tokens_type (token_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
