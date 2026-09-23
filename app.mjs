@@ -1163,6 +1163,15 @@ function settingsPage(){
         <div class="buttonrow"><button type="button" class="ghost" id="testPageSpeed">PageSpeed API testen</button><span class="inline-status" id="pageSpeedStatus"></span></div>
       </section>
 
+      <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Browser / Playwright</span><h2>Synthetic Runner</h2></div><span class="pill ${s.browserRunnerConfigured?'ok':''}">${s.browserRunnerConfigured?'VERBUNDEN':'OPTIONAL'}</span></div>
+        <p class="lead">Der Browser Runner führt echte Chromium-Journeys, Formular-/Checkout-Checks und visuelle Regressionstests aus. Er läuft separat auf einem Host, der Chromium starten kann.</p>
+        <div class="formgrid">
+          <label class="span2">Browser Runner URL <small>Beispiel: <code>https://browser.siteops.lorzen.cloud</code></small><input name="browserRunnerUrl" type="url" value="${esc(s.browserRunnerUrl||'')}" placeholder="https://browser.example.de"></label>
+          <label class="span2">Runner Bearer Token <small>${s.browserRunnerTokenConfigured?'Token gespeichert – leer lassen für unverändert.':'Muss dem BROWSER_RUNNER_TOKEN des Runner-Dienstes entsprechen.'}</small><input name="browserRunnerToken" type="password" autocomplete="new-password" placeholder="${s.browserRunnerTokenConfigured?'Token bereits gespeichert':'langes zufälliges Token'}"></label>
+        </div>
+        <div class="buttonrow"><button type="button" class="ghost" id="testBrowserRunner">Browser Runner testen</button><span class="inline-status" id="browserRunnerStatus"></span></div>
+      </section>
+
       <div class="sticky-save"><button type="submit">Einstellungen speichern</button><span id="configStatus"></span></div>
     </form>
     <script>
@@ -1177,13 +1186,14 @@ function settingsPage(){
         defaultSslWarnDays:Number(fd.get('defaultSslWarnDays')),alertEmail:fd.get('alertEmail').trim(),webhook:fd.get('webhook').trim(),
         smtpHost:fd.get('smtpHost').trim(),smtpPort:Number(fd.get('smtpPort')),smtpSecure:form.smtpSecure.checked,smtpUser:fd.get('smtpUser').trim(),
         smtpPassword:fd.get('smtpPassword'),smtpFrom:fd.get('smtpFrom').trim(),
-        seoMaxPages:Number(fd.get('seoMaxPages')),pageSpeedApiKey:fd.get('pageSpeedApiKey')
+        seoMaxPages:Number(fd.get('seoMaxPages')),pageSpeedApiKey:fd.get('pageSpeedApiKey'),browserRunnerUrl:String(fd.get('browserRunnerUrl')||'').trim(),browserRunnerToken:String(fd.get('browserRunnerToken')||'')
       };
     }
     form.onsubmit=async e=>{e.preventDefault();configStatus.textContent='Speichere…';const r=await fetch('/api/settings',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(payload())});const x=await r.json();configStatus.textContent=r.ok?'Gespeichert.':'Fehler: '+(x.message||x.error||JSON.stringify(x));if(r.ok)setTimeout(()=>location.reload(),500);};
     testGitHub.onclick=async()=>{githubStatus.textContent='Prüfe…';const p=payload();const r=await fetch('/api/settings/github-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({githubBackupRepo:p.githubBackupRepo,githubBackupToken:p.githubBackupToken,backupBranch:p.backupBranch})}),x=await r.json();githubStatus.textContent=r.ok?'✓ '+x.repository+' erreichbar und privat':'✗ '+(x.message||x.error||JSON.stringify(x));};
     testAlert.onclick=async()=>{alertStatus.textContent='Sende…';const r=await fetch('/api/settings/alert-test',{method:'POST'}),x=await r.json();alertStatus.textContent=r.ok?'✓ Test ausgelöst':'✗ '+(x.message||x.error||JSON.stringify(x));};
     testPageSpeed.onclick=async()=>{pageSpeedStatus.textContent='Prüfe…';const p=payload(),url=String(form.elements.namedItem('pageSpeedTestUrl')?.value||'').trim();const r=await fetch('/api/settings/pagespeed-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pageSpeedApiKey:p.pageSpeedApiKey,url})}),x=await r.json();pageSpeedStatus.textContent=r.ok?'✓ '+x.url+' · Performance '+(x.result?.scores?.performance??'–')+' · SEO '+(x.result?.scores?.seo??'–'):'✗ '+(x.message||x.error||JSON.stringify(x));};
+    testBrowserRunner.onclick=async()=>{browserRunnerStatus.textContent='Prüfe…';const p=payload();if(!p.browserRunnerUrl){browserRunnerStatus.textContent='✗ URL fehlt';return;}const r=await fetch('/api/settings/browser-runner-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({browserRunnerUrl:p.browserRunnerUrl,browserRunnerToken:p.browserRunnerToken})}),x=await r.json();browserRunnerStatus.textContent=r.ok?'✓ Runner '+(x.result?.version||'')+' erreichbar und authentifiziert':'✗ '+(x.message||x.error||JSON.stringify(x));};
     </script>`);
 }
 function setupPage(){
