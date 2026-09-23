@@ -22,11 +22,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: package.json
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm install --ignore-scripts
       - name: Syntax check
         run: npm run check
+      - name: Lint
+        run: npm run lint
+      - name: Format check
+        run: npm run format:check
       - name: Install browser runner dependencies
         working-directory: runner
         run: npm install --ignore-scripts
