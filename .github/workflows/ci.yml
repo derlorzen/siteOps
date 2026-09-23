@@ -16,17 +16,34 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_DATABASE: siteops_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: package.json
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm install --ignore-scripts
       - name: Syntax check
         run: npm run check
+      - name: Lint
+        run: npm run lint
+      - name: Format check
+        run: npm run format:check
       - name: Install browser runner dependencies
         working-directory: runner
         run: npm install --ignore-scripts
@@ -45,3 +62,14 @@ jobs:
           GITHUB_BACKUP_REPO: example/siteops-backups
           GITHUB_BACKUP_TOKEN: ci-token
         run: npm run check:runtime
+      - name: Test
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ''
+          DB_NAME: siteops_test
+          SITEOPS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          DASHBOARD_USER: ci
+          DASHBOARD_PASSWORD: ci-password
+        run: npm test
