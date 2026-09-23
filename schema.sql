@@ -193,6 +193,8 @@ CREATE TABLE IF NOT EXISTS seo_pages (
   images_missing_alt INT NOT NULL DEFAULT 0,
   lighthouse_mobile LONGTEXT NULL,
   lighthouse_desktop LONGTEXT NULL,
+  signals LONGTEXT NULL,
+  content_hash CHAR(64) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_seo_pages_run FOREIGN KEY (run_id) REFERENCES seo_runs(id) ON DELETE CASCADE,
   CONSTRAINT fk_seo_pages_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
@@ -209,9 +211,27 @@ CREATE TABLE IF NOT EXISTS seo_links (
   anchor_text TEXT NULL,
   internal_link BOOLEAN NOT NULL DEFAULT TRUE,
   nofollow BOOLEAN NOT NULL DEFAULT FALSE,
+  target_status INT NULL,
+  target_response_ms INT NULL,
+  target_error TEXT NULL,
+  target_location TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_seo_links_run FOREIGN KEY (run_id) REFERENCES seo_runs(id) ON DELETE CASCADE,
   CONSTRAINT fk_seo_links_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
   INDEX idx_seo_links_run (run_id),
   INDEX idx_seo_links_site (site_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS site_intelligence_runs (
+  id CHAR(36) PRIMARY KEY,
+  site_id CHAR(36) NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'running',
+  overall_score INT NULL,
+  result LONGTEXT NULL,
+  error LONGTEXT NULL,
+  started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at DATETIME NULL,
+  CONSTRAINT fk_site_intelligence_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  INDEX idx_site_intelligence_site_started (site_id, started_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
