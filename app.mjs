@@ -34,7 +34,10 @@ const cfg = {
   pageSpeedApiKey: process.env.PAGESPEED_API_KEY || '', seoMaxPages: Number(env('SEO_MAX_PAGES','100')),
   seoUserAgent: env('SEO_USER_AGENT','Lorzen-SiteOps-SEO/1.0'),
   browserRunnerUrl: process.env.BROWSER_RUNNER_URL || '', browserRunnerToken: process.env.BROWSER_RUNNER_TOKEN || '',
-  syntheticWorkerInterval: Number(env('SYNTHETIC_WORKER_INTERVAL_MS','60000'))
+  syntheticWorkerInterval: Number(env('SYNTHETIC_WORKER_INTERVAL_MS','60000')),
+  oauthAccessTokenTtlSeconds: Number(env('OAUTH_ACCESS_TOKEN_TTL_SECONDS','3600')),
+  oauthRefreshTokenTtlSeconds: Number(env('OAUTH_REFRESH_TOKEN_TTL_SECONDS','2592000')),
+  oauthCodeTtlSeconds: Number(env('OAUTH_CODE_TTL_SECONDS','600'))
 };
 const db=mysql.createPool(cfg.databaseUrl||{host:cfg.dbHost,port:cfg.dbPort,user:cfg.dbUser,password:cfg.dbPassword,database:cfg.dbName,connectionLimit:5,charset:'utf8mb4'});
 const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details','summary','issues','wdfidf','structured_data','lighthouse_mobile','lighthouse_desktop','hreflang','social','security','accessibility','content_fingerprint','steps','result']);
@@ -1108,7 +1111,219 @@ function mcpServer(){
 }
 
 function dashboardAuth(req,reply){if(!cfg.dashboardUser||!cfg.dashboardPassword){reply.code(503).send('SiteOps dashboard authentication is not configured');return false;}const h=req.headers.authorization||'';if(!h.startsWith('Basic ')){reply.header('WWW-Authenticate','Basic realm="SiteOps"');reply.code(401).send('Authentication required');return false;}const decoded=Buffer.from(h.slice(6),'base64').toString(),i=decoded.indexOf(':'),u=i>=0?decoded.slice(0,i):'',p=i>=0?decoded.slice(i+1):'';if(!safeEqual(u,cfg.dashboardUser)||!safeEqual(p,cfg.dashboardPassword)){reply.header('WWW-Authenticate','Basic realm="SiteOps"');reply.code(401).send('Authentication required');return false;}return true;}
-function mcpAuth(req,reply){if(!cfg.mcpToken){reply.code(503).send({error:'MCP_API_TOKEN is not configured'});return false;}const h=req.headers.authorization||'',t=h.startsWith('Bearer ')?h.slice(7):'';if(!safeEqual(t,cfg.mcpToken)){reply.code(401).send({error:'unauthorized'});return false;}return true;}
+
+const OAUTH_ACCESS_SCOPE='siteops:access',OAUTH_OFFLINE_SCOPE='offline_access';
+function oauthBase(){return String(cfg.publicBaseUrl||'').replace(/\/$/,'');}
+function oauthIssuer(){return oauthBase();}
+function oauthResource(){return oauthBase()+'/mcp';}
+function oauthProtectedResourceMetadata(){return{
+  resource:oauthResource(),
+  authorization_servers:[oauthIssuer()],
+  scopes_supported:[OAUTH_ACCESS_SCOPE,OAUTH_OFFLINE_SCOPE],
+  bearer_methods_supported:['header'],
+  resource_documentation:oauthBase()+'/mcp-info'
+};}
+function oauthAuthorizationServerMetadata(){return{
+  issuer:oauthIssuer(),
+  authorization_endpoint:oauthBase()+'/oauth/authorize',
+  token_endpoint:oauthBase()+'/oauth/token',
+  registration_endpoint:oauthBase()+'/oauth/register',
+  revocation_endpoint:oauthBase()+'/oauth/revoke',
+  authorization_response_iss_parameter_supported:true,
+  client_id_metadata_document_supported:true,
+  response_types_supported:['code'],
+  response_modes_supported:['query'],
+  grant_types_supported:['authorization_code','refresh_token'],
+  code_challenge_methods_supported:['S256'],
+  token_endpoint_auth_methods_supported:['none','client_secret_post','client_secret_basic'],
+  scopes_supported:[OAUTH_ACCESS_SCOPE,OAUTH_OFFLINE_SCOPE]
+};}
+function oauthRandomToken(bytes=32){return crypto.randomBytes(bytes).toString('base64url');}
+function oauthPkceChallenge(verifier){return crypto.createHash('sha256').update(String(verifier)).digest('base64url');}
+function oauthScope(raw){
+  const items=String(raw||'').split(/\s+/).filter(Boolean);
+  if(!items.length)items.push(OAUTH_ACCESS_SCOPE);
+  for(const item of items)if(item!==OAUTH_ACCESS_SCOPE&&item!==OAUTH_OFFLINE_SCOPE){const e=new Error('Unsupported OAuth scope: '+item);e.oauthError='invalid_scope';throw e;}
+  if(!items.includes(OAUTH_ACCESS_SCOPE))items.unshift(OAUTH_ACCESS_SCOPE);
+  return [...new Set(items)].join(' ');
+}
+function oauthScopeHas(scope,value){return String(scope||'').split(/\s+/).includes(value);}
+function oauthFail(reply,status,error,description){return reply.code(status).type('application/json').send({error,error_description:description});}
+function oauthChallenge(reply,withError=false){
+  let value='Bearer resource_metadata="'+oauthBase()+'/.well-known/oauth-protected-resource", scope="'+OAUTH_ACCESS_SCOPE+'"';
+  if(withError)value+=', error="invalid_token"';
+  reply.header('WWW-Authenticate',value);
+}
+function oauthClientBasic(req){
+  const h=String(req.headers.authorization||'');
+  if(!h.startsWith('Basic '))return null;
+  try{const decoded=Buffer.from(h.slice(6),'base64').toString(),i=decoded.indexOf(':');if(i<0)return null;return{clientId:decodeURIComponent(decoded.slice(0,i)),clientSecret:decodeURIComponent(decoded.slice(i+1))};}catch{return null;}
+}
+function oauthRedirectAllowed(uri,{applicationType='web'}={}){
+  let u;try{u=new URL(String(uri));}catch{return false;}
+  if(u.hash)return false;
+  if(u.protocol==='https:')return true;
+  const loopback=['localhost','127.0.0.1','::1'].includes(u.hostname);
+  return applicationType==='native'&&u.protocol==='http:'&&loopback;
+}
+function oauthTrustedCimdUrl(clientId){
+  let u;try{u=new URL(String(clientId));}catch{throw Object.assign(new Error('Invalid CIMD client_id URL'),{oauthError:'invalid_client'});}
+  if(u.protocol!=='https:'||u.username||u.password||u.hash||u.search||u.pathname==='/')throw Object.assign(new Error('CIMD client_id must be a stable HTTPS URL with a non-root path'),{oauthError:'invalid_client'});
+  const h=u.hostname.toLowerCase(),trusted=h==='chatgpt.com'||h==='claude.ai'||h.endsWith('.openai.com')||h.endsWith('.anthropic.com');
+  if(!trusted)throw Object.assign(new Error('Untrusted CIMD host. Use Dynamic Client Registration instead.'),{oauthError:'invalid_client'});
+  return u;
+}
+function oauthKnownCimdFallback(clientId){
+  const u=oauthTrustedCimdUrl(clientId),h=u.hostname.toLowerCase();
+  if(h==='chatgpt.com'||h.endsWith('.openai.com'))return{client_id:clientId,client_name:'ChatGPT',redirect_uris:[],grant_types:['authorization_code','refresh_token'],response_types:['code'],token_endpoint_auth_methods_supported:['none','private_key_jwt']};
+  if(h==='claude.ai'||h.endsWith('.anthropic.com'))return{client_id:clientId,client_name:'Claude',redirect_uris:['https://claude.ai/api/mcp/auth_callback'],grant_types:['authorization_code','refresh_token'],response_types:['code'],token_endpoint_auth_methods_supported:['none']};
+  return null;
+}
+async function oauthFetchCimd(clientId){
+  const u=oauthTrustedCimdUrl(clientId);
+  try{
+    const r=await fetch(u,{redirect:'error',signal:AbortSignal.timeout(8000),headers:{accept:'application/json','user-agent':'Lorzen-SiteOps-OAuth/1.1'}});
+    if(!r.ok)throw new Error('CIMD HTTP '+r.status);
+    const raw=await r.text();if(raw.length>131072)throw new Error('CIMD document too large');
+    const m=JSON.parse(raw);
+    if(m.client_id&&m.client_id!==clientId)throw new Error('CIMD client_id mismatch');
+    if(!Array.isArray(m.redirect_uris))m.redirect_uris=[];
+    return{kind:'cimd',clientId,clientName:String(m.client_name||u.hostname),redirectUris:m.redirect_uris,metadata:m,tokenEndpointAuthMethod:'none'};
+  }catch(e){
+    const m=oauthKnownCimdFallback(clientId);
+    if(!m)throw Object.assign(new Error('Unable to resolve CIMD: '+String(e.message||e)),{oauthError:'invalid_client'});
+    return{kind:'cimd',clientId,clientName:m.client_name,redirectUris:m.redirect_uris,metadata:m,tokenEndpointAuthMethod:'none',fallback:true};
+  }
+}
+async function oauthRegisteredClient(clientId){
+  const row=(await q('select * from oauth_clients where client_id_hash=? limit 1',[hash(clientId)])).rows[0];
+  if(!row||row.client_id!==clientId)return null;
+  let redirectUris=[],metadata={};try{redirectUris=JSON.parse(row.redirect_uris||'[]');}catch{}try{metadata=JSON.parse(row.metadata||'{}');}catch{}
+  return{kind:'registered',clientId:row.client_id,clientName:row.client_name||'MCP Client',redirectUris,metadata,tokenEndpointAuthMethod:row.token_endpoint_auth_method||'none',clientSecretHash:row.client_secret_hash||null};
+}
+async function oauthResolveClient(clientId){
+  if(String(clientId||'').startsWith('https://'))return oauthFetchCimd(clientId);
+  const c=await oauthRegisteredClient(clientId);
+  if(!c)throw Object.assign(new Error('Unknown OAuth client'),{oauthError:'invalid_client'});
+  return c;
+}
+function oauthValidateRedirect(client,redirectUri){
+  if(client.redirectUris.includes(redirectUri))return true;
+  if(client.kind==='cimd'){
+    const u=oauthTrustedCimdUrl(client.clientId),h=u.hostname.toLowerCase();
+    if((h==='chatgpt.com'||h.endsWith('.openai.com'))&&(redirectUri==='https://chatgpt.com/connector_platform_oauth_redirect'||/^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]+$/.test(redirectUri)))return true;
+    if((h==='claude.ai'||h.endsWith('.anthropic.com'))&&redirectUri==='https://claude.ai/api/mcp/auth_callback')return true;
+  }
+  return false;
+}
+async function oauthValidateAuthorizeParams(raw){
+  const responseType=String(raw.response_type||''),clientId=String(raw.client_id||''),redirectUri=String(raw.redirect_uri||''),challenge=String(raw.code_challenge||''),method=String(raw.code_challenge_method||'');
+  if(responseType!=='code')throw Object.assign(new Error('Only response_type=code is supported'),{oauthError:'unsupported_response_type'});
+  if(!clientId||!redirectUri)throw Object.assign(new Error('client_id and redirect_uri are required'),{oauthError:'invalid_request'});
+  if(!challenge||method!=='S256')throw Object.assign(new Error('PKCE with code_challenge_method=S256 is required'),{oauthError:'invalid_request'});
+  const resource=String(raw.resource||oauthResource());if(resource!==oauthResource())throw Object.assign(new Error('Invalid OAuth resource'),{oauthError:'invalid_target'});
+  const client=await oauthResolveClient(clientId);if(!oauthValidateRedirect(client,redirectUri))throw Object.assign(new Error('redirect_uri is not registered for this client'),{oauthError:'invalid_request'});
+  const scope=oauthScope(raw.scope);
+  return{client,responseType,clientId,redirectUri,challenge,method,scope,resource,state:String(raw.state||'')};
+}
+function oauthConsentSignature(x,expires){
+  const data=[x.clientId,x.redirectUri,x.challenge,x.scope,x.resource,x.state,String(expires)].join('\n');
+  return crypto.createHmac('sha256',key()).update(data).digest('base64url');
+}
+function oauthRedirect(reply,redirectUri,params){
+  const u=new URL(redirectUri);for(const [k,v] of Object.entries(params))if(v!==undefined&&v!==null&&v!=='')u.searchParams.set(k,String(v));
+  return reply.redirect(u.toString());
+}
+async function oauthAuthorizePage(req,reply){
+  try{
+    const x=await oauthValidateAuthorizeParams(req.query||{}),expires=Date.now()+cfg.oauthCodeTtlSeconds*1000,sig=oauthConsentSignature(x,expires);
+    const hidden=(name,value)=>'<input type="hidden" name="'+esc(name)+'" value="'+esc(value)+'">';
+    return reply.type('text/html').send('<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SiteOps verbinden</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0"></head><body><main class="oauth-shell"><section class="oauth-consent"><span class="eyebrow">SITEOPS OAUTH</span><h1>'+esc(x.client.clientName)+' verbinden?</h1><p>Die Anwendung erhält Zugriff auf den SiteOps-MCP-Server und damit auf die dort verfügbaren Lese- und Änderungswerkzeuge. Änderungen bleiben weiterhin durch den SiteOps-Preview/Apply-Workflow geschützt.</p><dl class="facts compact-facts"><div><dt>Client</dt><dd>'+esc(x.client.clientName)+'</dd></div><div><dt>Berechtigung</dt><dd>SiteOps MCP Zugriff</dd></div><div><dt>Ressource</dt><dd><code>'+esc(x.resource)+'</code></dd></div></dl><form method="post" action="/oauth/authorize" class="oauth-actions">'+hidden('client_id',x.clientId)+hidden('redirect_uri',x.redirectUri)+hidden('response_type','code')+hidden('code_challenge',x.challenge)+hidden('code_challenge_method','S256')+hidden('scope',x.scope)+hidden('resource',x.resource)+hidden('state',x.state)+hidden('consent_expires',String(expires))+hidden('consent_signature',sig)+'<button name="decision" value="allow" type="submit">Zugriff erlauben</button><button name="decision" value="deny" type="submit" class="ghost">Abbrechen</button></form></section></main></body></html>');
+  }catch(e){return oauthFail(reply,400,e.oauthError||'invalid_request',String(e.message||e));}
+}
+async function oauthAuthorizeSubmit(req,reply){
+  try{
+    const b=req.body||{},x=await oauthValidateAuthorizeParams(b),expires=Number(b.consent_expires||0),sig=String(b.consent_signature||'');
+    if(!expires||expires<Date.now()||!safeEqual(sig,oauthConsentSignature(x,expires)))return oauthFail(reply,400,'invalid_request','Consent request expired or invalid');
+    if(String(b.decision)!=='allow')return oauthRedirect(reply,x.redirectUri,{error:'access_denied',state:x.state,iss:oauthIssuer()});
+    const code=oauthRandomToken(32);
+    await q('insert into oauth_authorization_codes(id,code_hash,client_id,redirect_uri,code_challenge,code_challenge_method,scope,resource,subject,expires_at) values(?,?,?,?,?,?,?,?,?,?)',[crypto.randomUUID(),hash(code),x.clientId,x.redirectUri,x.challenge,'S256',x.scope,x.resource,cfg.dashboardUser,new Date(Date.now()+cfg.oauthCodeTtlSeconds*1000)]);
+    return oauthRedirect(reply,x.redirectUri,{code,state:x.state,iss:oauthIssuer()});
+  }catch(e){return oauthFail(reply,400,e.oauthError||'invalid_request',String(e.message||e));}
+}
+async function oauthRegister(req,reply){
+  try{
+    const b=req.body||{},redirectUris=Array.isArray(b.redirect_uris)?b.redirect_uris.map(String):[];
+    if(!redirectUris.length||redirectUris.length>20)return oauthFail(reply,400,'invalid_client_metadata','redirect_uris is required');
+    const applicationType=String(b.application_type||'web');if(!redirectUris.every(x=>oauthRedirectAllowed(x,{applicationType})))return oauthFail(reply,400,'invalid_redirect_uri','Only HTTPS redirects and native loopback HTTP redirects are allowed');
+    const authMethod=String(b.token_endpoint_auth_method||'none');
+    if(!['none','client_secret_post','client_secret_basic'].includes(authMethod))return oauthFail(reply,400,'invalid_client_metadata','Unsupported token_endpoint_auth_method');
+    const clientId='siteops_'+oauthRandomToken(24),clientSecret=authMethod==='none'?null:oauthRandomToken(32),now=Math.floor(Date.now()/1000);
+    const metadata={...b,redirect_uris:redirectUris,application_type:applicationType,token_endpoint_auth_method:authMethod};
+    await q('insert into oauth_clients(id,client_id_hash,client_id,client_name,client_secret_hash,token_endpoint_auth_method,redirect_uris,metadata) values(?,?,?,?,?,?,?,?)',[crypto.randomUUID(),hash(clientId),clientId,String(b.client_name||'MCP Client').slice(0,255),clientSecret?hash(clientSecret):null,authMethod,JSON.stringify(redirectUris),JSON.stringify(metadata)]);
+    const out={client_id:clientId,client_id_issued_at:now,client_name:String(b.client_name||'MCP Client'),redirect_uris:redirectUris,grant_types:Array.isArray(b.grant_types)?b.grant_types:['authorization_code','refresh_token'],response_types:Array.isArray(b.response_types)?b.response_types:['code'],token_endpoint_auth_method:authMethod};
+    if(clientSecret){out.client_secret=clientSecret;out.client_secret_expires_at=0;}
+    return reply.code(201).send(out);
+  }catch(e){return oauthFail(reply,400,'invalid_client_metadata',String(e.message||e));}
+}
+async function oauthVerifyTokenClient(req,body,clientId){
+  const basic=oauthClientBasic(req),id=basic?.clientId||String(clientId||body.client_id||''),secret=basic?.clientSecret||String(body.client_secret||'');
+  if(!id)throw Object.assign(new Error('client_id is required'),{oauthError:'invalid_client'});
+  if(id.startsWith('https://')){oauthTrustedCimdUrl(id);return{id,kind:'cimd'};}
+  const c=await oauthRegisteredClient(id);if(!c)throw Object.assign(new Error('Unknown OAuth client'),{oauthError:'invalid_client'});
+  if(c.clientSecretHash&&!safeEqual(hash(secret),c.clientSecretHash))throw Object.assign(new Error('Invalid client secret'),{oauthError:'invalid_client'});
+  return{id,kind:'registered',client:c};
+}
+async function oauthIssueTokens({clientId,scope,resource,subject}){
+  const accessToken=oauthRandomToken(32),refreshToken=oauthRandomToken(40);
+  await q('insert into oauth_tokens(id,token_hash,token_type,client_id,scope,resource,subject,expires_at) values(?,?,?,?,?,?,?,?)',[crypto.randomUUID(),hash(accessToken),'access',clientId,scope,resource,subject,new Date(Date.now()+cfg.oauthAccessTokenTtlSeconds*1000)]);
+  await q('insert into oauth_tokens(id,token_hash,token_type,client_id,scope,resource,subject,expires_at) values(?,?,?,?,?,?,?,?)',[crypto.randomUUID(),hash(refreshToken),'refresh',clientId,scope,resource,subject,new Date(Date.now()+cfg.oauthRefreshTokenTtlSeconds*1000)]);
+  return{access_token:accessToken,token_type:'Bearer',expires_in:cfg.oauthAccessTokenTtlSeconds,refresh_token:refreshToken,scope};
+}
+async function oauthToken(req,reply){
+  const b=req.body||{},grant=String(b.grant_type||'');
+  try{
+    if(grant==='authorization_code'){
+      const code=String(b.code||''),verifier=String(b.code_verifier||''),redirectUri=String(b.redirect_uri||'');
+      if(!code||!verifier)return oauthFail(reply,400,'invalid_request','code and code_verifier are required');
+      const row=(await q('select * from oauth_authorization_codes where code_hash=? and consumed_at is null and expires_at>now() limit 1',[hash(code)])).rows[0];
+      if(!row)return oauthFail(reply,400,'invalid_grant','Authorization code is invalid or expired');
+      const client=await oauthVerifyTokenClient(req,b,row.client_id);
+      if(client.id!==row.client_id||redirectUri!==row.redirect_uri)return oauthFail(reply,400,'invalid_grant','Client or redirect_uri mismatch');
+      if(!safeEqual(oauthPkceChallenge(verifier),row.code_challenge))return oauthFail(reply,400,'invalid_grant','PKCE verification failed');
+      const used=await q('update oauth_authorization_codes set consumed_at=now() where id=? and consumed_at is null',[row.id]);if(!used.meta.affectedRows)return oauthFail(reply,400,'invalid_grant','Authorization code already used');
+      return reply.send(await oauthIssueTokens({clientId:row.client_id,scope:row.scope,resource:row.resource,subject:row.subject}));
+    }
+    if(grant==='refresh_token'){
+      const token=String(b.refresh_token||'');if(!token)return oauthFail(reply,400,'invalid_request','refresh_token is required');
+      const row=(await q("select * from oauth_tokens where token_hash=? and token_type='refresh' and revoked_at is null and expires_at>now() limit 1",[hash(token)])).rows[0];
+      if(!row)return oauthFail(reply,400,'invalid_grant','Refresh token is invalid or expired');
+      const client=await oauthVerifyTokenClient(req,b,row.client_id);if(client.id!==row.client_id)return oauthFail(reply,400,'invalid_grant','Client mismatch');
+      const revoked=await q('update oauth_tokens set revoked_at=now() where id=? and revoked_at is null',[row.id]);if(!revoked.meta.affectedRows)return oauthFail(reply,400,'invalid_grant','Refresh token already used');
+      return reply.send(await oauthIssueTokens({clientId:row.client_id,scope:row.scope,resource:row.resource,subject:row.subject}));
+    }
+    return oauthFail(reply,400,'unsupported_grant_type','Only authorization_code and refresh_token are supported');
+  }catch(e){return oauthFail(reply,e.oauthError==='invalid_client'?401:400,e.oauthError||'invalid_request',String(e.message||e));}
+}
+async function oauthRevoke(req,reply){
+  const token=String(req.body?.token||'');if(token)await q('update oauth_tokens set revoked_at=coalesce(revoked_at,now()) where token_hash=?',[hash(token)]);
+  return reply.code(200).send({});
+}
+async function oauthConnections(){
+  const rows=(await q('select client_id,subject,token_type,scope,expires_at,revoked_at,created_at from oauth_tokens order by created_at desc limit 500')).rows,clients=new Map();
+  for(const r of rows){let x=clients.get(r.client_id);if(!x){x={clientId:r.client_id,clientName:r.client_id.startsWith('https://chatgpt.com/')?'ChatGPT':r.client_id.includes('claude')?'Claude':'MCP Client',subject:r.subject,activeAccess:0,activeRefresh:0,lastIssuedAt:r.created_at};clients.set(r.client_id,x);}const active=!r.revoked_at&&new Date(r.expires_at)>new Date();if(active&&r.token_type==='access')x.activeAccess++;if(active&&r.token_type==='refresh')x.activeRefresh++;}
+  for(const x of clients.values()){const c=await oauthRegisteredClient(x.clientId);if(c)x.clientName=c.clientName;}
+  return[...clients.values()];
+}
+async function mcpAuth(req,reply){
+  const h=String(req.headers.authorization||''),t=h.startsWith('Bearer ')?h.slice(7):'';
+  if(t&&cfg.mcpToken&&safeEqual(t,cfg.mcpToken))return true;
+  if(t){
+    const row=(await q("select * from oauth_tokens where token_hash=? and token_type='access' and revoked_at is null and expires_at>now() limit 1",[hash(t)])).rows[0];
+    if(row&&row.resource===oauthResource()&&oauthScopeHas(row.scope,OAUTH_ACCESS_SCOPE)){req.siteopsAuth={type:'oauth',subject:row.subject,clientId:row.client_id,scope:row.scope};return true;}
+  }
+  oauthChallenge(reply,Boolean(t));reply.code(401).send({error:'unauthorized',oauth:true});return false;
+}
 function page(title,body){return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
@@ -1730,7 +1945,7 @@ async function dashboard(){
       })();
     </script>`);
 }
-async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'1.0.0',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0];if(path==='/health'||path.startsWith('/assets/'))return;if(path==='/mcp'){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
+async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});app.addContentTypeParser('application/x-www-form-urlencoded',{parseAs:'string'},(_req,body,done)=>{try{done(null,Object.fromEntries(new URLSearchParams(body)));}catch(e){done(e);}});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'1.1.0',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},mcpAuth:{oauth:true,legacyBearer:Boolean(cfg.mcpToken),issuer:oauthIssuer()},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0],oauthPublic=path==='/.well-known/oauth-protected-resource'||path==='/.well-known/oauth-authorization-server'||path==='/oauth/register'||path==='/oauth/token'||path==='/oauth/revoke';if(path==='/health'||path.startsWith('/assets/')||oauthPublic)return;if(path==='/mcp'){if(!(await mcpAuth(req,reply)))return reply;}else if(!dashboardAuth(req,reply))return reply;});app.get('/.well-known/oauth-protected-resource',async()=>oauthProtectedResourceMetadata());app.get('/.well-known/oauth-authorization-server',async()=>oauthAuthorizationServerMetadata());app.post('/oauth/register',oauthRegister);app.get('/oauth/authorize',oauthAuthorizePage);app.post('/oauth/authorize',oauthAuthorizeSubmit);app.post('/oauth/token',oauthToken);app.post('/oauth/revoke',oauthRevoke);const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
 app.get('/api/sites/:site',async req=>publicSite(await getSite(req.params.site)));
 app.get('/api/sites/:site/overview',async req=>siteOverview(req.params.site));
 app.post('/api/sites/:site/connection-test',async req=>testStoredConnection(await getSite(req.params.site)));
@@ -1765,6 +1980,9 @@ const siteCreateSchema=z.discriminatedUnion('deploymentMode',[webspaceSiteSchema
 app.post('/api/sites',async(req,reply)=>{const site=await createSite(siteCreateSchema.parse(req.body));return reply.code(201).send({id:site.id,slug:site.slug});});
 app.post('/api/site-connection-test',async req=>testSiteConnection(siteCreateSchema.parse(req.body)));
 app.get('/api/settings',async()=>publicSettings());
+app.get('/api/oauth/connections',async()=>oauthConnections());
+app.post('/api/oauth/revoke-all',async()=>{const r=await q('update oauth_tokens set revoked_at=now() where revoked_at is null');return{ok:true,revoked:r.meta.affectedRows||0};});
+app.post('/api/oauth/revoke-client',async req=>{const clientId=String(req.body?.clientId||'');if(!clientId)throw new Error('clientId is required');const r=await q('update oauth_tokens set revoked_at=now() where client_id=? and revoked_at is null',[clientId]);return{ok:true,revoked:r.meta.affectedRows||0};});
 app.patch('/api/settings',async req=>{const schema=z.object({publicBaseUrl:z.string().url(),githubBackupRepo:z.string().max(255),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().min(1).max(191),backupMaxFileBytes:z.coerce.number().int().min(1048576).max(94371840),defaultBackupIntervalSeconds:z.coerce.number().int().min(900).max(2592000),defaultBackupMaxFiles:z.coerce.number().int().min(100).max(200000),defaultMonitorIntervalSeconds:z.coerce.number().int().min(30).max(86400),defaultMonitorFailureThreshold:z.coerce.number().int().min(1).max(20),defaultSslWarnDays:z.coerce.number().int().min(1).max(365),alertEmail:z.string().max(320),webhook:z.string().max(2000),smtpHost:z.string().max(255),smtpPort:z.coerce.number().int().min(1).max(65535),smtpSecure:z.boolean(),smtpUser:z.string().max(255),smtpPassword:z.string().max(1000).optional(),smtpFrom:z.string().max(500),seoMaxPages:z.coerce.number().int().min(1).max(500),pageSpeedApiKey:z.string().max(1000).optional(),browserRunnerUrl:z.string().max(2000),browserRunnerToken:z.string().max(2000).optional()});return{ok:true,settings:await saveAppSettings(schema.parse(req.body))};});
 app.post('/api/settings/github-test',async req=>{const schema=z.object({githubBackupRepo:z.string().max(255).optional(),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().max(191).optional()}),x=schema.parse(req.body||{}),previous={repo:cfg.githubBackupRepo,token:cfg.githubBackupToken,branch:cfg.backupBranch};try{if(x.githubBackupRepo!==undefined)cfg.githubBackupRepo=x.githubBackupRepo.trim().replace(/^\/+|\/+$/g,'');if(x.githubBackupToken)cfg.githubBackupToken=x.githubBackupToken;if(x.backupBranch)cfg.backupBranch=x.backupBranch.trim();backupRepoChecked=false;backupRepoMeta=null;await ensureBackupRepository();const r=await gh('');return{ok:true,repository:r.full_name,private:r.private,defaultBranch:r.default_branch,branch:cfg.backupBranch};}finally{cfg.githubBackupRepo=previous.repo;cfg.githubBackupToken=previous.token;cfg.backupBranch=previous.branch;backupRepoChecked=false;backupRepoMeta=null;}});
 app.post('/api/settings/alert-test',async()=>{if(!(cfg.webhook||(cfg.alertEmail&&cfg.smtpHost)))throw new Error('Configure an alert email with SMTP or a webhook first');await sendAlert('TEST','SiteOps test notification from '+cfg.publicBaseUrl);return{ok:true};});app.post('/api/settings/pagespeed-test',async req=>{const schema=z.object({pageSpeedApiKey:z.string().max(1000).optional(),url:z.string().url()}),x=schema.parse(req.body||{}),previous=cfg.pageSpeedApiKey;try{
