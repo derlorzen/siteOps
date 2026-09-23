@@ -140,7 +140,7 @@ npm start
 
 Expose it through HTTPS, then configure its URL/token in the SiteOps settings page. The runner rejects unauthenticated executions, arbitrary JavaScript steps and main-frame navigation away from the managed website hostname.
 
-The main SiteOps app stores journey definitions, encrypted test secrets, schedules, results and visual baselines. Failure screenshots are automatically discarded after 30 days.
+The main SiteOps app stores journey definitions, encrypted test secrets, schedules, results and visual baselines. Failure screenshots are automatically discarded after 30 days. After a successful SiteOps `change_apply`, enabled journeys are queued automatically: after 10 seconds for direct webspace changes and after 120 seconds for Hostinger Git deployments.
 
 ## 8. Verification after deployment
 
