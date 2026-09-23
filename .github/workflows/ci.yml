@@ -27,6 +27,8 @@ jobs:
         run: npm install --ignore-scripts
       - name: Syntax check
         run: npm run check
+      - name: Site Intelligence tests
+        run: npm test
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
       - name: Runtime import check
