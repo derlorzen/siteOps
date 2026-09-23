@@ -16,6 +16,14 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 - SEO crawler with robots.txt/sitemap discovery, technical on-page checks, internal-link graph and crawl depth
 - PageRank-style internal page-strength analysis and per-page site-corpus WDF×IDF terms
 - optional Google PageSpeed Insights / Lighthouse mobile and desktop audits
+- Website Quality Health Score with crawl-to-crawl regression comparison
+- duplicate and near-duplicate content detection plus duplicate titles, descriptions and H1s
+- broken internal links, redirecting links and bounded broken image/CSS/JS resource checks
+- hreflang, Open Graph/Twitter metadata, indexability, sitemap coverage and canonical checks
+- static accessibility quick checks and HTTP security-header scoring
+- AI crawler visibility overview for GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, PerplexityBot and Google-Extended
+- combined Quality Overview via REST/MCP and printable client-facing quality/maintenance report
+- cached RDAP domain-expiry monitoring alongside SSL expiry
 - per-page SEO detail views for metadata, headings, image-alt issues, link anchors, WDF×IDF and Lighthouse
 - in-app MCP setup guide for SiteOps, MCP Inspector, ChatGPT and Claude/API
 - Guided website setup with SFTP/FTPS/FTP connection test before saving
@@ -41,7 +49,7 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 
 ## Hosting
 
-SiteOps 0.8 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository.
+SiteOps 0.9 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository.
 
 The application now uses the MySQL database included with Hostinger Cloud Startup. No Supabase or external PostgreSQL service is required.
 
