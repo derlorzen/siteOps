@@ -21,4 +21,6 @@ The service is intentionally separate from the main Hostinger Cloud application.
 - The runner does not accept arbitrary JavaScript/eval steps.
 - Keep the runner behind HTTPS/reverse proxy and do not expose the token in a repository.
 
-Supported actions: `goto`, `click`, `fill`, `press`, `waitFor`, `wait`, `assertText`, `assertVisible`, `assertUrl`, `assertTitle`.
+Supported actions: `goto`, `click`, `fill`, `press`, `select`, `check`, `uncheck`, `hover`, `reload`, `waitFor`, `waitForLoadState`, `wait`, `assertText`, `assertVisible`, `assertValue`, `assertAttribute`, `assertCount`, `assertUrl`, `assertTitle`.
+
+The runner also captures console errors, uncaught page errors, failed network requests and HTTP 4xx/5xx responses. Visual screenshots run with reduced motion and disabled animations to reduce false-positive pixel diffs.
