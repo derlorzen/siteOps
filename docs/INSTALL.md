@@ -1,6 +1,6 @@
 # Deploy SiteOps on Hostinger Cloud Startup
 
-SiteOps 0.4 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
+SiteOps 0.9 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
 
 ## 1. Create the Hostinger MySQL database
 
@@ -91,6 +91,14 @@ DASHBOARD_PASSWORD=...
 GITHUB_BACKUP_REPO=derlorzen/lorzen-site-backups
 GITHUB_BACKUP_TOKEN=...
 BACKUP_REPO_BRANCH=main
+
+SEO_MAX_PAGES=100
+SEO_LINK_CHECK_LIMIT=1000
+SEO_EXTERNAL_LINK_CHECK_LIMIT=300
+SEO_WORKER_INTERVAL_MS=300000
+SEO_REGRESSION_ALERT_DROP=10
+PAGESPEED_API_KEY=
+SEO_USER_AGENT=Lorzen-SiteOps-SEO/0.9
 ```
 
 `PORT` should normally be left to Hostinger.
@@ -131,11 +139,14 @@ Expected response includes:
 ```json
 {
   "status": "ok",
-  "version": "0.4.0",
-  "database": "mysql"
+  "version": "0.9.0",
+  "database": {
+    "engine": "mysql",
+    "ready": true
+  }
 }
 ```
 
-Then sign in to the dashboard and add the first customer site.
+Then sign in to the dashboard and add the first customer site. A complete SEO audit also runs Link Health and Site Intelligence. Per-site recurring audits can be enabled from the site operations page; regressions use the existing alert channels. The PageSpeed API key is optional; all other SEO, DNS, security-header and AI-crawler checks work without it.
 
 If startup fails, check Hostinger Node.js runtime logs and verify the five `DB_*` variables first.
