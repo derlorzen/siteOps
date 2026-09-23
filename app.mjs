@@ -16,7 +16,6 @@ import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
 import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/crypto.mjs';
-import { pathToFileURL } from 'node:url';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -6325,8 +6324,13 @@ async function start() {
 
 export { migrate, q, db, seoExtractDocument };
 
-const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isMainModule) await runCli();
+// Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a
+// wrapper/loader where `import.meta.url` never equals the resolved
+// `process.argv[1]` path, so a "was this file run directly" check silently
+// never fires and the app never calls listen(). Always run on import; tests
+// that need to import app.mjs without booting the server opt out explicitly
+// via SITEOPS_TEST_NO_AUTOSTART instead.
+if (!process.env.SITEOPS_TEST_NO_AUTOSTART) await runCli();
 
 async function runCli() {
   if (process.argv.includes('--check-runtime')) {

@@ -5,11 +5,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as cheerio from 'cheerio';
-import { seoExtractDocument } from '../app.mjs';
 
 process.env.SITEOPS_MASTER_KEY ||= 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 process.env.DASHBOARD_USER ||= 'test';
 process.env.DASHBOARD_PASSWORD ||= 'test-password';
+// app.mjs runs its CLI dispatch (and would try to boot a server) on import
+// unless this is set - must be set before the dynamic import below.
+process.env.SITEOPS_TEST_NO_AUTOSTART = '1';
+const { seoExtractDocument } = await import('../app.mjs');
 
 const longParagraph = (n, word = 'lorem') => Array.from({ length: n }, () => word).join(' ');
 
