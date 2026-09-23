@@ -270,6 +270,75 @@ async function listRemote(siteId,path=''){const site=await getSite(siteId),r=awa
 async function readRemoteText(siteId,path){const site=await getSite(siteId),r=await connectSite(site);try{const b=await r.read(joinRemote(site.remote_root,path));if(b.includes(0))throw new Error('Binary file rejected');return b.toString('utf8');}finally{await r.close();}}
 
 
+function wpHeaderValue(text,label){
+  const escaped=label.replace(/[.*+?^$()|[\]\\{}]/g,'\\$&'),m=String(text||'').match(new RegExp('^[\\\\s/*#@]*'+escaped+':\\\\s*(.+?)\\\\s*$','im'));
+  return m?m[1].trim().replace(/\*\/\s*$/,'').trim():null;
+}
+async function wpReadMaybe(remote,path,maxBytes=131072){
+  try{if(!(await remote.exists(path)))return null;const b=await remote.read(path);return b.subarray(0,maxBytes).toString('utf8');}catch{return null;}
+}
+function versionParts(value){return String(value||'').replace(/^[vV]/,'').split(/[.+_-]/).map(x=>/^\d+$/.test(x)?Number(x):x.toLowerCase());}
+function versionCompare(a,b){
+  const aa=versionParts(a),bb=versionParts(b),n=Math.max(aa.length,bb.length);
+  for(let i=0;i<n;i++){const x=aa[i]??0,y=bb[i]??0;if(x===y)continue;if(typeof x==='number'&&typeof y==='number')return x>y?1:-1;if(typeof x==='number')return 1;if(typeof y==='number')return -1;return String(x)>String(y)?1:-1;}
+  return 0;
+}
+async function wpOrgInfo(kind,slug){
+  const endpoint=kind==='plugin'?'https://api.wordpress.org/plugins/info/1.2/':'https://api.wordpress.org/themes/info/1.2/';
+  const action=kind==='plugin'?'plugin_information':'theme_information',params=new URLSearchParams({action});
+  params.set('request[slug]',slug);params.set('request[fields][sections]','0');params.set('request[fields][description]','0');params.set('request[fields][screenshots]','0');
+  try{
+    const res=await fetch(endpoint+'?'+params.toString(),{signal:AbortSignal.timeout(12000),headers:{'User-Agent':'Lorzen-SiteOps-WordPress/0.9',accept:'application/json'}});
+    if(!res.ok)return null;const data=await res.json();if(!data||data.error)return null;
+    return{version:data.version||null,requires:data.requires||null,requiresPhp:data.requires_php||null,tested:data.tested||null,lastUpdated:data.last_updated||null,homepage:data.homepage||null};
+  }catch{return null;}
+}
+async function mapConcurrent(items,limit,fn){
+  const out=new Array(items.length);let cursor=0;
+  async function worker(){while(cursor<items.length){const i=cursor++;out[i]=await fn(items[i],i);}}
+  await Promise.all(Array.from({length:Math.min(limit,items.length||1)},()=>worker()));return out;
+}
+async function wordpressInventory(siteId){
+  const site=await getSite(siteId);if(site.site_type!=='wordpress')throw new Error('Website type is not WordPress');
+  const remote=await connectSite(site),root=site.remote_root;
+  try{
+    const versionFile=await wpReadMaybe(remote,joinRemote(root,'wp-includes/version.php')),coreVersion=versionFile?.match(/\$wp_version\s*=\s*['"]([^'"]+)['"]/)?.[1]||null;
+    let coreLatest=null;
+    if(coreVersion)try{const u=new URL('https://api.wordpress.org/core/version-check/1.7/');u.searchParams.set('version',coreVersion);u.searchParams.set('php','8.2');u.searchParams.set('locale','de_DE');const res=await fetch(u,{signal:AbortSignal.timeout(12000),headers:{'User-Agent':'Lorzen-SiteOps-WordPress/0.9',accept:'application/json'}});if(res.ok){const data=await res.json();coreLatest=data.offers?.find(x=>x.response==='upgrade')?.current||data.offers?.[0]?.current||coreVersion;}}catch{}
+    const pluginRoot=joinRemote(root,'wp-content/plugins'),pluginEntries=await remote.list(pluginRoot).catch(()=>[]),plugins=[];
+    for(const entry of pluginEntries.slice(0,150)){
+      if(entry.type==='directory'){
+        const files=(await remote.list(joinRemote(pluginRoot,entry.name)).catch(()=>[])).filter(x=>x.type==='file'&&/\.php$/i.test(x.name));
+        files.sort((a,b)=>(a.name===entry.name+'.php'?-1:0)-(b.name===entry.name+'.php'?-1:0));
+        for(const file of files.slice(0,20)){
+          const text=await wpReadMaybe(remote,joinRemote(pluginRoot,entry.name+'/'+file.name),65536),name=wpHeaderValue(text,'Plugin Name');if(!name)continue;
+          plugins.push({slug:entry.name,file:entry.name+'/'+file.name,name,version:wpHeaderValue(text,'Version'),requiresWp:wpHeaderValue(text,'Requires at least'),requiresPhp:wpHeaderValue(text,'Requires PHP'),author:wpHeaderValue(text,'Author')});break;
+        }
+      }else if(entry.type==='file'&&/\.php$/i.test(entry.name)){
+        const text=await wpReadMaybe(remote,joinRemote(pluginRoot,entry.name),65536),name=wpHeaderValue(text,'Plugin Name');if(name)plugins.push({slug:entry.name.replace(/\.php$/i,''),file:entry.name,name,version:wpHeaderValue(text,'Version'),requiresWp:wpHeaderValue(text,'Requires at least'),requiresPhp:wpHeaderValue(text,'Requires PHP'),author:wpHeaderValue(text,'Author')});
+      }
+    }
+    const themeRoot=joinRemote(root,'wp-content/themes'),themeEntries=(await remote.list(themeRoot).catch(()=>[])).filter(x=>x.type==='directory').slice(0,100),themes=[];
+    for(const entry of themeEntries){
+      const text=await wpReadMaybe(remote,joinRemote(themeRoot,entry.name+'/style.css'),65536);if(!text)continue;const name=wpHeaderValue(text,'Theme Name');if(name)themes.push({slug:entry.name,name,version:wpHeaderValue(text,'Version'),template:wpHeaderValue(text,'Template'),requiresWp:wpHeaderValue(text,'Requires at least'),requiresPhp:wpHeaderValue(text,'Requires PHP'),author:wpHeaderValue(text,'Author')});
+    }
+    const muRoot=joinRemote(root,'wp-content/mu-plugins'),muEntries=(await remote.list(muRoot).catch(()=>[])).filter(x=>x.type==='file'&&/\.php$/i.test(x.name)).slice(0,100),muPlugins=[];
+    for(const entry of muEntries){const text=await wpReadMaybe(remote,joinRemote(muRoot,entry.name),65536),name=wpHeaderValue(text,'Plugin Name')||entry.name;if(text)muPlugins.push({file:entry.name,name,version:wpHeaderValue(text,'Version')});}
+    const config=await wpReadMaybe(remote,joinRemote(root,'wp-config.php'),262144),configFlags={};
+    if(config)for(const key of ['WP_DEBUG','WP_DEBUG_LOG','WP_DEBUG_DISPLAY','DISALLOW_FILE_EDIT','DISALLOW_FILE_MODS','AUTOMATIC_UPDATER_DISABLED','WP_AUTO_UPDATE_CORE']){const re=new RegExp("define\\(\\s*['\\\"]"+key+"['\\\"]\\s*,\\s*([^\\)]+)\\)",'i'),m=config.match(re);if(m)configFlags[key]=m[1].trim().replace(/^['"]|['"]$/g,'');}
+    const pluginInfo=await mapConcurrent(plugins,5,p=>wpOrgInfo('plugin',p.slug)),themeInfo=await mapConcurrent(themes,5,t=>wpOrgInfo('theme',t.slug));
+    plugins.forEach((p,i)=>{const info=pluginInfo[i];p.wordpressOrg=info;p.latestVersion=info?.version||null;p.updateAvailable=Boolean(p.version&&info?.version&&versionCompare(info.version,p.version)>0);});
+    themes.forEach((t,i)=>{const info=themeInfo[i];t.wordpressOrg=info;t.latestVersion=info?.version||null;t.updateAvailable=Boolean(t.version&&info?.version&&versionCompare(info.version,t.version)>0);});
+    const updates={core:Boolean(coreVersion&&coreLatest&&versionCompare(coreLatest,coreVersion)>0),plugins:plugins.filter(x=>x.updateAvailable).map(x=>({slug:x.slug,name:x.name,current:x.version,latest:x.latestVersion})),themes:themes.filter(x=>x.updateAvailable).map(x=>({slug:x.slug,name:x.name,current:x.version,latest:x.latestVersion}))};
+    return{site:site.slug,domain:site.domain,scannedAt:new Date().toISOString(),core:{version:coreVersion,latestVersion:coreLatest,updateAvailable:updates.core},plugins,muPlugins,themes,configFlags,updates,summary:{plugins:plugins.length,themes:themes.length,muPlugins:muPlugins.length,updates:(updates.core?1:0)+updates.plugins.length+updates.themes.length,wordpressOrgMatchedPlugins:plugins.filter(x=>x.wordpressOrg).length,wordpressOrgMatchedThemes:themes.filter(x=>x.wordpressOrg).length}};
+  }finally{await remote.close();}
+}
+async function wordpressUpdatePlan(siteId){
+  const inventory=await wordpressInventory(siteId);
+  return{site:inventory.site,domain:inventory.domain,scannedAt:inventory.scannedAt,core:inventory.core,updates:inventory.updates,configFlags:inventory.configFlags,summary:inventory.summary,note:'Read-only plan. SiteOps 0.9 does not auto-apply WordPress updates.'};
+}
+
+
 let backupLock=Promise.resolve();
 function withBackupLock(fn){const next=backupLock.then(fn,fn);backupLock=next.catch(()=>{});return next;}
 function backupRepoPath(path=''){return '/repos/'+cfg.githubBackupRepo+path;}
