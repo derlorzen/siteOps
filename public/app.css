@@ -129,3 +129,20 @@ section+section{margin-top:20px}
   .view-toggle button{flex:1}
   .dashboard-kpis{grid-template-columns:1fr 1fr}
 }
+
+
+/* OAuth */
+.oauth-shell{min-height:100vh;display:grid;place-items:center;padding:32px}
+.oauth-consent{width:min(680px,100%);margin:0}
+.oauth-actions{display:flex;flex-direction:row;gap:10px;max-width:none;padding:0;margin-top:22px;background:transparent}
+.oauth-actions button{flex:1}
+.oauth-connections{display:grid;gap:10px}
+.oauth-connection{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid #edf0f2}
+.oauth-connection:last-child{border-bottom:0}
+.oauth-connection strong,.oauth-connection small{display:block}
+.oauth-connection small{color:#71808a;margin-top:4px;overflow-wrap:anywhere}
+@media(max-width:700px){
+  .oauth-actions{flex-direction:column}
+  .oauth-connection{grid-template-columns:1fr}
+  .oauth-connection button{width:100%}
+}
