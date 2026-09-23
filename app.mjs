@@ -1136,7 +1136,8 @@ function oauthAuthorizationServerMetadata(){return{
   grant_types_supported:['authorization_code','refresh_token'],
   code_challenge_methods_supported:['S256'],
   token_endpoint_auth_methods_supported:['none','client_secret_post','client_secret_basic'],
-  scopes_supported:[OAUTH_ACCESS_SCOPE,OAUTH_OFFLINE_SCOPE]
+  scopes_supported:[OAUTH_ACCESS_SCOPE,OAUTH_OFFLINE_SCOPE],
+  protected_resources:[oauthResource()]
 };}
 function oauthRandomToken(bytes=32){return crypto.randomBytes(bytes).toString('base64url');}
 function oauthPkceChallenge(verifier){return crypto.createHash('sha256').update(String(verifier)).digest('base64url');}
@@ -1251,8 +1252,14 @@ async function oauthAuthorizeSubmit(req,reply){
     return oauthRedirect(reply,x.redirectUri,{code,state:x.state,iss:oauthIssuer()});
   }catch(e){return oauthFail(reply,400,e.oauthError||'invalid_request',String(e.message||e));}
 }
+async function oauthCleanup(){
+  await q('delete from oauth_authorization_codes where expires_at<date_sub(now(),interval 1 day) or (consumed_at is not null and consumed_at<date_sub(now(),interval 1 day))');
+  await q('delete from oauth_tokens where expires_at<date_sub(now(),interval 7 day) or (revoked_at is not null and revoked_at<date_sub(now(),interval 7 day))');
+  await q("delete from oauth_clients where created_at<date_sub(now(),interval 30 day) and not exists (select 1 from oauth_tokens t where t.client_id=oauth_clients.client_id and t.revoked_at is null and t.expires_at>now())");
+}
 async function oauthRegister(req,reply){
   try{
+    await oauthCleanup();
     const b=req.body||{},redirectUris=Array.isArray(b.redirect_uris)?b.redirect_uris.map(String):[];
     if(!redirectUris.length||redirectUris.length>20)return oauthFail(reply,400,'invalid_client_metadata','redirect_uris is required');
     const applicationType=String(b.application_type||'web');if(!redirectUris.every(x=>oauthRedirectAllowed(x,{applicationType})))return oauthFail(reply,400,'invalid_redirect_uri','Only HTTPS redirects and native loopback HTTP redirects are allowed');
@@ -1261,7 +1268,7 @@ async function oauthRegister(req,reply){
     const clientId='siteops_'+oauthRandomToken(24),clientSecret=authMethod==='none'?null:oauthRandomToken(32),now=Math.floor(Date.now()/1000);
     const metadata={...b,redirect_uris:redirectUris,application_type:applicationType,token_endpoint_auth_method:authMethod};
     await q('insert into oauth_clients(id,client_id_hash,client_id,client_name,client_secret_hash,token_endpoint_auth_method,redirect_uris,metadata) values(?,?,?,?,?,?,?,?)',[crypto.randomUUID(),hash(clientId),clientId,String(b.client_name||'MCP Client').slice(0,255),clientSecret?hash(clientSecret):null,authMethod,JSON.stringify(redirectUris),JSON.stringify(metadata)]);
-    const out={client_id:clientId,client_id_issued_at:now,client_name:String(b.client_name||'MCP Client'),redirect_uris:redirectUris,grant_types:Array.isArray(b.grant_types)?b.grant_types:['authorization_code','refresh_token'],response_types:Array.isArray(b.response_types)?b.response_types:['code'],token_endpoint_auth_method:authMethod};
+    const out={...metadata,client_id:clientId,client_id_issued_at:now,client_name:String(b.client_name||'MCP Client').slice(0,255),redirect_uris:redirectUris,grant_types:['authorization_code','refresh_token'],response_types:['code'],token_endpoint_auth_method:authMethod};
     if(clientSecret){out.client_secret=clientSecret;out.client_secret_expires_at=0;}
     return reply.header('Cache-Control','no-store').header('Pragma','no-cache').code(201).send(out);
   }catch(e){return oauthFail(reply,400,'invalid_client_metadata',String(e.message||e));}
@@ -1283,13 +1290,14 @@ async function oauthIssueTokens({clientId,scope,resource,subject}){
 async function oauthToken(req,reply){
   const b=req.body||{},grant=String(b.grant_type||'');
   try{
+    await oauthCleanup();
     if(grant==='authorization_code'){
       const code=String(b.code||''),verifier=String(b.code_verifier||''),redirectUri=String(b.redirect_uri||'');
       if(!code||!verifier)return oauthFail(reply,400,'invalid_request','code and code_verifier are required');
       const row=(await q('select * from oauth_authorization_codes where code_hash=? and consumed_at is null and expires_at>now() limit 1',[hash(code)])).rows[0];
       if(!row)return oauthFail(reply,400,'invalid_grant','Authorization code is invalid or expired');
-      const client=await oauthVerifyTokenClient(req,b,row.client_id);
-      if(client.id!==row.client_id||redirectUri!==row.redirect_uri)return oauthFail(reply,400,'invalid_grant','Client or redirect_uri mismatch');
+      const client=await oauthVerifyTokenClient(req,b,row.client_id),requestedResource=String(b.resource||row.resource);
+      if(client.id!==row.client_id||redirectUri!==row.redirect_uri||requestedResource!==row.resource)return oauthFail(reply,400,'invalid_grant','Client, redirect_uri or resource mismatch');
       if(!safeEqual(oauthPkceChallenge(verifier),row.code_challenge))return oauthFail(reply,400,'invalid_grant','PKCE verification failed');
       const used=await q('update oauth_authorization_codes set consumed_at=now() where id=? and consumed_at is null',[row.id]);if(!used.meta.affectedRows)return oauthFail(reply,400,'invalid_grant','Authorization code already used');
       return reply.header('Cache-Control','no-store').header('Pragma','no-cache').send(await oauthIssueTokens({clientId:row.client_id,scope:row.scope,resource:row.resource,subject:row.subject}));
@@ -1298,7 +1306,7 @@ async function oauthToken(req,reply){
       const token=String(b.refresh_token||'');if(!token)return oauthFail(reply,400,'invalid_request','refresh_token is required');
       const row=(await q("select * from oauth_tokens where token_hash=? and token_type='refresh' and revoked_at is null and expires_at>now() limit 1",[hash(token)])).rows[0];
       if(!row)return oauthFail(reply,400,'invalid_grant','Refresh token is invalid or expired');
-      const client=await oauthVerifyTokenClient(req,b,row.client_id);if(client.id!==row.client_id)return oauthFail(reply,400,'invalid_grant','Client mismatch');
+      const client=await oauthVerifyTokenClient(req,b,row.client_id),requestedResource=String(b.resource||row.resource);if(client.id!==row.client_id||requestedResource!==row.resource)return oauthFail(reply,400,'invalid_grant','Client or resource mismatch');
       const revoked=await q('update oauth_tokens set revoked_at=now() where id=? and revoked_at is null',[row.id]);if(!revoked.meta.affectedRows)return oauthFail(reply,400,'invalid_grant','Refresh token already used');
       return reply.header('Cache-Control','no-store').header('Pragma','no-cache').send(await oauthIssueTokens({clientId:row.client_id,scope:row.scope,resource:row.resource,subject:row.subject}));
     }
