@@ -864,6 +864,32 @@ async function clientReportData(siteId){
   };
 }
 
+async function fleetOverview(){
+  const sites=await listSites();
+  const checks=(await q('select mc.site_id,mc.ok,mc.http_status,mc.response_ms,mc.ssl_days,mc.created_at from monitor_checks mc join (select site_id,max(created_at) created_at from monitor_checks group by site_id) latest on latest.site_id=mc.site_id and latest.created_at=mc.created_at')).rows,checkMap=new Map(checks.map(x=>[x.site_id,x]));
+  const backups=(await q('select b.site_id,b.git_commit,b.file_count,b.created_at from backups b join (select site_id,max(created_at) created_at from backups group by site_id) latest on latest.site_id=b.site_id and latest.created_at=b.created_at')).rows,backupMap=new Map(backups.map(x=>[x.site_id,x]));
+  const seoRuns=(await q("select sr.site_id,sr.summary,sr.finished_at from seo_runs sr join (select site_id,max(finished_at) finished_at from seo_runs where status='completed' group by site_id) latest on latest.site_id=sr.site_id and latest.finished_at=sr.finished_at where sr.status='completed'")).rows,seoMap=new Map(seoRuns.map(x=>[x.site_id,x]));
+  const intelRuns=(await q("select si.site_id,si.overall_score,si.result,si.finished_at from site_intelligence_runs si join (select site_id,max(finished_at) finished_at from site_intelligence_runs where status='completed' group by site_id) latest on latest.site_id=si.site_id and latest.finished_at=si.finished_at where si.status='completed'")).rows,intelMap=new Map(intelRuns.map(x=>[x.site_id,x]));
+  const incidentRows=(await q("select site_id,count(*) open_count from incidents where status='open' group by site_id")).rows,incidentMap=new Map(incidentRows.map(x=>[x.site_id,Number(x.open_count||0)]));
+  const rows=sites.map(site=>{
+    const monitor=checkMap.get(site.id)||null,backup=backupMap.get(site.id)||null,seo=seoMap.get(site.id)||null,intelligence=intelMap.get(site.id)||null;
+    return{
+      id:site.id,slug:site.slug,name:site.name,domain:site.domain,enabled:Boolean(site.enabled),deploymentMode:site.deployment_mode,
+      monitor:monitor?{ok:Boolean(monitor.ok),httpStatus:monitor.http_status,responseMs:monitor.response_ms,sslDays:monitor.ssl_days,checkedAt:monitor.created_at}:null,
+      backup:backup?{createdAt:backup.created_at,commit:backup.git_commit,fileCount:backup.file_count}:null,
+      seo:seo?{healthScore:seo.summary?.healthScore??null,errors:seo.summary?.issues?.error??0,warnings:seo.summary?.issues?.warn??0,brokenLinks:(seo.summary?.linkHealth?.brokenInternal??0)+(seo.summary?.linkHealth?.brokenExternal??0),finishedAt:seo.finished_at}:null,
+      intelligence:intelligence?{overallScore:intelligence.overall_score,security:intelligence.result?.scores?.security??null,aiSearch:intelligence.result?.scores?.aiSearch??null,domain:intelligence.result?.scores?.domain??null,finishedAt:intelligence.finished_at}:null,
+      openIncidents:incidentMap.get(site.id)||0
+    };
+  });
+  const avg=values=>{const n=values.filter(v=>Number.isFinite(Number(v))).map(Number);return n.length?Math.round(n.reduce((a,b)=>a+b,0)/n.length):null;};
+  return{
+    generatedAt:new Date().toISOString(),
+    summary:{sites:rows.length,online:rows.filter(x=>x.monitor?.ok).length,monitorAlerts:rows.filter(x=>x.monitor&&!x.monitor.ok).length,openIncidents:rows.reduce((n,x)=>n+x.openIncidents,0),averageSeoHealth:avg(rows.map(x=>x.seo?.healthScore)),averageIntelligence:avg(rows.map(x=>x.intelligence?.overallScore))},
+    sites:rows
+  };
+}
+
 
 const toolText=value=>({content:[{type:'text',text:typeof value==='string'?value:JSON.stringify(value,null,2)}]});
 function mcpServer(){
@@ -871,6 +897,7 @@ function mcpServer(){
   s.registerTool('sites_list',{description:'List managed websites with deployment and monitor mode. Never returns credentials.',inputSchema:z.object({})},async()=>toolText((await listSites()).map(x=>({id:x.id,slug:x.slug,name:x.name,domain:x.domain,site_type:x.site_type,deployment_mode:x.deployment_mode,protocol:x.deployment_mode==='hostinger_git'?null:x.protocol,monitor_enabled:Boolean(x.monitor_enabled),backup_enabled:Boolean(x.backup_enabled)}))));
   s.registerTool('site_get',{description:'Get redacted SiteOps configuration for one website. Secrets are represented only as configured/not configured.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(publicSite(await getSite(site))));
   s.registerTool('site_overview',{description:'Get the main operational picture for a website in one call: redacted config, deployment, latest monitor state, open incidents and backup state.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await siteOverview(site)));
+  s.registerTool('fleet_overview',{description:'Get the cross-customer fleet view with latest uptime, incidents, backups, SEO health, broken links and Site Intelligence scores.',inputSchema:z.object({})},async()=>toolText(await fleetOverview()));
   s.registerTool('site_status',{description:'Run an immediate detailed health check including HTTP, redirects, DNS, SSL, title/content and optional WordPress REST check.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await checkSiteNow(await getSite(site))));
   s.registerTool('site_update',{description:'Update non-secret site operations settings. Does not alter connection credentials.',inputSchema:z.object({
     site:z.string(),name:z.string().min(1).optional(),domain:z.string().min(1).optional(),enabled:z.boolean().optional(),
@@ -1498,6 +1525,7 @@ async function dashboard(){
 
 
 async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'0.9.0',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0];if(path==='/health'||path.startsWith('/assets/'))return;if(path==='/mcp'){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
+app.get('/api/fleet',async()=>fleetOverview());
 app.get('/api/sites/:site',async req=>publicSite(await getSite(req.params.site)));
 app.get('/api/sites/:site/overview',async req=>siteOverview(req.params.site));
 app.post('/api/sites/:site/connection-test',async req=>testStoredConnection(await getSite(req.params.site)));
