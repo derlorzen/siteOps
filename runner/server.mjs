@@ -45,7 +45,7 @@ app.post('/run',async(req,reply)=>{
   let browser=null,page=null,error=null,screenshot=null,visual=null,lastUrl=null;
   try{
     browser=await chromium.launch({headless:true,args:['--disable-dev-shm-usage']});
-    const context=await browser.newContext({viewportSize:viewport,ignoreHTTPSErrors:false});
+    const context=await browser.newContext({viewportSize:viewport,ignoreHTTPSErrors:false,reducedMotion:'reduce',colorScheme:'light'});
     page=await context.newPage();page.setDefaultTimeout(timeoutMs);const baseHost=hostKey(new URL(baseUrl).hostname);
     await context.route('**/*',async route=>{const req=route.request();if(req.isNavigationRequest()&&req.frame()===page.mainFrame()){try{const h=hostKey(new URL(req.url()).hostname);if(h!==baseHost)return route.abort('blockedbyclient');}catch{return route.abort('blockedbyclient');}}return route.continue();});
     page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text().slice(0,1000));});
@@ -58,11 +58,11 @@ app.post('/run',async(req,reply)=>{
       catch(e){stepResults.push({index:i,action:step.action,selector:step.selector||null,ok:false,error:String(e.message||e),durationMs:0});throw new Error('Step '+(i+1)+' ('+step.action+') failed: '+String(e.message||e));}
     }
     await page.waitForTimeout(250);
-    screenshot=await page.screenshot({type:'png',fullPage:Boolean(body.fullPage)});
+    screenshot=await page.screenshot({type:'png',fullPage:Boolean(body.fullPage),animations:'disabled'});
     if(body.baselineBase64){try{visual=comparePng(screenshot,Buffer.from(body.baselineBase64,'base64'));}catch(e){visual={mismatch:1,error:'Baseline comparison failed: '+String(e.message||e)};}}
     const threshold=Math.max(0,Math.min(1,Number(body.visualThreshold??.01)));
     if(body.visualAssert&&visual&&visual.mismatch>threshold)throw new Error('Visual regression '+(visual.mismatch*100).toFixed(2)+'% exceeds '+(threshold*100).toFixed(2)+'%');
-  }catch(e){error=String(e.message||e);if(page&&!screenshot){try{screenshot=await page.screenshot({type:'png',fullPage:Boolean(body.fullPage)});}catch{}}}
+  }catch(e){error=String(e.message||e);if(page&&!screenshot){try{screenshot=await page.screenshot({type:'png',fullPage:Boolean(body.fullPage),animations:'disabled'});}catch{}}}
   finally{if(page){try{lastUrl=page.url();}catch{}}if(browser)await browser.close().catch(()=>{});}
   const ok=!error;
   return{ok,error,durationMs:Date.now()-started,finalUrl:lastUrl,steps:stepResults,consoleErrors:consoleErrors.slice(0,50),pageErrors:pageErrors.slice(0,50),failedRequests:failedRequests.slice(0,100),visual,screenshotHash:screenshot?crypto.createHash('sha256').update(screenshot).digest('hex'):null,screenshotBase64:screenshot&&((body.captureScreenshot)||!ok)?screenshot.toString('base64'):null};
