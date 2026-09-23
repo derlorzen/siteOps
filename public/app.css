@@ -69,3 +69,13 @@ section+section{margin-top:20px}
 
 .setup-steps{counter-reset:setup;display:grid;gap:10px}.setup-steps li{position:relative;padding:12px 14px 12px 46px;border:1px solid #e4e9ec;border-radius:10px;background:#fbfcfd}.setup-steps li:before{counter-increment:setup;content:counter(setup);position:absolute;left:12px;top:11px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#1489a8;color:#fff;font-size:12px;font-weight:850}.setup-steps li span{display:block;color:#60727e;margin-top:3px;line-height:1.45}.codeblock{background:#15242d;color:#eef5f7;border-radius:10px;padding:16px;overflow:auto;white-space:pre;font-size:13px}.codeblock code{background:transparent;color:inherit;padding:0}.mcp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 @media(max-width:800px){.mcp-metrics{grid-template-columns:1fr 1fr}}
+
+
+/* SiteOps 0.9 quality/client report */
+@media print{
+  .topnav,.backlink,header .actions button{display:none!important}
+  body{background:#fff!important}
+  main{max-width:none!important;padding:0!important}
+  section,.metrics{break-inside:avoid;box-shadow:none!important}
+  a{color:inherit;text-decoration:none}
+}
