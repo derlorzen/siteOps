@@ -1028,9 +1028,10 @@ function mcpInfoPage(){
   const base=String(cfg.publicBaseUrl||'https://siteops.lorzen.cloud').replace(/\/$/,'');
   const endpoint=base+'/mcp',health=base+'/health';
   const groups=[
-    ['Kontext','sites_list, site_get, site_overview, deployment_info, settings_get'],
+    ['Kontext & Fleet','sites_list, site_get, site_overview, fleet_overview, deployment_info, settings_get'],
     ['Monitoring','site_status, monitor_history, incidents_list, incident_get'],
     ['SEO & Intelligence','seo_start, seo_run_status, seo_latest, seo_page, seo_graph, seo_issues, seo_recommendations, seo_compare, link_health, site_intelligence, site_intelligence_latest'],
+    ['WordPress','wordpress_inventory, wordpress_update_plan'],
     ['Konfiguration','site_update, site_connection_test, site_connection_update'],
     ['Dateien','files_list, files_find, text_search, file_read'],
     ['Änderungen','change_preview, change_apply, history_list, history_diff, rollback_preview'],
@@ -1465,7 +1466,7 @@ async function siteOperationsPage(slug){
   const historyRows=hist.map(h=>`<tr><td>${new Date(h.created_at).toLocaleString('de-DE')}</td><td>${esc(h.description)}</td><td>${esc(h.actor)}</td><td><span class="pill">${esc(h.status)}</span></td><td><button class="ghost" onclick="rollback('${h.id}')">Rollback</button></td></tr>`).join('')||'<tr><td colspan="5">Noch keine Änderungen.</td></tr>';
   return page(site.name,`
     <a class="backlink" href="/">← Übersicht</a>
-    <header><div><span class="eyebrow">${isGit?'HOSTINGER GIT':esc(site.protocol.toUpperCase())} · ${site.enabled?'AKTIV':'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit?esc(site.source_repository+' @ '+(site.source_branch||'main')):esc(site.remote_root)}</p></div><div class="actions"><a class="button ghost" href="/sites/${esc(site.slug)}/seo">SEO Suite</a><a class="button ghost" href="/sites/${esc(site.slug)}/intelligence">Intelligence</a><a class="button ghost" href="/sites/${esc(site.slug)}/report">Report</a><button class="ghost" id="checkNow">Jetzt prüfen</button><button id="backupNow">Backup jetzt</button></div></header>
+    <header><div><span class="eyebrow">${isGit?'HOSTINGER GIT':esc(site.protocol.toUpperCase())} · ${site.enabled?'AKTIV':'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit?esc(site.source_repository+' @ '+(site.source_branch||'main')):esc(site.remote_root)}</p></div><div class="actions"><a class="button ghost" href="/sites/${esc(site.slug)}/seo">SEO Suite</a><a class="button ghost" href="/sites/${esc(site.slug)}/intelligence">Intelligence</a>${site.site_type==='wordpress'?'<a class="button ghost" href="/sites/'+esc(site.slug)+'/wordpress">WordPress</a>':''}<a class="button ghost" href="/sites/${esc(site.slug)}/report">Report</a><button class="ghost" id="checkNow">Jetzt prüfen</button><button id="backupNow">Backup jetzt</button></div></header>
     ${openIncidents.length?`<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span>${esc(openIncidents[0].title)} · seit ${new Date(openIncidents[0].created_at).toLocaleString('de-DE')}</span></div>`:''}
     ${backupState?.last_error?`<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span></div>`:''}
     <div class="metrics big ops-metrics"><span>${uptime}%<em>Uptime letzte ${checks.length} Checks</em></span><span>${latest?.response_ms??'–'} ms<em>Response</em></span><span>${latest?.ssl_days??'–'} d<em>SSL</em></span><span>${latest?.http_status??'–'}<em>HTTP</em></span><span>${backups[0]?.created_at?new Date(backups[0].created_at).toLocaleString('de-DE'):'–'}<em>Letztes Backup</em></span></div>
