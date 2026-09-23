@@ -27,8 +27,15 @@ jobs:
         run: npm install --ignore-scripts
       - name: Syntax check
         run: npm run check
+      - name: Install browser runner dependencies
+        working-directory: runner
+        run: npm install --ignore-scripts
       - name: Browser runner syntax check
-        run: node --check runner/server.mjs
+        working-directory: runner
+        run: npm run check
+      - name: Browser runner import check
+        working-directory: runner
+        run: node -e "Promise.all([import('fastify'),import('pixelmatch'),import('pngjs'),import('playwright')]).then(()=>console.log('Runner imports OK'))"
       - name: Runtime import check
         env:
           SITEOPS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
