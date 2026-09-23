@@ -146,3 +146,25 @@ section+section{margin-top:20px}
   .oauth-connection{grid-template-columns:1fr}
   .oauth-connection button{width:100%}
 }
+
+
+/* Runner guide */
+.runner-guide{margin-top:20px;border:1px solid #dce5e9;border-radius:12px;background:#f8fafb;overflow:hidden}
+.runner-guide>summary{cursor:pointer;display:flex;justify-content:space-between;gap:16px;align-items:center;padding:16px 18px;list-style:none}
+.runner-guide>summary::-webkit-details-marker{display:none}
+.runner-guide>summary strong,.runner-guide>summary small{display:block}
+.runner-guide>summary small{color:#71808a;margin-top:4px;font-weight:500}
+.summary-hint{font-size:12px;font-weight:800;color:#1489a8;white-space:nowrap}
+.runner-guide-body{padding:0 18px 18px}
+.runner-steps{margin-top:8px}
+.runner-steps li{padding:14px 0}
+.runner-steps li>span{display:block;color:#60727e;margin-top:4px;line-height:1.5}
+.runner-note{font-size:13px;color:#52707d;margin:8px 0 0}
+.runner-guide .codeblock{margin:9px 0 0}
+.runner-guide-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}
+.runner-guide-grid>div{border:1px solid #e2e8eb;border-radius:10px;background:#fff;padding:14px}
+.runner-guide-grid .codeblock{margin-top:8px}
+@media(max-width:700px){
+  .runner-guide>summary{align-items:flex-start}
+  .runner-guide-grid{grid-template-columns:1fr}
+}
