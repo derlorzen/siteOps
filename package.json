@@ -10,7 +10,8 @@
     "start": "node app.mjs",
     "migrate": "node app.mjs --migrate",
     "check": "node --check app.mjs",
-    "check:runtime": "node app.mjs --check-runtime"
+    "check:runtime": "node app.mjs --check-runtime",
+    "test": "node --test"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "^2.0.0",
