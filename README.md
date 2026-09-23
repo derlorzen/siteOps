@@ -5,6 +5,7 @@ Self-hosted website operations for monitoring, backups, SEO/quality analysis, sa
 SiteOps is intended for people or agencies that manage multiple customer websites across classic SFTP/FTPS hosting and Git-based deployments. It provides one operational dashboard while keeping the live website or deployment repository as the source of truth.
 
 > **Current version:** 1.1  
+> **License:** GNU AGPL-3.0-only  
 > **Runtime:** Node.js 22+ / Fastify / MySQL  
 > **Browser automation:** optional separate Playwright/Chromium runner  
 > **MCP:** Streamable HTTP with built-in OAuth 2.1 for ChatGPT and Claude
@@ -1044,6 +1045,8 @@ The example configuration in this repository intentionally contains placeholders
 
 # License
 
-No license is included in this repository yet.
+SiteOps is licensed under the **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**. See [LICENSE](LICENSE).
 
-A public GitHub repository makes the source visible, but it does **not** automatically grant third parties permission to copy, modify or redistribute it. If you want SiteOps to be open source, add an explicit license such as MIT, Apache-2.0 or another license that matches your intended use before announcing the project as open source.
+You may use, study, modify and redistribute SiteOps under the terms of the AGPL. If you modify SiteOps and make that modified version available to users over a network, the AGPL requires that those users are offered the corresponding source code of the version they are using under the same license.
+
+This makes SiteOps suitable for self-hosting and commercial services while preserving source availability for network-deployed modifications.
