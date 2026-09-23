@@ -1,6 +1,8 @@
-# Deploy SiteOps on Hostinger Cloud Startup
+# Deploy SiteOps
 
-SiteOps 1.1 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
+SiteOps 1.1 is a Node.js/Fastify application backed by MySQL. It can run on any Node.js 22+ hosting environment with outbound HTTPS access and a MySQL database. Hostinger Cloud is one supported deployment target, but it is not required.
+
+The main application does not require Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage. The optional Chromium Browser Runner is a separate service and is documented below.
 
 ## 1. Create the Hostinger MySQL database
 
@@ -35,7 +37,7 @@ Do not configure both unless they point to the same database. If `DATABASE_URL` 
 Create a separate **private** GitHub repository, recommended name:
 
 ```
-derlorzen/lorzen-site-backups
+your-org/siteops-backups
 ```
 
 It may be empty. SiteOps can create the configured branch on the first snapshot.
@@ -61,7 +63,7 @@ All backup Git operations use GitHub's HTTPS API. No deploy key, SSH key file or
 
 1. In hPanel open **Websites → Add Website → Deploy Web App**.
 2. Choose **Import Git Repository**.
-3. Select `derlorzen/siteOps`.
+3. Select `YOUR-ORG/siteOps`.
 4. Choose Node.js 22.
 5. Hostinger should detect Fastify. If it is shown as **Other**, use `app.mjs` as the entry file.
 6. There is no separate build step.
@@ -75,7 +77,7 @@ Hostinger supports GitHub deployment for Node.js applications and can rebuild th
 
 ```
 HOST=0.0.0.0
-PUBLIC_BASE_URL=https://siteops.lorzen.cloud
+PUBLIC_BASE_URL=https://siteops.example.com
 
 DB_HOST=localhost
 DB_PORT=3306
@@ -84,7 +86,7 @@ DB_PASSWORD=...
 DB_NAME=...
 
 SITEOPS_MASTER_KEY=...
-DASHBOARD_USER=kai
+DASHBOARD_USER=admin
 DASHBOARD_PASSWORD=...
 
 # Optional compatibility token for older MCP clients:
@@ -95,7 +97,7 @@ OAUTH_ACCESS_TOKEN_TTL_SECONDS=3600
 OAUTH_REFRESH_TOKEN_TTL_SECONDS=2592000
 OAUTH_CODE_TTL_SECONDS=600
 
-GITHUB_BACKUP_REPO=derlorzen/lorzen-site-backups
+GITHUB_BACKUP_REPO=your-org/siteops-backups
 GITHUB_BACKUP_TOKEN=...
 BACKUP_REPO_BRANCH=main
 ```
@@ -154,7 +156,7 @@ The main SiteOps app stores journey definitions, encrypted test secrets, schedul
 Open:
 
 ```
-https://siteops.lorzen.cloud/health
+https://siteops.example.com/health
 ```
 
 Expected response includes:
