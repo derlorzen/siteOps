@@ -20,7 +20,7 @@ const cfg = {
   port: Number(env('PORT','3000')), host: env('HOST','0.0.0.0'), databaseUrl: process.env.DATABASE_URL || '',
   dbHost: env('DB_HOST','localhost'), dbPort: Number(env('DB_PORT','3306')), dbUser: process.env.DB_USER || '', dbPassword: process.env.DB_PASSWORD || '', dbName: process.env.DB_NAME || '',
   masterKey: process.env.SITEOPS_MASTER_KEY || '', mcpToken: process.env.MCP_API_TOKEN || '', dashboardUser: process.env.DASHBOARD_USER || '',
-  dashboardPassword: process.env.DASHBOARD_PASSWORD || '', publicBaseUrl: process.env.PUBLIC_BASE_URL || 'https://siteops.lorzen.cloud',
+  dashboardPassword: process.env.DASHBOARD_PASSWORD || '', publicBaseUrl: process.env.PUBLIC_BASE_URL || 'http://localhost:3000',
   githubBackupRepo: process.env.GITHUB_BACKUP_REPO || '', githubBackupToken: process.env.GITHUB_BACKUP_TOKEN || '', backupBranch: env('BACKUP_REPO_BRANCH','main'),
   backupMaxFileBytes: Number(env('BACKUP_MAX_FILE_BYTES','52428800')),
   defaultBackupIntervalSeconds: Number(env('DEFAULT_BACKUP_INTERVAL_SECONDS','86400')), defaultBackupMaxFiles: Number(env('DEFAULT_BACKUP_MAX_FILES','10000')),
@@ -1413,7 +1413,7 @@ function settingsPage(){
       <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Backup-Ziel</span><h2>GitHub</h2></div><span class="pill ${s.githubBackupTokenConfigured&&s.githubBackupRepo?'ok':''}">${s.githubBackupTokenConfigured&&s.githubBackupRepo?'KONFIGURIERT':'OFFEN'}</span></div>
         <p class="lead">SiteOps legt Versionsstände aller verwalteten Websites in einem separaten privaten GitHub-Repository ab. Der Token wird verschlüsselt in MySQL gespeichert.</p>
         <div class="formgrid">
-          <label>Backup-Repository <small>Format: Besitzer/Repository, z. B. derlorzen/lorzen-site-backups</small><input name="githubBackupRepo" value="${esc(s.githubBackupRepo)}" placeholder="derlorzen/lorzen-site-backups"></label>
+          <label>Backup-Repository <small>Format: Besitzer/Repository, z. B. your-org/siteops-backups</small><input name="githubBackupRepo" value="${esc(s.githubBackupRepo)}" placeholder="your-org/siteops-backups"></label>
           <label>Branch <small>Normalerweise <code>main</code>.</small><input name="backupBranch" value="${esc(s.backupBranch)}"></label>
           <label class="span2">GitHub Fine-grained PAT <small>${s.githubBackupTokenConfigured?'Ein Token ist gespeichert. Leer lassen, um ihn unverändert zu behalten.':'Benötigt Contents: Read and write sowie Metadata: Read für genau das Backup-Repository.'}</small><input name="githubBackupToken" type="password" autocomplete="new-password" placeholder="${s.githubBackupTokenConfigured?'Token bereits gespeichert':'github_pat_…'}"></label>
           <label>Max. Dateigröße <small>Einzeldateien oberhalb dieses Limits werden nicht gesichert.</small><div class="inputsuffix"><input name="backupMaxFileMiB" type="number" min="1" max="90" value="${backupMiB}"><span>MiB</span></div></label>
@@ -1436,13 +1436,13 @@ function settingsPage(){
       <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Alarme</span><h2>Benachrichtigungen</h2></div></div>
         <p class="lead">E-Mail und Webhook können parallel genutzt werden. Das SMTP-Passwort wird wie der GitHub-Token verschlüsselt gespeichert.</p>
         <div class="formgrid">
-          <label>Alarm-E-Mail <small>Empfänger für DOWN-, RECOVERED- und Backup-Fehler.</small><input name="alertEmail" type="email" value="${esc(s.alertEmail)}" placeholder="kai@example.de"></label>
+          <label>Alarm-E-Mail <small>Empfänger für DOWN-, RECOVERED- und Backup-Fehler.</small><input name="alertEmail" type="email" value="${esc(s.alertEmail)}" placeholder="alerts@example.com"></label>
           <label>Webhook-URL <small>Optional, z. B. für eigene Automationen.</small><input name="webhook" type="url" value="${esc(s.webhook)}" placeholder="https://…"></label>
           <label>SMTP-Host<input name="smtpHost" value="${esc(s.smtpHost)}" placeholder="smtp.example.de"></label>
           <label>SMTP-Port<input name="smtpPort" type="number" min="1" max="65535" value="${s.smtpPort}"></label>
           <label>SMTP-Benutzer<input name="smtpUser" value="${esc(s.smtpUser)}"></label>
           <label>SMTP-Passwort <small>${s.smtpPasswordConfigured?'Passwort gespeichert – leer lassen für unverändert.':'Noch kein Passwort gespeichert.'}</small><input name="smtpPassword" type="password" autocomplete="new-password" placeholder="${s.smtpPasswordConfigured?'Passwort bereits gespeichert':'Passwort'}"></label>
-          <label>Absender<input name="smtpFrom" value="${esc(s.smtpFrom)}" placeholder="SiteOps <siteops@lorzen.cloud>"></label>
+          <label>Absender<input name="smtpFrom" value="${esc(s.smtpFrom)}" placeholder="SiteOps <siteops@example.com>"></label>
           <label class="check standalone"><input name="smtpSecure" type="checkbox" ${s.smtpSecure?'checked':''}> SMTP direkt mit TLS verbinden</label>
         </div>
         <div class="buttonrow"><button type="button" class="ghost" id="testAlert">Testbenachrichtigung senden</button><span class="inline-status" id="alertStatus"></span></div>
@@ -1461,10 +1461,50 @@ function settingsPage(){
       <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Browser / Playwright</span><h2>Synthetic Runner</h2></div><span class="pill ${s.browserRunnerConfigured?'ok':''}">${s.browserRunnerConfigured?'VERBUNDEN':'OPTIONAL'}</span></div>
         <p class="lead">Der Browser Runner führt echte Chromium-Journeys, Formular-/Checkout-Checks und visuelle Regressionstests aus. Er läuft separat auf einem Host, der Chromium starten kann.</p>
         <div class="formgrid">
-          <label class="span2">Browser Runner URL <small>Beispiel: <code>https://browser.siteops.lorzen.cloud</code></small><input name="browserRunnerUrl" type="url" value="${esc(s.browserRunnerUrl||'')}" placeholder="https://browser.example.de"></label>
+          <label class="span2">Browser Runner URL <small>Beispiel: <code>https://browser.example.com</code></small><input name="browserRunnerUrl" type="url" value="${esc(s.browserRunnerUrl||'')}" placeholder="https://browser.example.de"></label>
           <label class="span2">Runner Bearer Token <small>${s.browserRunnerTokenConfigured?'Token gespeichert – leer lassen für unverändert.':'Muss dem BROWSER_RUNNER_TOKEN des Runner-Dienstes entsprechen.'}</small><input name="browserRunnerToken" type="password" autocomplete="new-password" placeholder="${s.browserRunnerTokenConfigured?'Token bereits gespeichert':'langes zufälliges Token'}"></label>
         </div>
         <div class="buttonrow"><button type="button" class="ghost" id="testBrowserRunner">Browser Runner testen</button><span class="inline-status" id="browserRunnerStatus"></span></div>
+
+        <details class="runner-guide" ${s.browserRunnerConfigured?'':'open'}>
+          <summary><span><strong>Browser Runner auf einem VPS einrichten</strong><small>Node.js + systemd · kein Docker erforderlich</small></span><span class="summary-hint">Anleitung öffnen</span></summary>
+          <div class="runner-guide-body">
+            <div class="notice"><strong>Architektur</strong><span>Die Hauptanwendung bleibt auf deinem normalen Node.js-Hosting. Nur Playwright/Chromium läuft als separater Dienst auf einem Linux-VPS. SiteOps verbindet sich anschließend per HTTPS und Bearer-Token mit diesem Runner.</span></div>
+            <ol class="setup-steps runner-steps">
+              <li><strong>Voraussetzungen prüfen</strong><span>Empfohlen: Ubuntu/Debian, Node.js 22+, npm, Git sowie sudo/root.</span>
+                <pre class="codeblock"><code>node -v
+npm -v
+git --version</code></pre>
+              </li>
+              <li><strong>SiteOps auf dem VPS auschecken</strong><span>Das Repository wird nur als Quelle für den Runner benötigt.</span>
+                <pre class="codeblock"><code>cd /opt
+sudo git clone https://github.com/YOUR-ORG/siteOps.git siteops-source
+cd /opt/siteops-source</code></pre>
+              </li>
+              <li><strong>Runner automatisch installieren</strong><span>Das Install-Skript legt einen eingeschränkten Systemnutzer an, installiert Chromium/Playwright, erzeugt ein Token und aktiviert den systemd-Dienst.</span>
+                <pre class="codeblock"><code>sudo bash runner/install-systemd.sh</code></pre>
+                <p class="runner-note">Den ausgegebenen <strong>BROWSER_RUNNER_TOKEN</strong> sicher kopieren. Er wird später in SiteOps eingetragen.</p>
+              </li>
+              <li><strong>Lokalen Dienst prüfen</strong><span>Der Runner lauscht standardmäßig nur auf <code>127.0.0.1:3200</code>.</span>
+                <pre class="codeblock"><code>sudo systemctl status siteops-browser-runner
+curl http://127.0.0.1:3200/health</code></pre>
+              </li>
+              <li><strong>Eigene HTTPS-Subdomain davor schalten</strong><span>Zum Beispiel <code>browser.example.com</code> → <code>127.0.0.1:3200</code>. Im Repository liegt <code>runner/nginx-siteops-browser-runner.conf.example</code> als Vorlage. Der Port 3200 sollte nicht direkt öffentlich freigegeben werden.</span></li>
+              <li><strong>SiteOps verbinden</strong><span>Oben bei <em>Browser Runner URL</em> die öffentliche HTTPS-Adresse und bei <em>Runner Bearer Token</em> das erzeugte Token eintragen. Einstellungen speichern und danach <strong>Browser Runner testen</strong>.</span></li>
+              <li><strong>Ersten Browser-Test anlegen</strong><span>Bei einer Website auf <em>Browser Tests</em> gehen, Journey definieren und zunächst manuell ausführen. Danach kann SiteOps die Journey geplant sowie automatisch nach Änderungen starten.</span></li>
+            </ol>
+            <div class="runner-guide-grid">
+              <div><strong>Logs</strong><pre class="codeblock"><code>sudo journalctl -u siteops-browser-runner -f</code></pre></div>
+              <div><strong>Neustart</strong><pre class="codeblock"><code>sudo systemctl restart siteops-browser-runner</code></pre></div>
+              <div><strong>Token ändern</strong><pre class="codeblock"><code>sudo nano /etc/siteops-browser-runner.env
+sudo systemctl restart siteops-browser-runner</code></pre></div>
+              <div><strong>Update</strong><pre class="codeblock"><code>cd /opt/siteops-source
+sudo git pull
+sudo bash runner/install-systemd.sh</code></pre></div>
+            </div>
+            <div class="notice"><strong>Sicherheitsregel</strong><span>Chromium läuft nicht in der SiteOps-Hauptanwendung. Der Runner sollte lokal gebunden bleiben, nur über HTTPS veröffentlicht werden und ein langes zufälliges Token verwenden.</span></div>
+          </div>
+        </details>
       </section>
 
       <div class="sticky-save"><button type="submit">Einstellungen speichern</button><span id="configStatus"></span></div>
@@ -1547,7 +1587,7 @@ function setupPage(){
         <div class="sectionhead"><div><span class="eyebrow">2 · Hostinger Git</span><h2>GitHub als Source of Truth</h2></div><span class="pill">AUTO-DEPLOY</span></div>
         <div class="notice"><strong>Kein SFTP-Schreiben bei Git-Deploy.</strong><span>SiteOps committed Änderungen gesammelt in genau einem Commit auf den Deployment-Branch. Hostinger übernimmt danach den automatischen Build/Deploy. In hPanel muss das Repository bereits mit der Website verbunden und Auto-Deployment aktiviert sein.</span></div>
         <div class="formgrid">
-          <label class="span2">GitHub-Repository <small>Format Besitzer/Repository, z. B. <code>derlorzen/lorzen.de</code>.</small><input name="sourceRepository" placeholder="derlorzen/projekt"></label>
+          <label class="span2">GitHub-Repository <small>Format Besitzer/Repository, z. B. <code>your-org/customer-website</code>.</small><input name="sourceRepository" placeholder="your-org/project"></label>
           <label>Deployment-Branch <small>Der Branch, den Hostinger deployed. Normalerweise <code>main</code>.</small><input name="sourceBranch" value="main"></label>
           <label>Repository-Unterordner <small>Optional. Leer lassen, wenn die Website im Repository-Root liegt.</small><input name="sourceRoot" placeholder="z. B. website"></label>
           <label class="span2">GitHub Fine-grained PAT für dieses Quell-Repo <small>Benötigt <strong>Contents: Read and write</strong>. Dieser Token ist getrennt vom Backup-Token und wird verschlüsselt gespeichert.</small><input name="gitToken" type="password" autocomplete="new-password" placeholder="github_pat_…"></label>
