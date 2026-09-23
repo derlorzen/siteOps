@@ -352,7 +352,7 @@ async function gh(path,{method='GET',body,allow404=false,allow409=false}={}){
       accept:'application/vnd.github+json',
       authorization:'Bearer '+cfg.githubBackupToken,
       'x-github-api-version':'2022-11-28',
-      'user-agent':'Lorzen-SiteOps/0.8.2'
+      'user-agent':'Lorzen-SiteOps/0.9.0'
     },
     body:body===undefined?undefined:JSON.stringify(body),
     signal:AbortSignal.timeout(30000)
@@ -523,7 +523,7 @@ async function sslDays(url){if(!url.startsWith('https:'))return null;const u=new
 async function fetchWithRedirectTrace(url,timeoutMs){
   const redirects=[];let current=url,response=null;
   for(let i=0;i<8;i++){
-    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/0.8.2'}});
+    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/0.9.0'}});
     if(response.status>=300&&response.status<400){
       const location=response.headers.get('location');if(!location)break;
       const next=new URL(location,current).toString();redirects.push({status:response.status,from:current,to:next});current=next;continue;
@@ -545,7 +545,7 @@ async function checkSiteNow(site){
     }
     if(!error&&site.monitor_check_wordpress){
       try{
-        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.8.2'}});
+        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.9.0'}});
         wp={ok:wpRes.ok,status:wpRes.status};
       }catch(e){wp={ok:false,error:String(e.message||e)};}
     }
