@@ -651,8 +651,8 @@ async function runSyntheticTest(testId,{saveBaseline=false,actor='manual'}={}){
   await q('insert into synthetic_runs(id,test_id,site_id,status,duration_ms,error,result,visual_mismatch,screenshot_image) values(?,?,?,?,?,?,?,?,?)',[runId,t.id,site.id,status,result.durationMs||null,result.error||null,JSON.stringify({...stored,actor,baselineSaved:Boolean(saveBaseline)}),result.visual?.mismatch??null,screenshot]);
   await q('update synthetic_tests set last_run_at=now() where id=?',[t.id]);
   await q('update synthetic_runs set screenshot_image=null where test_id=? and created_at<date_sub(now(),interval 30 day)',[t.id]);
-  if(status==='failed'&&previous?.status!=='failed')await sendAlert('SYNTHETIC FAILED: '+site.domain+' · '+t.name,result.error||'Browser journey failed');
-  if(status==='passed'&&previous?.status==='failed')await sendAlert('SYNTHETIC RECOVERED: '+site.domain+' · '+t.name,'Browser journey is healthy again.');
+  if(actor==='scheduler'&&status==='failed'&&previous?.status!=='failed')await sendAlert('SYNTHETIC FAILED: '+site.domain+' · '+t.name,result.error||'Browser journey failed');
+  if(actor==='scheduler'&&status==='passed'&&previous?.status==='failed')await sendAlert('SYNTHETIC RECOVERED: '+site.domain+' · '+t.name,'Browser journey is healthy again.');
   return syntheticRunGet(runId);
 }
 async function syntheticStatus(siteId){
@@ -710,6 +710,34 @@ Letzte Ereignisse:
 ${JSON.stringify((incident.events||[]).slice(-8),null,2)}
 
 Diagnostiziere, ob die Ursache im Deployment/Code, Redirect/DNS/SSL, WordPress oder in einer externen Abhängigkeit liegt. Wenn eine Codeänderung sinnvoll ist, erzeuge einen change_preview; wenn nicht, nenne die konkrete operative Maßnahme.`};
+  }
+  if(kind==='monitor'){
+    const site=await getSite(siteRef),check=(await q('select id,ok,http_status,response_ms,ssl_days,error,details,created_at from monitor_checks where site_id=? order by created_at desc limit 1',[site.id])).rows[0];
+    if(!check)throw new Error('No monitor check available');
+    return{title:'Fix Monitoring · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Monitoring
+Letzter Check: ${check.created_at}
+Status: ${check.ok?'OK':'FEHLER'}
+HTTP: ${check.http_status??'unbekannt'}
+Response: ${check.response_ms??'unbekannt'} ms
+SSL-Restlaufzeit: ${check.ssl_days??'unbekannt'} Tage
+Fehler: ${check.error||'(kein allgemeiner Fehlertext)'}
+Diagnose:
+${JSON.stringify(check.details||{},null,2)}
+
+Prüfe zuerst mit site_status, ob der Fehler noch besteht. Analysiere danach Redirects, erwarteten Inhalt/Titel, DNS/SSL, WordPress REST sowie relevante Quelldateien. Wenn die Ursache in Code oder Konfiguration der Website liegt, erzeuge einen change_preview. Wenn DNS, Zertifikat, Hosting oder eine externe Abhängigkeit die Ursache ist, nenne stattdessen die konkrete operative Maßnahme. Wende nichts ungefragt an.`};
+  }
+  if(kind==='backup'){
+    const site=await getSite(siteRef),status=await backupStatus(site.id);
+    return{title:'Fix Backup · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Backup
+Backup aktiviert: ${status.enabled}
+Intervall: ${status.intervalSeconds} Sekunden
+Max. Dateien: ${status.maxFiles}
+Letztes Backup:
+${JSON.stringify(status.last||{},null,2)}
+Backup-State:
+${JSON.stringify(status.state||{},null,2)}
+
+Analysiere mit backup_status, deployment_info und site_connection_test, warum das Backup fehlschlägt. Prüfe insbesondere Source-of-Truth, Dateilimits/Ausschlüsse, GitHub-Backupziel und Verbindungszugriff. Wenn der Fehler in der verwalteten Website bzw. ihrer Struktur liegt, erzeuge einen sicheren change_preview. Wenn es eine SiteOps-/Credential-/Hosting-Konfiguration ist, nenne exakt die Einstellung oder operative Maßnahme und ändere keine Prüfung, um den Fehler zu verstecken.`};
   }
   if(kind==='synthetic'){
     const run=(await q('select r.*,t.name,t.start_url,t.steps,s.name site_name,s.domain,s.site_type,s.deployment_mode from synthetic_runs r join synthetic_tests t on t.id=r.test_id join sites s on s.id=r.site_id where r.id=?',[id])).rows[0];if(!run)throw new Error('Synthetic run not found');
@@ -1063,7 +1091,7 @@ function mcpServer(){
   s.registerTool('synthetic_update',{description:'Update a synthetic journey. Omitted secrets stay unchanged; clear_secrets removes them.',inputSchema:z.object({test_id:z.string().uuid(),name:z.string().min(1).optional(),enabled:z.boolean().optional(),start_url:z.string().url().optional(),steps:z.array(z.any()).optional(),secrets:z.record(z.string(),z.string()).optional(),clear_secrets:z.boolean().optional(),interval_seconds:z.number().int().min(300).max(2592000).optional(),timeout_ms:z.number().int().min(3000).max(120000).optional(),viewport_width:z.number().int().min(320).max(2560).optional(),viewport_height:z.number().int().min(320).max(2000).optional(),visual_enabled:z.boolean().optional(),visual_threshold:z.number().min(0).max(1).optional()})},async x=>{const {test_id,...v}=x;return toolText(await syntheticUpdate(test_id,{name:v.name,enabled:v.enabled,startUrl:v.start_url,steps:v.steps,secrets:v.secrets,clearSecrets:v.clear_secrets,intervalSeconds:v.interval_seconds,timeoutMs:v.timeout_ms,viewportWidth:v.viewport_width,viewportHeight:v.viewport_height,visualEnabled:v.visual_enabled,visualThreshold:v.visual_threshold}));});
   s.registerTool('synthetic_run',{description:'Run a synthetic browser journey now. save_baseline stores the successful screenshot as the visual baseline.',inputSchema:z.object({test_id:z.string().uuid(),save_baseline:z.boolean().default(false)})},async({test_id,save_baseline})=>toolText(await runSyntheticTest(test_id,{saveBaseline:save_baseline,actor:'mcp'})));
   s.registerTool('synthetic_run_get',{description:'Get one synthetic run result without screenshot bytes.',inputSchema:z.object({run_id:z.string().uuid()})},async({run_id})=>toolText(await syntheticRunGet(run_id)));
-  s.registerTool('fix_prompt',{description:'Generate a ready-to-copy repair prompt for ChatGPT/Claude from a SiteOps finding. The prompt instructs the agent to diagnose with MCP and create a preview without applying it.',inputSchema:z.object({kind:z.enum(['seo_page','seo_site','incident','synthetic']),site:z.string().optional(),id:z.union([z.string(),z.number()]).optional(),issue_code:z.string().optional()})},async({kind,site,id,issue_code})=>toolText(await buildFixPrompt({kind,site,id,issueCode:issue_code})));
+  s.registerTool('fix_prompt',{description:'Generate a ready-to-copy repair prompt for ChatGPT/Claude from a SiteOps finding. The prompt instructs the agent to diagnose with MCP and create a preview without applying it.',inputSchema:z.object({kind:z.enum(['seo_page','seo_site','incident','synthetic','monitor','backup']),site:z.string().optional(),id:z.union([z.string(),z.number()]).optional(),issue_code:z.string().optional()})},async({kind,site,id,issue_code})=>toolText(await buildFixPrompt({kind,site,id,issueCode:issue_code})));
   s.registerTool('settings_get',{description:'Get redacted global SiteOps settings. Secrets are never returned.',inputSchema:z.object({})},async()=>toolText(publicSettings()));
   return s;
 }
@@ -1628,7 +1656,7 @@ app.post('/api/synthetic-tests/:id/run',async req=>{const x=z.object({saveBaseli
 app.get('/api/synthetic-runs/:id',async req=>syntheticRunGet(req.params.id));
 app.get('/api/synthetic-runs/:id/screenshot',async(req,reply)=>{const row=(await q('select screenshot_image from synthetic_runs where id=?',[req.params.id])).rows[0];if(!row?.screenshot_image)return reply.code(404).send('No screenshot');return reply.type('image/png').send(Buffer.from(row.screenshot_image,'base64'));});
 app.get('/api/synthetic-tests/:id/baseline',async(req,reply)=>{const row=(await q('select baseline_image from synthetic_tests where id=?',[req.params.id])).rows[0];if(!row?.baseline_image)return reply.code(404).send('No baseline');return reply.type('image/png').send(Buffer.from(row.baseline_image,'base64'));});
-app.post('/api/fix-prompt',async req=>{const x=z.object({kind:z.enum(['seo_page','seo_site','incident','synthetic']),site:z.string().optional(),id:z.union([z.string(),z.number()]).optional(),issueCode:z.string().optional()}).parse(req.body||{});return buildFixPrompt(x);});
+app.post('/api/fix-prompt',async req=>{const x=z.object({kind:z.enum(['seo_page','seo_site','incident','synthetic','monitor','backup']),site:z.string().optional(),id:z.union([z.string(),z.number()]).optional(),issueCode:z.string().optional()}).parse(req.body||{});return buildFixPrompt(x);});
 const siteCommonSchema=z.object({slug:z.string().regex(/^[a-z0-9-]+$/),name:z.string().min(1),domain:z.string().min(1),siteType:z.enum(['wordpress','php','static','node']).default('php'),monitorUrl:z.string().url().optional(),backupEnabled:z.boolean().optional(),backupIntervalSeconds:z.coerce.number().int().min(900).max(2592000).optional(),backupMaxFiles:z.coerce.number().int().min(100).max(200000).optional(),monitorEnabled:z.boolean().optional(),monitorIntervalSeconds:z.coerce.number().int().min(30).max(86400).optional(),monitorFailureThreshold:z.coerce.number().int().min(1).max(20).optional(),sslWarnDays:z.coerce.number().int().min(1).max(365).optional()});
 const webspaceSiteSchema=siteCommonSchema.extend({deploymentMode:z.literal('webspace'),protocol:z.enum(['sftp','ftps','ftp']),host:z.string().min(1),port:z.coerce.number().int().min(1).max(65535),username:z.string().min(1),password:z.string().optional(),privateKey:z.string().optional(),passphrase:z.string().optional(),remoteRoot:z.string().min(1),sourceRepository:z.string().optional(),sourceBranch:z.string().optional(),sourceRoot:z.string().optional(),gitToken:z.string().optional(),hostingerTargetDirectory:z.string().optional()});
 const hostingerGitSiteSchema=siteCommonSchema.extend({deploymentMode:z.literal('hostinger_git'),sourceRepository:z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),sourceBranch:z.string().min(1),sourceRoot:z.string().optional(),gitToken:z.string().min(1),hostingerTargetDirectory:z.string().optional(),protocol:z.enum(['sftp','ftps','ftp']).optional(),host:z.string().optional(),port:z.coerce.number().optional(),username:z.string().optional(),password:z.string().optional(),remoteRoot:z.string().optional()});
