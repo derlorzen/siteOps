@@ -41,18 +41,19 @@ app.post('/run',async(req,reply)=>{
   const timeoutMs=Math.min(120000,Math.max(3000,Number(body.timeoutMs||30000)));
   const viewport={width:Math.min(2560,Math.max(320,Number(body.viewport?.width||1440))),height:Math.min(2000,Math.max(320,Number(body.viewport?.height||1000)))};
   const consoleErrors=[],pageErrors=[],failedRequests=[],stepResults=[],started=Date.now();
-  let browser=null,page=null,error=null,screenshot=null,visual=null;
+  let browser=null,page=null,error=null,screenshot=null,visual=null,lastUrl=null;
   try{
     browser=await chromium.launch({headless:true,args:['--disable-dev-shm-usage']});
     const context=await browser.newContext({viewportSize:viewport,ignoreHTTPSErrors:false});
-    page=await context.newPage();page.setDefaultTimeout(timeoutMs);
+    page=await context.newPage();page.setDefaultTimeout(timeoutMs);const baseHost=new URL(baseUrl).hostname;
+    await context.route('**/*',async route=>{const req=route.request();if(req.isNavigationRequest()&&req.frame()===page.mainFrame()){try{const h=new URL(req.url()).hostname;if(h!==baseHost)return route.abort('blockedbyclient');}catch{return route.abort('blockedbyclient');}}return route.continue();});
     page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text().slice(0,1000));});
     page.on('pageerror',e=>pageErrors.push(String(e.message||e).slice(0,1000)));
     page.on('requestfailed',r=>failedRequests.push({url:r.url(),error:r.failure()?.errorText||'failed'}));
-    await page.goto(sameHost(body.startUrl||baseUrl,baseUrl),{waitUntil:'domcontentloaded'});
+    await page.goto(sameHost(body.startUrl||baseUrl,baseUrl),{waitUntil:'domcontentloaded'});sameHost(page.url(),baseUrl);
     for(let i=0;i<(Array.isArray(body.steps)?body.steps:[]).length;i++){
       const step=body.steps[i];
-      try{stepResults.push({index:i,...await executeStep(page,step,baseUrl)});}
+      try{stepResults.push({index:i,...await executeStep(page,step,baseUrl)});sameHost(page.url(),baseUrl);}
       catch(e){stepResults.push({index:i,action:step.action,selector:step.selector||null,ok:false,error:String(e.message||e),durationMs:0});throw new Error('Step '+(i+1)+' ('+step.action+') failed: '+String(e.message||e));}
     }
     await page.waitForTimeout(250);
@@ -61,8 +62,8 @@ app.post('/run',async(req,reply)=>{
     const threshold=Math.max(0,Math.min(1,Number(body.visualThreshold??.01)));
     if(body.visualAssert&&visual&&visual.mismatch>threshold)throw new Error('Visual regression '+(visual.mismatch*100).toFixed(2)+'% exceeds '+(threshold*100).toFixed(2)+'%');
   }catch(e){error=String(e.message||e);if(page&&!screenshot){try{screenshot=await page.screenshot({type:'png',fullPage:Boolean(body.fullPage)});}catch{}}}
-  finally{if(browser)await browser.close().catch(()=>{});}
+  finally{if(page){try{lastUrl=page.url();}catch{}}if(browser)await browser.close().catch(()=>{});}
   const ok=!error;
-  return{ok,error,durationMs:Date.now()-started,finalUrl:page?.url?.()||null,steps:stepResults,consoleErrors:consoleErrors.slice(0,50),pageErrors:pageErrors.slice(0,50),failedRequests:failedRequests.slice(0,100),visual,screenshotHash:screenshot?crypto.createHash('sha256').update(screenshot).digest('hex'):null,screenshotBase64:screenshot&&((body.captureScreenshot)||!ok)?screenshot.toString('base64'):null};
+  return{ok,error,durationMs:Date.now()-started,finalUrl:lastUrl,steps:stepResults,consoleErrors:consoleErrors.slice(0,50),pageErrors:pageErrors.slice(0,50),failedRequests:failedRequests.slice(0,100),visual,screenshotHash:screenshot?crypto.createHash('sha256').update(screenshot).digest('hex'):null,screenshotBase64:screenshot&&((body.captureScreenshot)||!ok)?screenshot.toString('base64'):null};
 });
 await app.listen({host,port});
