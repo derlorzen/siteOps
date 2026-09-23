@@ -823,7 +823,7 @@ async function clientReportData(siteId){
 
 const toolText=value=>({content:[{type:'text',text:typeof value==='string'?value:JSON.stringify(value,null,2)}]});
 function mcpServer(){
-  const s=new McpServer({name:'lorzen-siteops',version:'0.8.2'});
+  const s=new McpServer({name:'lorzen-siteops',version:'0.9.0'});
   s.registerTool('sites_list',{description:'List managed websites with deployment and monitor mode. Never returns credentials.',inputSchema:z.object({})},async()=>toolText((await listSites()).map(x=>({id:x.id,slug:x.slug,name:x.name,domain:x.domain,site_type:x.site_type,deployment_mode:x.deployment_mode,protocol:x.deployment_mode==='hostinger_git'?null:x.protocol,monitor_enabled:Boolean(x.monitor_enabled),backup_enabled:Boolean(x.backup_enabled)}))));
   s.registerTool('site_get',{description:'Get redacted SiteOps configuration for one website. Secrets are represented only as configured/not configured.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(publicSite(await getSite(site))));
   s.registerTool('site_overview',{description:'Get the main operational picture for a website in one call: redacted config, deployment, latest monitor state, open incidents and backup state.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await siteOverview(site)));
@@ -866,6 +866,12 @@ function mcpServer(){
   s.registerTool('seo_page',{description:'Get full SEO details, WDF-IDF terms, Lighthouse values and outgoing links for one crawled page.',inputSchema:z.object({page_id:z.number().int().positive()})},async({page_id})=>toolText(await seoPageGet(page_id)));
   s.registerTool('seo_graph',{description:'Get strongest pages and internal links from the latest completed crawl for graphing/site-structure analysis.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(5).max(100).default(30)})},async({site,limit})=>toolText(await seoGraph(site,limit)));
   s.registerTool('seo_issues',{description:'List SEO issues from the latest crawl, optionally filtered by severity.',inputSchema:z.object({site:z.string(),level:z.enum(['error','warn','info']).optional(),limit:z.number().int().min(1).max(500).default(200)})},async({site,level,limit})=>toolText(await seoIssuesList(site,{level,limit})));
+  s.registerTool('seo_recommendations',{description:'Return prioritized SEO recommendations with affected URLs, categories and concrete remediation guidance from the latest audit.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await seoRecommendations(site)));
+  s.registerTool('seo_compare',{description:'Compare the two latest completed SEO audits and show score, issue, URL and metadata/content changes.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await seoCompare(site)));
+  s.registerTool('link_health',{description:'List broken or redirected internal/external links from the latest completed crawl with target status and response information.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(1).max(1000).default(300)})},async({site,limit})=>toolText(await seoLinkHealth(site,{limit})));
+  s.registerTool('site_intelligence',{description:'Run a live infrastructure intelligence audit: security headers, DNS/mail hygiene, domain expiry, technology fingerprint and AI-search crawler accessibility.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await runSiteIntelligence(site)));
+  s.registerTool('site_intelligence_latest',{description:'Get the latest stored Site Intelligence result without running a new scan.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await siteIntelligenceLatest(site)));
+  s.registerTool('client_report_data',{description:'Return a client-ready operational report dataset combining uptime, incidents, backups, changes, SEO health and Site Intelligence.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await clientReportData(site)));
   s.registerTool('settings_get',{description:'Get redacted global SiteOps settings. Secrets are never returned.',inputSchema:z.object({})},async()=>toolText(publicSettings()));
   return s;
 }
