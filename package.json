@@ -1,6 +1,6 @@
 {
   "name": "lorzen-siteops",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -24,7 +24,7 @@
     "mysql2": "^3.15.0",
     "cheerio": "^1.1.2"
   },
-  "license": "AGPL-3.0-only",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/derlorzen/siteOps.git"
