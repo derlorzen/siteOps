@@ -697,8 +697,11 @@ async function crawlSeoPage(url,rootHost,depth){
   page.issues=seoIssues(page);return page;
 }
 async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homepage',pageSpeedMaxPages=10}={}){
-  const configured=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!configured)throw new Error('Invalid site URL');const configuredUrl=new URL(configured),root=seoNormalizeUrl(configuredUrl.origin+'/'),rootUrl=new URL(root),rootHost=rootUrl.hostname,queue=[{url:root,depth:0}],queued=new Set([root]),crawled=new Set(),pages=[],links=[];
+  const configured=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!configured)throw new Error('Invalid site URL');
+  const configuredUrl=new URL(configured),root=seoNormalizeUrl(configuredUrl.origin+'/'),rootUrl=new URL(root),rootHost=rootUrl.hostname,queue=[{url:root,depth:0}],queued=new Set([root]),crawled=new Set(),pages=[],links=[];
   const sitemap=await seoDiscoverSitemaps(root,Math.min(maxPages*3,1500)),sitemapPending=sitemap.pages.filter(url=>url!==root);
+  let robotsText='',blockedByRobots=0;
+  try{const rr=await fetch(root+'robots.txt',{signal:AbortSignal.timeout(12000),headers:{'User-Agent':cfg.seoUserAgent,accept:'text/plain,*/*'}});if(rr.ok)robotsText=await rr.text();}catch{}
   try{
     while((queue.length||sitemapPending.length)&&pages.length<maxPages){
       if(!queue.length){
@@ -707,6 +710,7 @@ async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homep
         if(!candidate)break;queued.add(candidate);queue.push({url:candidate,depth:null});
       }
       const item=queue.shift();queued.delete(item.url);if(crawled.has(item.url))continue;crawled.add(item.url);
+      if(robotsText&&!robotsAllows(robotsText,cfg.seoUserAgent,new URL(item.url).pathname||'/')){blockedByRobots++;continue;}
       const page=await crawlSeoPage(item.url,rootHost,item.depth);pages.push(page);links.push(...page.links);
       for(const l of page.links){
         if(!l.internal||!seoCrawlableUrl(l.target,rootHost)||crawled.has(l.target))continue;
@@ -715,24 +719,30 @@ async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homep
         if(pages.length+queue.length<maxPages){queued.add(l.target);queue.push({url:l.target,depth:linkedDepth});}
       }
     }
-    const pageMap=new Map(pages.map(p=>[p.url,p])),urls=pages.map(p=>p.url),rank=calcPageRank(urls,links),incoming=new Map(urls.map(u=>[u,0]));
+    const urls=pages.map(p=>p.url),rank=calcPageRank(urls,links),incoming=new Map(urls.map(u=>[u,0]));
     for(const l of links)if(l.internal&&incoming.has(l.target))incoming.set(l.target,incoming.get(l.target)+1);
-    const wdfidf=calcWdfIdf(pages),titleMap=new Map(),descMap=new Map();
-    pages.forEach((p,i)=>{p.pagerank=rank.get(p.url)||0;p.incomingLinks=incoming.get(p.url)||0;p.internalLinks=p.links.filter(x=>x.internal).length;p.externalLinks=p.links.filter(x=>!x.internal).length;p.wdfidf=wdfidf[i];if(p.title){if(!titleMap.has(p.title))titleMap.set(p.title,[]);titleMap.get(p.title).push(p.url);}if(p.metaDescription){if(!descMap.has(p.metaDescription))descMap.set(p.metaDescription,[]);descMap.get(p.metaDescription).push(p.url);}});
-    for(const p of pages){
-      if(p.depth==null&&p.url!==root&&p.incomingLinks===0)p.issues.push({level:'warn',code:'orphan_page',text:'In Sitemap gefunden, aber von keiner gecrawlten Seite intern verlinkt'});
-      if(p.title&&(titleMap.get(p.title)?.length||0)>1)p.issues.push({level:'warn',code:'duplicate_title',text:'Title auf '+titleMap.get(p.title).length+' Seiten identisch'});
-      if(p.metaDescription&&(descMap.get(p.metaDescription)?.length||0)>1)p.issues.push({level:'warn',code:'duplicate_description',text:'Meta Description mehrfach identisch'});
-      if(p.canonical){try{if(new URL(p.canonical).hostname!==rootHost)p.issues.push({level:'warn',code:'canonical_external',text:'Canonical zeigt auf andere Domain'});}catch{p.issues.push({level:'warn',code:'canonical_invalid',text:'Canonical ist ungültig'});}}
-    }
+    const wdfidf=calcWdfIdf(pages);
+    pages.forEach((p,i)=>{p.pagerank=rank.get(p.url)||0;p.incomingLinks=incoming.get(p.url)||0;p.internalLinks=p.links.filter(x=>x.internal).length;p.externalLinks=p.links.filter(x=>!x.internal).length;p.wdfidf=wdfidf[i];});
     const psiCandidates=pages.filter(p=>p.statusCode===200).slice(0,pageSpeed==='all'?Math.min(pageSpeedMaxPages,pages.length):pageSpeed==='homepage'?1:0);
-    for(const p of psiCandidates){try{p.lighthouseMobile=await pageSpeedAudit(p.url,'mobile');p.lighthouseDesktop=await pageSpeedAudit(p.url,'desktop');}catch(e){p.issues.push({level:'warn',code:'pagespeed_error',text:String(e.message||e)});}}
-    for(const p of pages){
-      await q(`insert into seo_pages(run_id,site_id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,structured_data,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [runId,site.id,p.url,p.path,p.statusCode,p.responseMs,p.contentBytes,p.title,p.metaDescription,p.canonical,p.robots,JSON.stringify(p.h1),JSON.stringify(p.h2),p.wordCount,p.internalLinks,p.externalLinks,p.incomingLinks,p.depth,p.pagerank,JSON.stringify(p.issues),JSON.stringify(p.wdfidf),JSON.stringify(p.structuredData),p.imagesTotal,p.imagesMissingAlt,p.lighthouseMobile?JSON.stringify(p.lighthouseMobile):null,p.lighthouseDesktop?JSON.stringify(p.lighthouseDesktop):null]);
+    for(const p of psiCandidates){try{p.lighthouseMobile=await pageSpeedAudit(p.url,'mobile');p.lighthouseDesktop=await pageSpeedAudit(p.url,'desktop');}catch(e){p.issues.push({level:'warn',code:'pagespeed_error',category:'performance',title:'PageSpeed-Audit fehlgeschlagen',text:String(e.message||e),fix:'PageSpeed API-Konfiguration und öffentliche Erreichbarkeit prüfen.'});}}
+    const knownStatuses=new Map(pages.map(p=>[p.url,p.signals?.redirectChain?.[0]?.status||p.statusCode]));
+    const linkAudit=await linkHealthCheck(links,{knownStatuses,limit:cfg.seoLinkCheckLimit,externalLimit:cfg.seoExternalLinkCheckLimit,concurrency:8,userAgent:cfg.seoUserAgent});
+    const auditSummary=summarizeSeoAudit(pages,links,{rootUrl:root,sitemapPages:sitemap.pages});
+    let intelligence=null,intelligenceError=null;
+    const intelligenceId=crypto.randomUUID();
+    await q('insert into site_intelligence_runs(id,site_id,status) values(?,?,?)',[intelligenceId,site.id,'running']);
+    try{
+      intelligence=await siteIntelligenceAudit(root,{userAgent:'Lorzen-SiteOps-Intelligence/0.9'});
+      await q('update site_intelligence_runs set status=?,overall_score=?,result=?,finished_at=now() where id=?',['completed',intelligence.scores?.overall??null,JSON.stringify(intelligence),intelligenceId]);
+    }catch(e){
+      intelligenceError=String(e.message||e);await q('update site_intelligence_runs set status=?,error=?,finished_at=now() where id=?',['failed',intelligenceError.slice(0,10000),intelligenceId]);
     }
-    for(const l of links)await q('insert into seo_links(run_id,site_id,source_url,target_url,anchor_text,internal_link,nofollow) values(?,?,?,?,?,?,?)',[runId,site.id,l.source,l.target,l.anchor,l.internal,l.nofollow]);
-    const summary={pages:pages.length,okPages:pages.filter(p=>p.statusCode===200).length,errorPages:pages.filter(p=>p.statusCode>=400||p.error).length,issues:{error:pages.reduce((n,p)=>n+p.issues.filter(i=>i.level==='error').length,0),warn:pages.reduce((n,p)=>n+p.issues.filter(i=>i.level==='warn').length,0),info:pages.reduce((n,p)=>n+p.issues.filter(i=>i.level==='info').length,0)},avgResponseMs:pages.length?Math.round(pages.reduce((n,p)=>n+p.responseMs,0)/pages.length):0,avgWordCount:pages.length?Math.round(pages.reduce((n,p)=>n+p.wordCount,0)/pages.length):0,strongestPages:[...pages].sort((a,b)=>b.pagerank-a.pagerank).slice(0,10).map(p=>({url:p.url,title:p.title,pagerank:Number(p.pagerank.toFixed(6)),incomingLinks:p.incomingLinks})),pageSpeedEnabled:Boolean(cfg.pageSpeedApiKey),pageSpeedPages:psiCandidates.length,sitemapUrls:sitemap.sitemaps.length,sitemapPages:sitemap.pages.length};
+    for(const p of pages){
+      await q('insert into seo_pages(run_id,site_id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,structured_data,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop,signals,content_hash) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        [runId,site.id,p.url,p.path,p.statusCode,p.responseMs,p.contentBytes,p.title,p.metaDescription,p.canonical,p.robots,JSON.stringify(p.h1),JSON.stringify(p.h2),p.wordCount,p.internalLinks,p.externalLinks,p.incomingLinks,p.depth,p.pagerank,JSON.stringify(p.issues),JSON.stringify(p.wdfidf),JSON.stringify(p.structuredData),p.imagesTotal,p.imagesMissingAlt,p.lighthouseMobile?JSON.stringify(p.lighthouseMobile):null,p.lighthouseDesktop?JSON.stringify(p.lighthouseDesktop):null,JSON.stringify(p.signals||{}),p.contentHash||null]);
+    }
+    for(const l of links)await q('insert into seo_links(run_id,site_id,source_url,target_url,anchor_text,internal_link,nofollow,target_status,target_response_ms,target_error,target_location) values(?,?,?,?,?,?,?,?,?,?,?)',[runId,site.id,l.source,l.target,l.anchor,l.internal,l.nofollow,l.targetStatus??null,l.targetResponseMs??null,l.targetError??null,l.targetLocation??null]);
+    const summary={...auditSummary,pages:pages.length,okPages:pages.filter(p=>p.statusCode===200).length,errorPages:pages.filter(p=>p.statusCode>=400||p.error).length,avgResponseMs:pages.length?Math.round(pages.reduce((n,p)=>n+p.responseMs,0)/pages.length):0,avgWordCount:pages.length?Math.round(pages.reduce((n,p)=>n+p.wordCount,0)/pages.length):0,strongestPages:[...pages].sort((a,b)=>b.pagerank-a.pagerank).slice(0,10).map(p=>({url:p.url,title:p.title,pagerank:Number(p.pagerank.toFixed(6)),incomingLinks:p.incomingLinks})),pageSpeedEnabled:Boolean(cfg.pageSpeedApiKey),pageSpeedPages:psiCandidates.length,sitemapUrls:sitemap.sitemaps.length,sitemapPages:sitemap.pages.length,blockedByRobots,linkHealth:{checked:linkAudit.checked,externalChecked:linkAudit.externalChecked,brokenInternal:links.filter(l=>l.internal&&(l.targetStatus>=400||l.targetError)).length,brokenExternal:links.filter(l=>!l.internal&&(l.targetStatus>=400||l.targetError)).length},siteIntelligence:intelligence?{scores:intelligence.scores,issues:intelligence.issues.length,technology:intelligence.technology}:null,siteIntelligenceError:intelligenceError};
     await q('update seo_runs set status=?,pages_crawled=?,summary=?,finished_at=now() where id=?',['completed',pages.length,JSON.stringify(summary),runId]);
   }catch(e){await q('update seo_runs set status=?,error=?,finished_at=now() where id=?',['failed',String(e.message||e).slice(0,10000),runId]);throw e;}
 }
