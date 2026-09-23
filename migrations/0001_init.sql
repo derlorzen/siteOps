@@ -1,8 +1,3 @@
--- Reference snapshot of the full schema as of migrations/0001_init.sql.
--- Not read by the application anymore: startup runs migrations/*.sql
--- and migrations/*.mjs (tracked in the schema_migrations table). Add new
--- tables/columns as a new numbered file in migrations/, not here.
-
 CREATE TABLE IF NOT EXISTS sites (
   id CHAR(36) PRIMARY KEY,
   slug VARCHAR(191) NOT NULL UNIQUE,

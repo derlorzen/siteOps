@@ -995,6 +995,10 @@ SiteOps uses live/source hashes to detect conflicting edits. Create a fresh prev
 .
 ├── app.mjs
 ├── schema.sql
+├── migrations/
+│   ├── 0001_init.sql
+│   ├── 0002_deployment_and_extra_columns.mjs
+│   └── README.md
 ├── package.json
 ├── .env.example
 ├── public/

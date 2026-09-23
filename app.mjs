@@ -4,7 +4,7 @@ import mysql from 'mysql2/promise';
 import crypto from 'node:crypto';
 import tls from 'node:tls';
 import { lookup as dnsLookup } from 'node:dns/promises';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { posix as pathPosix } from 'node:path';
 import SftpClient from 'ssh2-sftp-client';
 import { Client as FtpClient } from 'basic-ftp';
@@ -146,36 +146,27 @@ async function ensureColumn(table, column, definition) {
   const r = await q(`show columns from ${table} like ?`, [column]);
   if (!r.rows.length) await db.query(`alter table ${table} add column ${column} ${definition}`);
 }
-async function migrate() {
-  const sql = await readFile(new URL('./schema.sql', import.meta.url), 'utf8');
+async function execSqlStatements(sql) {
   for (const statement of sql
     .split(/;\s*(?:\n|$)/)
     .map(x => x.trim())
     .filter(Boolean))
     await db.query(statement);
-  await ensureColumn('sites', 'deployment_mode', "VARCHAR(30) NOT NULL DEFAULT 'webspace'");
-  await ensureColumn('sites', 'source_repository', 'VARCHAR(255) NULL');
-  await ensureColumn('sites', 'source_branch', 'VARCHAR(191) NULL');
-  await ensureColumn('sites', 'source_root', 'TEXT NULL');
-  await ensureColumn('sites', 'git_credentials', 'LONGTEXT NULL');
-  await ensureColumn('sites', 'hostinger_target_directory', 'TEXT NULL');
-  await ensureColumn('sites', 'monitor_expected_title', 'TEXT NULL');
-  await ensureColumn('sites', 'monitor_check_dns', 'BOOLEAN NOT NULL DEFAULT TRUE');
-  await ensureColumn('sites', 'monitor_check_wordpress', 'BOOLEAN NOT NULL DEFAULT FALSE');
-  await ensureColumn('sites', 'alert_repeat_minutes', 'INT NOT NULL DEFAULT 60');
-  await ensureColumn('monitor_state', 'last_alert_at', 'DATETIME NULL');
-  await ensureColumn('monitor_state', 'alert_count', 'INT NOT NULL DEFAULT 0');
-  await ensureColumn('seo_pages', 'final_url', 'TEXT NULL');
-  await ensureColumn('seo_pages', 'redirect_count', 'INT NOT NULL DEFAULT 0');
-  await ensureColumn('seo_pages', 'lang', 'VARCHAR(50) NULL');
-  await ensureColumn('seo_pages', 'hreflang', 'LONGTEXT NULL');
-  await ensureColumn('seo_pages', 'social', 'LONGTEXT NULL');
-  await ensureColumn('seo_pages', 'security', 'LONGTEXT NULL');
-  await ensureColumn('seo_pages', 'accessibility', 'LONGTEXT NULL');
-  await ensureColumn('seo_pages', 'content_hash', 'CHAR(64) NULL');
-  await ensureColumn('seo_pages', 'content_fingerprint', 'LONGTEXT NULL');
-  await ensureColumn('seo_pages', 'indexable', 'BOOLEAN NOT NULL DEFAULT TRUE');
-  await ensureColumn('synthetic_tests', 'next_run_at', 'DATETIME NULL');
+}
+async function migrate() {
+  await db.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    id VARCHAR(191) PRIMARY KEY,
+    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  const applied = new Set((await q('select id from schema_migrations')).rows.map(r => r.id));
+  const dir = new URL('./migrations/', import.meta.url);
+  const files = (await readdir(dir)).filter(f => /\.(sql|mjs)$/.test(f)).sort();
+  for (const file of files) {
+    if (applied.has(file)) continue;
+    if (file.endsWith('.sql')) await execSqlStatements(await readFile(new URL(file, dir), 'utf8'));
+    else await (await import(new URL(file, dir).href)).default({ q, db, ensureColumn });
+    await q('insert into schema_migrations(id) values(?)', [file]);
+  }
 }
 async function loadSavedConfig() {
   const rows = (await q('select setting_key,setting_value,encrypted from app_settings')).rows;
