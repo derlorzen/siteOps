@@ -95,6 +95,8 @@ BACKUP_REPO_BRANCH=main
 SEO_MAX_PAGES=100
 SEO_LINK_CHECK_LIMIT=1000
 SEO_EXTERNAL_LINK_CHECK_LIMIT=300
+SEO_WORKER_INTERVAL_MS=300000
+SEO_REGRESSION_ALERT_DROP=10
 PAGESPEED_API_KEY=
 SEO_USER_AGENT=Lorzen-SiteOps-SEO/0.9
 ```
@@ -145,6 +147,6 @@ Expected response includes:
 }
 ```
 
-Then sign in to the dashboard and add the first customer site. A complete SEO audit also runs Link Health and Site Intelligence. The PageSpeed API key is optional; all other SEO, DNS, security-header and AI-crawler checks work without it.
+Then sign in to the dashboard and add the first customer site. A complete SEO audit also runs Link Health and Site Intelligence. Per-site recurring audits can be enabled from the site operations page; regressions use the existing alert channels. The PageSpeed API key is optional; all other SEO, DNS, security-header and AI-crawler checks work without it.
 
 If startup fails, check Hostinger Node.js runtime logs and verify the five `DB_*` variables first.
