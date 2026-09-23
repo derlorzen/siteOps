@@ -136,7 +136,7 @@ class GitHubSourceAdapter {
     if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))throw new Error('Source repository must be owner/repository');
     if(!cred?.token)throw new Error('GitHub deploy token is missing');
     const api=async(path,{method='GET',body,allow404=false}={})=>{
-      const res=await fetch('https://api.github.com/repos/'+repo+path,{method,headers:{accept:'application/vnd.github+json',authorization:'Bearer '+cred.token,'x-github-api-version':'2022-11-28','user-agent':'Lorzen-SiteOps/0.8.2'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
+      const res=await fetch('https://api.github.com/repos/'+repo+path,{method,headers:{accept:'application/vnd.github+json',authorization:'Bearer '+cred.token,'x-github-api-version':'2022-11-28','user-agent':'Lorzen-SiteOps/0.9.0'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
       const raw=await res.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{data=raw;}}
       if(allow404&&res.status===404)return null;if(!res.ok)throw new Error('GitHub source '+method+' '+path+' failed ('+res.status+'): '+(data?.message||String(data||'').slice(0,500)));return data;
     };
@@ -277,7 +277,7 @@ async function gh(path,{method='GET',body,allow404=false,allow409=false}={}){
       accept:'application/vnd.github+json',
       authorization:'Bearer '+cfg.githubBackupToken,
       'x-github-api-version':'2022-11-28',
-      'user-agent':'Lorzen-SiteOps/0.8.2'
+      'user-agent':'Lorzen-SiteOps/0.9.0'
     },
     body:body===undefined?undefined:JSON.stringify(body),
     signal:AbortSignal.timeout(30000)
@@ -448,7 +448,7 @@ async function sslDays(url){if(!url.startsWith('https:'))return null;const u=new
 async function fetchWithRedirectTrace(url,timeoutMs){
   const redirects=[];let current=url,response=null;
   for(let i=0;i<8;i++){
-    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/0.8.2'}});
+    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/0.9.0'}});
     if(response.status>=300&&response.status<400){
       const location=response.headers.get('location');if(!location)break;
       const next=new URL(location,current).toString();redirects.push({status:response.status,from:current,to:next});current=next;continue;
@@ -458,6 +458,16 @@ async function fetchWithRedirectTrace(url,timeoutMs){
   return{response,finalUrl:current,redirects};
 }
 function htmlTitle(body){const m=String(body||'').match(/<title[^>]*>([\s\S]*?)<\/title>/i);return m?m[1].replace(/\s+/g,' ').trim():null;}
+const domainExpiryCache=new Map();
+async function domainExpiryDays(domain){
+  const key=String(domain||'').toLowerCase().replace(/^www\./,''),cached=domainExpiryCache.get(key);
+  if(cached&&Date.now()-cached.at<12*60*60*1000)return cached.days;
+  try{
+    const res=await fetch('https://rdap.org/domain/'+encodeURIComponent(key),{redirect:'follow',signal:AbortSignal.timeout(10000),headers:{'User-Agent':'Lorzen-SiteOps/0.9.0'}});
+    if(!res.ok)return null;const data=await res.json(),event=(data.events||[]).find(e=>/expiration/i.test(e.eventAction||''));
+    const days=event?.eventDate?Math.floor((new Date(event.eventDate).getTime()-Date.now())/86400000):null;domainExpiryCache.set(key,{at:Date.now(),days});return days;
+  }catch{return null;}
+}
 async function checkSiteNow(site){
   const url=site.monitor_url||`https://${site.domain}`,started=Date.now();let status=null,error=null,body='',finalUrl=url,redirects=[],dns=null,wp=null,title=null;
   try{
@@ -470,12 +480,12 @@ async function checkSiteNow(site){
     }
     if(!error&&site.monitor_check_wordpress){
       try{
-        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.8.2'}});
+        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.9.0'}});
         wp={ok:wpRes.ok,status:wpRes.status};
       }catch(e){wp={ok:false,error:String(e.message||e)};}
     }
   }catch(e){error=e.message||String(e);}
-  const responseMs=Date.now()-started,ssl=await sslDays(finalUrl||url);
+  const responseMs=Date.now()-started,ssl=await sslDays(finalUrl||url),domainDays=await domainExpiryDays(site.domain);
   const checks={
     dns:!site.monitor_check_dns||(Array.isArray(dns)&&dns.length>0),
     http:status===site.monitor_expected_status,
@@ -483,10 +493,11 @@ async function checkSiteNow(site){
     title:!site.monitor_expected_title||title===site.monitor_expected_title,
     wordpress:!site.monitor_check_wordpress||Boolean(wp?.ok),
     speed:!site.response_warn_ms||responseMs<=site.response_warn_ms,
-    ssl:ssl===null||ssl>=site.ssl_warn_days
+    ssl:ssl===null||ssl>=site.ssl_warn_days,
+    domain:domainDays===null||domainDays>=30
   };
   const ok=!error&&Object.values(checks).every(Boolean);
-  return{ok,url,finalUrl,status,responseMs,sslDays:ssl,title,dns,redirects,wordpress:wp,error,checks,checkedAt:new Date().toISOString()};
+  return{ok,url,finalUrl,status,responseMs,sslDays:ssl,domainExpiryDays:domainDays,title,dns,redirects,wordpress:wp,error,checks,checkedAt:new Date().toISOString()};
 }
 async function sendAlert(subject,text){
   const jobs=[];
@@ -600,10 +611,10 @@ function seoCrawlableUrl(value,rootHost){
   }catch{return false;}
 }
 async function seoDiscoverSitemaps(rootUrl,maxUrls){
-  const root=new URL(rootUrl),sitemapUrls=new Set([new URL('/sitemap.xml',root).toString(),new URL('/sitemap_index.xml',root).toString()]),pages=new Set();
+  const root=new URL(rootUrl),sitemapUrls=new Set([new URL('/sitemap.xml',root).toString(),new URL('/sitemap_index.xml',root).toString()]),pages=new Set();let robotsTxt='';
   try{
     const robots=await fetch(new URL('/robots.txt',root),{signal:AbortSignal.timeout(8000),headers:{'User-Agent':cfg.seoUserAgent}});
-    if(robots.ok){const txt=await robots.text();for(const m of txt.matchAll(/^sitemap:\s*(\S+)/gim))sitemapUrls.add(m[1]);}
+    if(robots.ok){const txt=await robots.text();robotsTxt=txt;for(const m of txt.matchAll(/^sitemap:\s*(\S+)/gim))sitemapUrls.add(m[1]);}
   }catch{}
   const seenMaps=new Set(),queue=[...sitemapUrls];
   while(queue.length&&seenMaps.size<12&&pages.size<maxUrls){
@@ -618,7 +629,14 @@ async function seoDiscoverSitemaps(rootUrl,maxUrls){
       }
     }catch{}
   }
-  return{pages:[...pages],sitemaps:[...seenMaps]};
+  return{pages:[...pages],sitemaps:[...seenMaps],robotsTxt};
+}
+function seoAiBotAccess(robotsTxt){
+  const bots=['GPTBot','OAI-SearchBot','ChatGPT-User','ClaudeBot','Claude-Web','PerplexityBot','Google-Extended'],lines=String(robotsTxt||'').split(/\r?\n/),groups=[];let agents=[],rules=[];
+  const flush=()=>{if(agents.length)groups.push({agents:[...agents],rules:[...rules]});agents=[];rules=[];};
+  for(const raw of lines){const line=raw.replace(/#.*$/,'').trim();if(!line)continue;const m=line.match(/^([^:]+):\s*(.*)$/);if(!m)continue;const key=m[1].trim().toLowerCase(),value=m[2].trim();if(key==='user-agent'){if(rules.length)flush();agents.push(value.toLowerCase());}else if((key==='allow'||key==='disallow')&&agents.length)rules.push({type:key,path:value});}
+  flush();const wildcard=groups.filter(g=>g.agents.includes('*'));
+  return bots.map(bot=>{const name=bot.toLowerCase(),specific=groups.filter(g=>g.agents.includes(name)),selected=specific.length?specific:wildcard,blocked=selected.some(g=>g.rules.some(r=>r.type==='disallow'&&r.path==='/'));return{bot,blocked};});
 }
 function seoTokens(text){
   return String(text||'').toLocaleLowerCase('de-DE').normalize('NFKC').match(/[\p{L}\p{N}][\p{L}\p{N}-]{2,}/gu)?.filter(x=>!SEO_STOPWORDS.has(x)&&!/^\d+$/.test(x))||[];
@@ -800,7 +818,7 @@ async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homep
     for(const l of links)await q('insert into seo_links(run_id,site_id,source_url,target_url,anchor_text,internal_link,nofollow) values(?,?,?,?,?,?,?)',[runId,site.id,l.source,l.target,l.anchor,l.internal,l.nofollow]);
     const allIssues=pages.flatMap(p=>(p.issues||[]).map(i=>({...i,url:p.url}))),count=code=>allIssues.filter(i=>i.code===code).length;
     const categories={technical:allIssues.filter(i=>['http_status','redirect_chain','canonical_missing','canonical_external','canonical_invalid','canonical_to_other','noindex','page_nofollow','not_in_sitemap','orphan_page'].includes(i.code)).length,content:allIssues.filter(i=>/title|description|h1|content|word|wdf|duplicate/.test(i.code)).length,links:allIssues.filter(i=>/link|crawl_depth/.test(i.code)).length,media:allIssues.filter(i=>/image|resource|mixed_content/.test(i.code)).length,accessibility:allIssues.filter(i=>/accessibility|html_lang/.test(i.code)).length,security:allIssues.filter(i=>/security|mixed_content/.test(i.code)).length,social:allIssues.filter(i=>/open_graph|twitter/.test(i.code)).length};
-    const summary={healthScore:seoHealthScore(pages),pages:pages.length,indexablePages:pages.filter(p=>p.indexable).length,okPages:pages.filter(p=>p.statusCode===200).length,errorPages:pages.filter(p=>p.statusCode>=400||p.error).length,issues:{error:allIssues.filter(i=>i.level==='error').length,warn:allIssues.filter(i=>i.level==='warn').length,info:allIssues.filter(i=>i.level==='info').length},categories,brokenInternalLinks:count('broken_internal_link'),redirectingInternalLinks:count('redirecting_internal_link'),duplicateContent:count('duplicate_content'),nearDuplicateContent:count('near_duplicate_content'),brokenResources:resourceAudit.broken,resourcesChecked:resourceAudit.checked,avgResponseMs:pages.length?Math.round(pages.reduce((n,p)=>n+p.responseMs,0)/pages.length):0,avgWordCount:pages.length?Math.round(pages.reduce((n,p)=>n+p.wordCount,0)/pages.length):0,strongestPages:[...pages].sort((a,b)=>b.pagerank-a.pagerank).slice(0,10).map(p=>({url:p.url,title:p.title,pagerank:Number(p.pagerank.toFixed(6)),incomingLinks:p.incomingLinks})),pageSpeedEnabled:Boolean(cfg.pageSpeedApiKey),pageSpeedPages:psiCandidates.length,sitemapUrls:sitemap.sitemaps.length,sitemapPages:sitemap.pages.length};
+    const summary={healthScore:seoHealthScore(pages),pages:pages.length,indexablePages:pages.filter(p=>p.indexable).length,okPages:pages.filter(p=>p.statusCode===200).length,errorPages:pages.filter(p=>p.statusCode>=400||p.error).length,issues:{error:allIssues.filter(i=>i.level==='error').length,warn:allIssues.filter(i=>i.level==='warn').length,info:allIssues.filter(i=>i.level==='info').length},categories,brokenInternalLinks:count('broken_internal_link'),redirectingInternalLinks:count('redirecting_internal_link'),duplicateContent:count('duplicate_content'),nearDuplicateContent:count('near_duplicate_content'),brokenResources:resourceAudit.broken,resourcesChecked:resourceAudit.checked,avgResponseMs:pages.length?Math.round(pages.reduce((n,p)=>n+p.responseMs,0)/pages.length):0,avgWordCount:pages.length?Math.round(pages.reduce((n,p)=>n+p.wordCount,0)/pages.length):0,strongestPages:[...pages].sort((a,b)=>b.pagerank-a.pagerank).slice(0,10).map(p=>({url:p.url,title:p.title,pagerank:Number(p.pagerank.toFixed(6)),incomingLinks:p.incomingLinks})),pageSpeedEnabled:Boolean(cfg.pageSpeedApiKey),pageSpeedPages:psiCandidates.length,sitemapUrls:sitemap.sitemaps.length,sitemapPages:sitemap.pages.length,aiBots:seoAiBotAccess(sitemap.robotsTxt)};
     await q('update seo_runs set status=?,pages_crawled=?,summary=?,finished_at=now() where id=?',['completed',pages.length,JSON.stringify(summary),runId]);
   }catch(e){await q('update seo_runs set status=?,error=?,finished_at=now() where id=?',['failed',String(e.message||e).slice(0,10000),runId]);throw e;}
 }
@@ -850,7 +868,7 @@ async function clientReportPage(slug){
   const delta=r.available?(r.scoreDelta>0?'+':'')+r.scoreDelta:'–';
   let html='<a class="backlink" href="/sites/'+esc(site.slug)+'">← '+esc(site.name)+'</a><header><div><span class="eyebrow">QUALITY REPORT</span><h1>'+esc(site.name)+'</h1><p>'+esc(site.domain)+' · Bericht '+new Date().toLocaleDateString('de-DE')+'</p></div><div class="actions"><button onclick="window.print()">Drucken / PDF</button></div></header>';
   html+='<div class="metrics big seo-metrics"><span>'+score+'<em>Health Score</em></span><span>'+delta+'<em>vs. vorheriger Audit</em></span><span>'+(ops.uptime??'–')+'%<em>Uptime letzte Checks</em></span><span>'+(ops.openIncidents??0)+'<em>Offene Incidents</em></span><span>'+(s.pages??0)+'<em>Gecrawlte Seiten</em></span><span>'+(s.issues?.error??0)+'<em>SEO-Fehler</em></span></div>';
-  html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">SEO</span><h2>Technische Qualität</h2></div></div><dl class="facts compact-facts"><div><dt>Indexierbare Seiten</dt><dd>'+(s.indexablePages??'–')+'</dd></div><div><dt>Defekte interne Links</dt><dd>'+(s.brokenInternalLinks??0)+'</dd></div><div><dt>Redirect-Links</dt><dd>'+(s.redirectingInternalLinks??0)+'</dd></div><div><dt>Duplicate Content</dt><dd>'+(s.duplicateContent??0)+'</dd></div><div><dt>Near-Duplicates</dt><dd>'+(s.nearDuplicateContent??0)+'</dd></div><div><dt>Defekte Ressourcen</dt><dd>'+(s.brokenResources??0)+'</dd></div></dl></section><section><div class="sectionhead"><div><span class="eyebrow">Betrieb</span><h2>Website Care</h2></div></div><dl class="facts compact-facts"><div><dt>Letzter HTTP-Status</dt><dd>'+(ops.lastCheck?.http_status??'–')+'</dd></div><div><dt>Response</dt><dd>'+(ops.lastCheck?.response_ms??'–')+' ms</dd></div><div><dt>SSL Restlaufzeit</dt><dd>'+(ops.lastCheck?.ssl_days??'–')+' Tage</dd></div><div><dt>Backup zuletzt</dt><dd>'+esc(ops.backup?.latest?.created_at?new Date(ops.backup.latest.created_at).toLocaleString('de-DE'):'–')+'</dd></div></dl></section></div>';
+  html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">SEO</span><h2>Technische Qualität</h2></div></div><dl class="facts compact-facts"><div><dt>Indexierbare Seiten</dt><dd>'+(s.indexablePages??'–')+'</dd></div><div><dt>Defekte interne Links</dt><dd>'+(s.brokenInternalLinks??0)+'</dd></div><div><dt>Redirect-Links</dt><dd>'+(s.redirectingInternalLinks??0)+'</dd></div><div><dt>Duplicate Content</dt><dd>'+(s.duplicateContent??0)+'</dd></div><div><dt>Near-Duplicates</dt><dd>'+(s.nearDuplicateContent??0)+'</dd></div><div><dt>Defekte Ressourcen</dt><dd>'+(s.brokenResources??0)+'</dd></div></dl></section><section><div class="sectionhead"><div><span class="eyebrow">Betrieb</span><h2>Website Care</h2></div></div><dl class="facts compact-facts"><div><dt>Letzter HTTP-Status</dt><dd>'+(ops.lastCheck?.http_status??'–')+'</dd></div><div><dt>Response</dt><dd>'+(ops.lastCheck?.response_ms??'–')+' ms</dd></div><div><dt>SSL Restlaufzeit</dt><dd>'+(ops.lastCheck?.ssl_days??'–')+' Tage</dd></div><div><dt>Domain Restlaufzeit</dt><dd>'+esc(ops.lastCheck?.details?.domainExpiryDays??'–')+' Tage</dd></div><div><dt>Backup zuletzt</dt><dd>'+esc(ops.backup?.last?.created_at?new Date(ops.backup.last.created_at).toLocaleString('de-DE'):'–')+'</dd></div></dl></section></div>';
   if(r.available)html+='<section><div class="sectionhead"><div><span class="eyebrow">Regression</span><h2>Seit dem letzten Audit</h2></div></div><div class="metrics"><span>'+r.newIssues.length+'<em>Neue Issues</em></span><span>'+r.resolvedIssues.length+'<em>Gelöste Issues</em></span><span>'+r.changedPages.length+'<em>Meta-/Status-Änderungen</em></span><span>'+r.newPages.length+'<em>Neue Seiten</em></span><span>'+r.removedPages.length+'<em>Entfernte Seiten</em></span></div></section>';
   return page('Report · '+site.name,html);
 }
@@ -1355,7 +1373,7 @@ async function siteOperationsPage(slug){
           <div><dt>Titel</dt><dd>${esc(latestDetails.title||'–')}</dd></div>
           <div><dt>DNS</dt><dd>${Array.isArray(latestDetails.dns)?esc(latestDetails.dns.join(', ')):'–'}</dd></div>
           <div><dt>Redirects</dt><dd>${Array.isArray(latestDetails.redirects)?latestDetails.redirects.length:0}</dd></div>
-          <div><dt>WordPress</dt><dd>${latestDetails.wordpress?latestDetails.wordpress.ok?'OK':'Fehler':'nicht geprüft'}</dd></div>
+          <div><dt>WordPress</dt><dd>${latestDetails.wordpress?latestDetails.wordpress.ok?'OK':'Fehler':'nicht geprüft'}</dd></div><div><dt>Domain-Ablauf</dt><dd>${latestDetails.domainExpiryDays??'–'} Tage</dd></div>
           <div><dt>Fehler in Folge</dt><dd>${monitorState?.consecutive_failures||0}</dd></div>
           <div><dt>Alerts im Incident</dt><dd>${monitorState?.alert_count||0}</dd></div>
         </dl>
@@ -1392,7 +1410,7 @@ async function incidentPage(id){
 }
 async function dashboard(){const sites=await listSites(),checks=(await q('select mc.site_id,mc.ok,mc.http_status,mc.response_ms,mc.ssl_days,mc.created_at from monitor_checks mc join (select site_id,max(created_at) created_at from monitor_checks group by site_id) latest on latest.site_id=mc.site_id and latest.created_at=mc.created_at')).rows,checkMap=new Map(checks.map(x=>[x.site_id,x])),backups=(await q('select b.site_id,b.git_commit,b.file_count,b.created_at from backups b join (select site_id,max(created_at) created_at from backups group by site_id) latest on latest.site_id=b.site_id and latest.created_at=b.created_at')).rows,backupMap=new Map(backups.map(x=>[x.site_id,x])),incidents=(await q("select i.*,s.domain from incidents i join sites s on s.id=i.site_id where i.status='open' order by i.created_at desc")).rows,changes=(await q('select c.*,s.domain from changes c join sites s on s.id=c.site_id order by c.created_at desc limit 20')).rows;const cards=sites.map(s=>{const c=checkMap.get(s.id),b=backupMap.get(s.id),deploy=s.deployment_mode==='hostinger_git'?'HOSTINGER GIT':s.protocol.toUpperCase();return `<a class="card" href="/sites/${esc(s.slug)}"><div class="row"><strong>${esc(s.name)}</strong><span class="pill ${c?.ok?'ok':'bad'}">${c?c.ok?'ONLINE':'ALARM':'NO DATA'}</span></div><small>${esc(s.domain)} · ${esc(deploy)}</small><div class="metrics"><span>${c?.response_ms??'–'} ms<em>Response</em></span><span>${c?.ssl_days??'–'} d<em>SSL</em></span><span>${s.monitor_enabled?'ON':'OFF'}<em>Monitor</em></span><span>${b?.created_at?new Date(b.created_at).toLocaleDateString('de-DE'):'–'}<em>Backup</em></span></div></a>`}).join('');const inc=incidents.length?incidents.map(i=>`<li><b>${esc(i.domain)}</b> ${esc(i.title)}<small>${new Date(i.created_at).toLocaleString('de-DE')}</small></li>`).join(''):'<li>Keine offenen Incidents.</li>',hist=changes.map(c=>`<li><b>${esc(c.domain)}</b> ${esc(c.description)} <span class="pill">${esc(c.status)}</span><small>${new Date(c.created_at).toLocaleString('de-DE')} · ${esc(c.actor)}</small></li>`).join('')||'<li>Noch keine Änderungen.</li>';return page('SiteOps',`<header><div><span class="eyebrow">Lorzen</span><h1>SiteOps</h1><p>Websites, Backups, Monitoring und Rollbacks.</p></div><div class="actions"><a class="ghost btn" href="/settings">Einstellungen</a><a class="btn" href="/setup">+ Website</a></div></header><section><h2>Websites</h2><div class="grid">${cards}</div></section><div class="twocol"><section><h2>Offene Incidents</h2><ul>${inc}</ul></section><section><h2>Letzte Änderungen</h2><ul>${hist}</ul></section></div>`);}
 
-async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'0.8.2',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0];if(path==='/health'||path.startsWith('/assets/'))return;if(path==='/mcp'){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
+async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'0.9.0',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0];if(path==='/health'||path.startsWith('/assets/'))return;if(path==='/mcp'){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
 app.get('/api/sites/:site',async req=>publicSite(await getSite(req.params.site)));
 app.get('/api/sites/:site/overview',async req=>siteOverview(req.params.site));
 app.post('/api/sites/:site/connection-test',async req=>testStoredConnection(await getSite(req.params.site)));
