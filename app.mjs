@@ -515,6 +515,11 @@ async function sendAlert(subject,text){
   const settled=await Promise.allSettled(jobs.map(x=>x.promise));
   return jobs.map((x,i)=>({channel:x.channel,ok:settled[i]?.status==='fulfilled',error:settled[i]?.status==='rejected'?String(settled[i].reason?.message||settled[i].reason):null}));
 }
+async function sendAlertWithFixPrompt(subject,text,promptArgs){
+  let full=text;
+  try{const built=await buildFixPrompt(promptArgs);if(built?.prompt)full+='\n\n--- SiteOps Fix-Prompt für ChatGPT / Claude ---\n'+built.prompt.slice(0,16000);}catch(e){console.error('fix prompt for alert',subject,e);}
+  return sendAlert(subject,full);
+}
 async function incidentEvent(incidentId,siteId,eventType,details){await q('insert into incident_events(incident_id,site_id,event_type,details) values(?,?,?,?)',[incidentId,siteId,eventType,details?JSON.stringify(details):null]);}
 async function processMonitor(site){
   const result=await checkSiteNow(site);
@@ -534,13 +539,13 @@ async function processMonitor(site){
       incidentId=crypto.randomUUID();
       await q(`insert into incidents(id,site_id,status,title,details) values(?,?,'open',?,?)`,[incidentId,site.id,`${site.domain} unhealthy`,JSON.stringify(result)]);
       await incidentEvent(incidentId,site.id,'opened',{failureCount:failures,result});
-      const alertResult=await sendAlert(`DOWN: ${site.domain}`,JSON.stringify(result,null,2));
+      const alertResult=await sendAlertWithFixPrompt(`DOWN: ${site.domain}`,JSON.stringify(result,null,2),{kind:'monitor',site:site.id});
       alertCount=1;lastAlert=Date.now();await incidentEvent(incidentId,site.id,'alert',alertResult);
     }else if(incidentId){
       await incidentEvent(incidentId,site.id,'check_failed',{failureCount:failures,result});
       const repeatMs=Math.max(1,Number(site.alert_repeat_minutes||60))*60000;
       if(!lastAlert||Date.now()-lastAlert>=repeatMs){
-        const alertResult=await sendAlert(`STILL DOWN: ${site.domain}`,JSON.stringify({failures,result},null,2));
+        const alertResult=await sendAlertWithFixPrompt(`STILL DOWN: ${site.domain}`,JSON.stringify({failures,result},null,2),{kind:'monitor',site:site.id});
         alertCount++;lastAlert=Date.now();await incidentEvent(incidentId,site.id,'repeat_alert',{alertCount,delivery:alertResult});
       }
     }
@@ -598,7 +603,7 @@ async function searchText(siteId,needle,{maxFiles=50,maxBytes=524288}={}){
 
 async function getIncident(incidentId){const i=(await q('select i.*,s.slug,s.domain from incidents i join sites s on s.id=i.site_id where i.id=?',[incidentId])).rows[0];if(!i)throw new Error('Incident not found');const events=(await q('select id,event_type,details,created_at from incident_events where incident_id=? order by created_at asc',[incidentId])).rows;return{...i,events};}
 let monitorRunning=false;function startMonitor(){setInterval(async()=>{if(monitorRunning)return;monitorRunning=true;try{const sites=(await q(`select s.* from sites s left join monitor_state ms on ms.site_id=s.id where s.enabled=1 and s.monitor_enabled=1 and (ms.last_check_at is null or timestampdiff(second,ms.last_check_at,now())>=s.monitor_interval_seconds)`)).rows;for(const site of sites){try{await processMonitor(site);}catch(e){console.error('monitor',site.domain,e);}}}finally{monitorRunning=false;}},cfg.workerInterval).unref();}
-let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlert(`BACKUP FAILED: ${site.domain}`,msg);console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
+let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlertWithFixPrompt(`BACKUP FAILED: ${site.domain}`,msg,{kind:'backup',site:site.id});console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
 
 
 function publicSyntheticTest(t){
@@ -651,7 +656,7 @@ async function runSyntheticTest(testId,{saveBaseline=false,actor='manual'}={}){
   await q('insert into synthetic_runs(id,test_id,site_id,status,duration_ms,error,result,visual_mismatch,screenshot_image) values(?,?,?,?,?,?,?,?,?)',[runId,t.id,site.id,status,result.durationMs||null,result.error||null,JSON.stringify({...stored,actor,baselineSaved:Boolean(saveBaseline)}),result.visual?.mismatch??null,screenshot]);
   await q('update synthetic_tests set last_run_at=now(),next_run_at=null where id=?',[t.id]);
   await q('update synthetic_runs set screenshot_image=null where test_id=? and created_at<date_sub(now(),interval 30 day)',[t.id]);
-  if(actor==='scheduler'&&status==='failed'&&previous?.status!=='failed')await sendAlert('SYNTHETIC FAILED: '+site.domain+' · '+t.name,result.error||'Browser journey failed');
+  if(actor==='scheduler'&&status==='failed'&&previous?.status!=='failed')await sendAlertWithFixPrompt('SYNTHETIC FAILED: '+site.domain+' · '+t.name,result.error||'Browser journey failed',{kind:'synthetic',id:runId});
   if(actor==='scheduler'&&status==='passed'&&previous?.status==='failed')await sendAlert('SYNTHETIC RECOVERED: '+site.domain+' · '+t.name,'Browser journey is healthy again.');
   return syntheticRunGet(runId);
 }
