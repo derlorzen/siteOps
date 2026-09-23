@@ -1052,6 +1052,19 @@ You may use, study, modify and redistribute SiteOps for **noncommercial purposes
 
 This repository is therefore **source-available**, not OSI Open Source. The Open Source Definition requires licenses to allow commercial fields of endeavor.
 
+## Commercial licensing
+
+The public license does **not** grant commercial-use rights.
+
+If you want to use SiteOps commercially — for example as part of a paid service, hosted/SaaS offering, commercial product, agency platform or other revenue-generating activity — you need a separate commercial license from the copyright holder.
+
+Commercial licenses, partnerships and custom licensing terms can be arranged directly with the copyright holder. The copyright holder may also operate SiteOps commercially and may grant different license terms to individual customers or partners.
+
+This is a dual-licensing model:
+
+- **Public license:** PolyForm Noncommercial 1.0.0 for noncommercial use.
+- **Commercial license:** separate permission from the copyright holder for commercial use.
+
 ## License history
 
 SiteOps 1.1.0 was previously published under **AGPL-3.0-only**. Rights already granted for that historical version remain governed by its license. The noncommercial terms apply to SiteOps 1.1.1 and subsequent versions released under the current [LICENSE](LICENSE).
