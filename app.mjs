@@ -271,7 +271,9 @@ async function readRemoteText(siteId,path){const site=await getSite(siteId),r=aw
 
 
 function wpHeaderValue(text,label){
-  const escaped=label.replace(/[.*+?^$()|[\]\\{}]/g,'\\$&'),m=String(text||'').match(new RegExp('^[\\s/*#@]*'+escaped+':\\s*(.+?)\\s*);
+  const escaped=label.replace(/[.*+?^$()|[\]\\{}]/g,'\\$&');
+  const pattern='^[\\s/*#@]*'+escaped+':\\s*(.+?)\\s*$';
+  const m=String(text||'').match(new RegExp(pattern,'im'));
   return m?m[1].trim().replace(/\*\/\s*$/,'').trim():null;
 }
 async function wpReadMaybe(remote,path,maxBytes=131072){
