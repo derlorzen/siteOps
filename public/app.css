@@ -100,3 +100,14 @@ section+section{margin-top:20px}
   section,.score-card{box-shadow:none!important;break-inside:avoid}
   a{color:inherit;text-decoration:none}
 }
+
+
+/* Fleet overview */
+.fleet-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:0 0 22px}
+.fleet-metrics span,.fleet-card-grid span{display:block;min-width:0;padding:13px;border:1px solid #e4e9ec;border-radius:10px;background:#fbfcfd;font-size:20px;font-weight:850}
+.fleet-metrics em,.fleet-card-grid em{display:block;margin-top:4px;color:#71808a;font-size:10px;font-style:normal;font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.fleet-metrics .fleet-alert,.fleet-card-grid .metric-bad{background:#fff1f1;border-color:#efc8c8;color:#a92828}
+.fleet-card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.fleet-card-grid span{font-size:16px;padding:9px}
+@media(max-width:1000px){.fleet-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.fleet-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.fleet-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
