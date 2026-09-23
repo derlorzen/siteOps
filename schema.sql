@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS sites (
   backup_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   backup_interval_seconds INT NOT NULL DEFAULT 86400,
   backup_max_files INT NOT NULL DEFAULT 10000,
+  seo_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  seo_interval_seconds INT NOT NULL DEFAULT 604800,
+  seo_max_pages INT NOT NULL DEFAULT 100,
+  seo_pagespeed_mode VARCHAR(20) NOT NULL DEFAULT 'homepage',
+  seo_regression_alerts BOOLEAN NOT NULL DEFAULT TRUE,
   monitor_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   monitor_url TEXT NULL,
   monitor_interval_seconds INT NOT NULL DEFAULT 60,
@@ -234,4 +239,16 @@ CREATE TABLE IF NOT EXISTS site_intelligence_runs (
   finished_at DATETIME NULL,
   CONSTRAINT fk_site_intelligence_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
   INDEX idx_site_intelligence_site_started (site_id, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS seo_state (
+  site_id CHAR(36) PRIMARY KEY,
+  last_attempt_at DATETIME NULL,
+  last_success_at DATETIME NULL,
+  last_error LONGTEXT NULL,
+  last_health_score INT NULL,
+  last_error_count INT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_seo_state_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
