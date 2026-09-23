@@ -6,23 +6,76 @@ Remote endpoint:
 https://siteops.lorzen.cloud/mcp
 ```
 
-Current authentication:
+## Authentication
+
+SiteOps includes its own OAuth 2.1 authorization server for native ChatGPT and Claude remote-MCP connections.
+
+Primary flow:
+
+- Protected Resource Metadata: `/.well-known/oauth-protected-resource`
+- Authorization Server Metadata: `/.well-known/oauth-authorization-server`
+- Authorization Code flow with PKCE `S256`
+- Client ID Metadata Documents (CIMD) for ChatGPT
+- Dynamic Client Registration (DCR) for Claude and compatible MCP clients
+- short-lived access tokens
+- rotating refresh tokens
+- OAuth token revocation
+
+The authorization UI is protected by the existing SiteOps dashboard credentials. ChatGPT and Claude never receive the dashboard password; after consent they use OAuth tokens.
+
+The legacy static bearer remains optional for scripts or older clients:
 
 ```
 Authorization: Bearer <MCP_API_TOKEN>
 ```
 
-The interactive setup guide is available in SiteOps at `/mcp-info`.
+`MCP_API_TOKEN` is no longer required for SiteOps health when OAuth is used.
 
-SiteOps never returns stored passwords, private keys, GitHub PATs, PageSpeed API keys, Browser Runner tokens, synthetic test secrets, SMTP passwords or the master key. Secret-bearing update tools accept replacement secrets but responses remain redacted.
+SiteOps stores only SHA-256 hashes of OAuth access/refresh tokens and authorization codes. Tokens are resource-bound to the configured MCP URL.
 
-## Initial setup
+## ChatGPT
 
-1. Set `MCP_API_TOKEN` as a long random Hostinger environment variable.
-2. Keep `PUBLIC_BASE_URL=https://siteops.lorzen.cloud`.
-3. Redeploy SiteOps.
-4. Verify `/health` no longer lists `MCP_API_TOKEN` in `missingConfig`.
-5. Test the remote server with MCP Inspector using Streamable HTTP and an `Authorization: Bearer ...` header.
+1. Open the ChatGPT custom app / MCP creation flow in Developer Mode.
+2. Enter the SiteOps MCP URL: `https://siteops.lorzen.cloud/mcp`.
+3. Select OAuth when prompted.
+4. ChatGPT discovers SiteOps through the well-known metadata endpoints.
+5. With CIMD enabled, ChatGPT uses its HTTPS Client ID Metadata Document as `client_id`.
+6. Complete the SiteOps authorization screen using the dashboard login and allow access.
+7. ChatGPT exchanges the code using PKCE and receives access + refresh tokens.
+
+SiteOps advertises RFC 9207 issuer identification and returns `iss` on authorization responses.
+
+## Claude
+
+1. Open Claude → Settings → Connectors.
+2. Add a custom connector with `https://siteops.lorzen.cloud/mcp`.
+3. Click Connect.
+4. Claude can dynamically register its OAuth client through SiteOps DCR.
+5. Complete the SiteOps authorization screen.
+6. Claude receives access + refresh tokens and can reconnect without storing the dashboard password.
+
+Claude's standard callback `https://claude.ai/api/mcp/auth_callback` is supported.
+
+## OAuth security model
+
+- PKCE `S256` is mandatory.
+- Only the canonical MCP resource may be authorized.
+- Redirect URIs are validated against DCR/CIMD client metadata.
+- CIMD URL clients are restricted to ChatGPT/OpenAI and Claude/Anthropic domains.
+- ChatGPT stable and connector-specific callback forms are supported.
+- Access tokens expire after one hour by default.
+- Refresh tokens expire after 30 days by default and rotate on every use.
+- Authorization codes are single-use and expire after 10 minutes by default.
+- OAuth sessions can be reviewed and revoked under SiteOps → MCP.
+- Existing `change_preview` → `change_apply` controls remain unchanged.
+
+The lifetimes can be adjusted through:
+
+```
+OAUTH_ACCESS_TOKEN_TTL_SECONDS=3600
+OAUTH_REFRESH_TOKEN_TTL_SECONDS=2592000
+OAUTH_CODE_TTL_SECONDS=600
+```
 
 ## Main tools
 
@@ -49,25 +102,19 @@ SiteOps never returns stored passwords, private keys, GitHub PATs, PageSpeed API
 - `seo_page` – full details for one crawled URL
 - `seo_graph` – strongest pages and internal link edges
 - `seo_issues` – bounded issue list, optionally by severity
-- `seo_compare` – compare the two latest completed crawls: Health Score delta, new/resolved issues, changed/new/removed pages
-- `quality_overview` – combined SEO quality, regression, uptime/incidents and backup state
-
-The WDF×IDF values are calculated against the corpus of the crawled website. They are useful for internal content analysis but are not a competitor SERP corpus.
-
-The Quality Suite additionally checks duplicate/near-duplicate content, broken internal links/resources, redirecting links, canonicals, sitemap coverage, hreflang, social metadata, static accessibility signals, security headers and AI crawler access declared in robots.txt. These checks are technical diagnostics; they do not claim search-engine ranking outcomes.
+- `seo_compare` – compare the two latest completed crawls
+- `quality_overview` – combined quality, regression, uptime/incidents and backup state
 
 ### Synthetic browser tests
 
-- `synthetics_list` – list journeys and their latest state
-- `synthetic_create` – create a scheduled Playwright journey
-- `synthetic_update` – update/pause a journey or rotate encrypted test secrets
-- `synthetic_run` – run now; optionally promote a successful screenshot to visual baseline
-- `synthetic_run_get` – inspect a run without returning screenshot bytes
-- `fix_prompt` – generate a copy-ready ChatGPT/Claude repair prompt from an SEO finding, monitoring failure, backup failure, incident or failed browser run
+- `synthetics_list`
+- `synthetic_create`
+- `synthetic_update`
+- `synthetic_run`
+- `synthetic_run_get`
+- `fix_prompt`
 
-Synthetic secrets are passed separately and referenced in test steps with `{{secret.NAME}}`. They are encrypted with the SiteOps master key and never returned by MCP.
-
-The generated repair prompt explicitly tells the agent to inspect the source through SiteOps, create a minimal `change_preview`, and wait for human approval before `change_apply`. DOWN, backup-failure and scheduled synthetic-failure alerts also include this prompt automatically.
+Synthetic secrets remain encrypted and are never returned by MCP.
 
 ### Connections and configuration
 
@@ -81,8 +128,6 @@ The generated repair prompt explicitly tells the agent to inspect the source thr
 - `files_find`
 - `text_search`
 - `file_read`
-
-For Hostinger Git deployments, the current source of truth is the configured GitHub repository. For classic sites it is the configured live webspace.
 
 ### Safe changes
 
@@ -101,8 +146,6 @@ Changes remain two-step. A preview is created first; only `change_apply` writes/
 - `backups_list`
 - `backup_restore_preview`
 
-The backup repository is automatically initialized on the first backup even when the GitHub repository is completely empty.
-
 ## Recommended agent workflow
 
 1. `site_overview`
@@ -113,26 +156,4 @@ The backup repository is automatically initialized on the first backup even when
 6. `change_apply`
 7. `site_status`
 
-For a failing browser journey:
-
-1. `synthetic_run_get`
-2. `fix_prompt` with `kind=synthetic`
-3. diagnose with file tools
-4. `change_preview`
-5. obtain human approval
-6. `change_apply`
-7. `synthetic_run` again
-
-For SEO:
-
-1. `seo_start`
-2. poll `seo_run_status`
-3. `seo_latest`
-4. inspect important URLs with `seo_page`
-5. use `seo_graph` and `seo_issues` for structure and priorities
-
-## Client notes
-
-SiteOps currently uses static Bearer authentication. MCP clients and API integrations that support a Bearer/authorization token can use it directly.
-
-Native web connector experiences increasingly use OAuth. If a specific ChatGPT or Claude connector UI requires OAuth and does not provide a static Bearer option, SiteOps will need an OAuth authorization layer for that native connection. Do not make the MCP endpoint unauthenticated as a workaround.
+The interactive OAuth/MCP setup and active connection management are available at `/mcp-info`.
