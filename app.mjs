@@ -610,7 +610,7 @@ async function syntheticTestsList(siteId){
   const out=[];for(const t of tests){const last=(await q('select id,status,duration_ms,error,result,visual_mismatch,created_at,(screenshot_image is not null) screenshot_available from synthetic_runs where test_id=? order by created_at desc limit 1',[t.id])).rows[0]||null;out.push({...publicSyntheticTest(t),lastRun:last});}
   return out;
 }
-function syntheticValidateStartUrl(site,url){const u=new URL(url),a=u.hostname.toLowerCase().replace(/^www\./,''),b=String(site.domain||'').toLowerCase().replace(/^www\./,'');if(a!==b)throw new Error('Synthetic start URL must use the managed site hostname');return u.toString();}
+function syntheticValidateStartUrl(site,url){const u=new URL(url);if(!['http:','https:'].includes(u.protocol))throw new Error('Synthetic start URL must use http or https');const a=u.hostname.toLowerCase().replace(/^www\./,''),b=String(site.domain||'').toLowerCase().replace(/^www\./,'');if(a!==b)throw new Error('Synthetic start URL must use the managed site hostname');return u.toString();}
 function syntheticSteps(value){if(!Array.isArray(value))throw new Error('steps must be an array');for(const [i,x] of value.entries())if(!x||typeof x!=='object'||!x.action)throw new Error('Step '+(i+1)+' needs an action');return value;}
 async function syntheticCreate(siteId,x){
   const site=await getSite(siteId),id=crypto.randomUUID(),startUrl=syntheticValidateStartUrl(site,x.startUrl||site.monitor_url||('https://'+site.domain)),steps=syntheticSteps(x.steps||[]);
@@ -633,7 +633,7 @@ function syntheticResolveSecrets(value,secrets){
   return value;
 }
 async function browserRunnerRequest(path,{method='GET',body,token,url}={}){
-  const base=String(url??cfg.browserRunnerUrl||'').replace(/\/+$/,'');const authToken=token??cfg.browserRunnerToken;
+  const base=String((url??cfg.browserRunnerUrl)||'').replace(/\/+$/,'');const authToken=token??cfg.browserRunnerToken;
   if(!base||!authToken)throw new Error('Browser Runner is not configured');
   const res=await fetch(base+path,{method,headers:{authorization:'Bearer '+authToken,...(body!==undefined?{'content-type':'application/json'}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(150000)});
   const raw=await res.text();let data;try{data=raw?JSON.parse(raw):{};}catch{data={error:raw.slice(0,1000)};}if(!res.ok)throw new Error('Browser Runner '+res.status+': '+(data.error||data.message||raw.slice(0,500)));return data;
