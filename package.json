@@ -11,9 +11,10 @@
     "migrate": "node app.mjs --migrate",
     "check": "node --check app.mjs",
     "check:runtime": "node app.mjs --check-runtime",
-    "lint": "eslint app.mjs",
-    "format": "prettier --write app.mjs",
-    "format:check": "prettier --check app.mjs"
+    "lint": "eslint app.mjs lib migrations test",
+    "format": "prettier --write app.mjs lib migrations test",
+    "format:check": "prettier --check app.mjs lib migrations test",
+    "test": "node --test"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.2.2",

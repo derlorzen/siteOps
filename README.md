@@ -898,6 +898,25 @@ Local syntax/runtime checks:
 ```bash
 npm run check
 npm run check:runtime
+npm run lint
+npm run format:check
+```
+
+Tests (`test/*.test.mjs`, run with Node's built-in test runner):
+
+```bash
+npm test
+```
+
+The crypto/path-traversal tests run standalone. The migration test needs a
+database and is skipped automatically if none of `DATABASE_URL` or
+`DB_HOST`/`DB_USER`/`DB_NAME` are set:
+
+```bash
+DB_HOST=localhost DB_USER=siteops DB_PASSWORD=... DB_NAME=siteops_test \
+SITEOPS_MASTER_KEY=$(openssl rand -base64 32) \
+DASHBOARD_USER=test DASHBOARD_PASSWORD=test \
+npm test
 ```
 
 Runner syntax check:
@@ -911,7 +930,9 @@ npm run check
 The repository includes GitHub Actions for:
 
 - main SiteOps validation
+- lint/format checks
 - runtime import checks
+- unit and migration tests (MySQL service container)
 - Browser Runner dependency/import checks
 - real Chromium smoke testing
 
@@ -999,6 +1020,11 @@ SiteOps uses live/source hashes to detect conflicting edits. Create a fresh prev
 │   ├── 0001_init.sql
 │   ├── 0002_deployment_and_extra_columns.mjs
 │   └── README.md
+├── lib/
+│   └── crypto.mjs
+├── test/
+│   ├── crypto.test.mjs
+│   └── migrations.test.mjs
 ├── package.json
 ├── .env.example
 ├── public/

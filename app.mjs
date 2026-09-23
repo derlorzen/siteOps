@@ -15,6 +15,8 @@ import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
+import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/crypto.mjs';
+import { pathToFileURL } from 'node:url';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -116,28 +118,13 @@ const esc = value =>
     /[&<>"']/g,
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]
   );
-function safeEqual(a, b) {
-  const aa = Buffer.from(String(a ?? '')),
-    bb = Buffer.from(String(b ?? ''));
-  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
-}
 function key() {
   const raw = Buffer.from(cfg.masterKey, 'base64');
   if (raw.length !== 32) throw new Error('SITEOPS_MASTER_KEY must decode to 32 bytes');
   return raw;
 }
-function encrypt(value) {
-  const iv = crypto.randomBytes(12),
-    cipher = crypto.createCipheriv('aes-256-gcm', key(), iv);
-  const data = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(value))), cipher.final()]);
-  return [iv, cipher.getAuthTag(), data].map(x => x.toString('base64url')).join('.');
-}
-function decrypt(value) {
-  const [iv, tag, data] = value.split('.');
-  const d = crypto.createDecipheriv('aes-256-gcm', key(), Buffer.from(iv, 'base64url'));
-  d.setAuthTag(Buffer.from(tag, 'base64url'));
-  return JSON.parse(Buffer.concat([d.update(Buffer.from(data, 'base64url')), d.final()]).toString());
-}
+const encrypt = value => encryptWithKey(value, key());
+const decrypt = value => decryptWithKey(value, key());
 const phpParser = new PHPParser({
   parser: { suppressErrors: false, extractDoc: false },
   ast: { withPositions: false }
@@ -294,11 +281,6 @@ function publicSettings() {
   };
 }
 
-function joinRemote(root, path = '') {
-  const clean = String(path).replaceAll('\\', '/').replace(/^\/+/, '');
-  if (clean.split('/').includes('..')) throw new Error('Path traversal rejected');
-  return `${root.replace(/\/+$/, '')}/${clean}`.replace(/\/$/, '') || '/';
-}
 class SftpAdapter {
   constructor(client) {
     this.client = client;
@@ -6287,7 +6269,27 @@ async function start() {
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');
 }
 
-if (process.argv.includes('--check-runtime')) {
+export { migrate, q, db };
+
+const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMainModule) await runCli();
+
+async function runCli() {
+  if (process.argv.includes('--check-runtime')) {
+    await checkRuntime();
+  } else if (process.argv.includes('--migrate')) {
+    await migrate();
+    await db.end();
+    console.log('Database schema applied.');
+  } else {
+    start().catch(e => {
+      console.error(e);
+      process.exit(1);
+    });
+  }
+}
+
+async function checkRuntime() {
   phpParser.parseCode('<?php echo 1;', 'smoke.php');
   const verifier = 'siteops-oauth-runtime-check',
     challenge = oauthPkceChallenge(verifier);
@@ -6303,13 +6305,4 @@ if (process.argv.includes('--check-runtime')) {
     throw new Error('OAuth discovery self-check failed');
   await db.end();
   console.log('Runtime imports + OAuth checks OK.');
-} else if (process.argv.includes('--migrate')) {
-  await migrate();
-  await db.end();
-  console.log('Database schema applied.');
-} else {
-  start().catch(e => {
-    console.error(e);
-    process.exit(1);
-  });
 }
