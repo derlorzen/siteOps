@@ -1,6 +1,6 @@
 # Deploy SiteOps on Hostinger Cloud Startup
 
-SiteOps 0.9 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
+SiteOps 1.0 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
 
 ## 1. Create the Hostinger MySQL database
 
@@ -124,7 +124,25 @@ The technical SEO crawler, duplicate-content checks, link/resource checks, acces
 
 SiteOps also reads public RDAP data for domain-expiry monitoring. Failed/unavailable RDAP lookups are treated as unknown rather than as a site outage.
 
-## 7. Verification after deployment
+## 7. Optional Browser Runner
+
+Synthetic journeys and visual regression use the separate service in `runner/`. This is intentionally not started inside the normal Hostinger Cloud SiteOps process.
+
+On a Linux Node.js host:
+
+```bash
+cd runner
+npm install
+npx playwright install --with-deps chromium
+export BROWSER_RUNNER_TOKEN='<long random token>'
+npm start
+```
+
+Expose it through HTTPS, then configure its URL/token in the SiteOps settings page. The runner rejects unauthenticated executions, arbitrary JavaScript steps and main-frame navigation away from the managed website hostname.
+
+The main SiteOps app stores journey definitions, encrypted test secrets, schedules, results and visual baselines. Failure screenshots are automatically discarded after 30 days. After a successful SiteOps `change_apply`, enabled journeys are queued automatically: after 10 seconds for direct webspace changes and after 120 seconds for Hostinger Git deployments.
+
+## 8. Verification after deployment
 
 Open:
 
@@ -137,7 +155,7 @@ Expected response includes:
 ```json
 {
   "status": "ok",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "database": "mysql"
 }
 ```

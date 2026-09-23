@@ -1,0 +1,67 @@
+name: Browser Runner Smoke
+
+on:
+  pull_request:
+    paths:
+      - 'runner/**'
+      - '.github/workflows/browser-runner-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: siteops-browser-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install runner dependencies
+        working-directory: runner
+        run: npm install --ignore-scripts
+      - name: Install Chromium
+        working-directory: runner
+        run: npx playwright install --with-deps chromium
+      - name: Run real browser smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/siteops-smoke
+          cat > /tmp/siteops-smoke/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head><meta charset="utf-8"><title>SiteOps Smoke</title></head>
+          <body>
+            <button id="go" onclick="document.querySelector('#result').textContent='OK'">Run</button>
+            <div id="result">WAIT</div>
+          </body>
+          </html>
+          HTML
+
+          python3 -m http.server 8123 --bind 127.0.0.1 --directory /tmp/siteops-smoke >/tmp/siteops-smoke-site.log 2>&1 &
+          SITE_PID=$!
+          (
+            cd runner
+            BROWSER_RUNNER_TOKEN=ci-runner-token PORT=3299 HOST=127.0.0.1 node server.mjs
+          ) >/tmp/siteops-smoke-runner.log 2>&1 &
+          RUNNER_PID=$!
+
+          cleanup() {
+            kill "$RUNNER_PID" "$SITE_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3299/health >/dev/null; then break; fi
+            sleep 1
+          done
+
+          curl -fsS             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"baseUrl":"http://127.0.0.1:8123/","steps":[{"action":"assertTitle","contains":"SiteOps Smoke"},{"action":"click","selector":"#go"},{"action":"assertText","selector":"#result","text":"OK"},{"action":"assertCount","selector":"button","count":1}],"captureScreenshot":true}'             http://127.0.0.1:3299/run > /tmp/siteops-run.json
+
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/siteops-run.json','utf8')); if(!x.ok||!x.screenshotHash||x.steps.length!==4) { console.error(x); process.exit(1); } console.log({ok:x.ok,durationMs:x.durationMs,screenshotHash:x.screenshotHash,httpErrors:x.httpErrors});"

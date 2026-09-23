@@ -46,10 +46,18 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 - incident + recovery alerts by SMTP and/or generic webhook
 - lightweight operations dashboard plus Streamable HTTP MCP endpoint
 - customer host credentials encrypted with AES-256-GCM
+- optional secured Playwright Browser Runner for scheduled synthetic user journeys
+- visual-regression baselines with configurable pixel-difference threshold and failure screenshots
+- synthetic checks for navigation, clicks, forms, visibility, URL/title/text assertions and real Chromium rendering
+- encrypted per-test secret variables referenced as `{{secret.NAME}}`
+- automatic repair prompts for SEO/Quality issues, monitoring incidents and failed browser journeys
+- one-click copy workflow for ChatGPT/Claude that instructs the agent to diagnose through SiteOps MCP and create a safe `change_preview` without applying it
+- DOWN, backup and synthetic failure alerts automatically include the generated repair prompt
+- successful `change_apply` queues enabled browser journeys for post-change validation (10s direct webspace, 120s Hostinger Git deploy)
 
 ## Hosting
 
-SiteOps 0.9 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository.
+SiteOps 1.0 is designed for Hostinger Cloud Startup as a managed Node.js/Fastify application deployed directly from this GitHub repository.
 
 The application now uses the MySQL database included with Hostinger Cloud Startup. No Supabase or external PostgreSQL service is required.
 
@@ -58,3 +66,17 @@ The customer snapshot repository must be **private**. SiteOps refuses to write b
 Prefer SFTP for managed customer websites. FTPS exists for legacy hosts; plain FTP should only be used where unavoidable.
 
 See `docs/INSTALL.md` and `docs/MCP.md`.
+
+
+## Browser Runner
+
+The main SiteOps application stays lightweight on Hostinger Cloud. Browser automation runs in the optional `runner/` service on a Node.js host that can launch Chromium.
+
+```bash
+cd runner
+npm install
+npx playwright install --with-deps chromium
+BROWSER_RUNNER_TOKEN=... npm start
+```
+
+Configure its HTTPS URL and the same bearer token under **SiteOps → Einstellungen → Synthetic Runner**. See `runner/README.md`.

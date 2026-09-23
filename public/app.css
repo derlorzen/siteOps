@@ -71,7 +71,7 @@ section+section{margin-top:20px}
 @media(max-width:800px){.mcp-metrics{grid-template-columns:1fr 1fr}}
 
 
-/* SiteOps 0.9 quality/client report */
+/* SiteOps 1.0 quality/client report */
 @media print{
   .topnav,.backlink,header .actions button{display:none!important}
   body{background:#fff!important}
@@ -79,3 +79,12 @@ section+section{margin-top:20px}
   section,.metrics{break-inside:avoid;box-shadow:none!important}
   a{color:inherit;text-decoration:none}
 }
+
+
+/* SiteOps 1.0 browser journeys and fix prompts */
+.synthetic-card{margin-bottom:18px}
+.synthetic-card details{margin-top:16px;border-top:1px solid #edf0f2;padding-top:12px}
+.synthetic-card summary{cursor:pointer;font-weight:750;color:#52707d}
+.prompt-button{margin-left:auto;white-space:nowrap;padding:7px 10px;font-size:12px}
+.seo-issue{align-items:center}.seo-issue span{flex:1;min-width:0}
+@media(max-width:700px){.seo-issue{align-items:flex-start;flex-wrap:wrap}.prompt-button{margin-left:0;width:100%}}

@@ -32,10 +32,12 @@ const cfg = {
   workerInterval: Number(env('MONITOR_WORKER_INTERVAL_MS','30000')),
   backupWorkerInterval: Number(env('BACKUP_WORKER_INTERVAL_MS','60000')),
   pageSpeedApiKey: process.env.PAGESPEED_API_KEY || '', seoMaxPages: Number(env('SEO_MAX_PAGES','100')),
-  seoUserAgent: env('SEO_USER_AGENT','Lorzen-SiteOps-SEO/0.8')
+  seoUserAgent: env('SEO_USER_AGENT','Lorzen-SiteOps-SEO/1.0'),
+  browserRunnerUrl: process.env.BROWSER_RUNNER_URL || '', browserRunnerToken: process.env.BROWSER_RUNNER_TOKEN || '',
+  syntheticWorkerInterval: Number(env('SYNTHETIC_WORKER_INTERVAL_MS','60000'))
 };
 const db=mysql.createPool(cfg.databaseUrl||{host:cfg.dbHost,port:cfg.dbPort,user:cfg.dbUser,password:cfg.dbPassword,database:cfg.dbName,connectionLimit:5,charset:'utf8mb4'});
-const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details','summary','issues','wdfidf','structured_data','lighthouse_mobile','lighthouse_desktop','hreflang','social','security','accessibility','content_fingerprint']);
+const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details','summary','issues','wdfidf','structured_data','lighthouse_mobile','lighthouse_desktop','hreflang','social','security','accessibility','content_fingerprint','steps','result']);
 function normalizeRow(row){if(!row||typeof row!=='object')return row;for(const k of jsonFields)if(typeof row[k]==='string'){try{row[k]=JSON.parse(row[k]);}catch{}}return row;}
 async function q(text,params=[]){const [raw]=await db.query(text,params);return{rows:Array.isArray(raw)?raw.map(normalizeRow):[],meta:raw};}
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -47,7 +49,7 @@ function encrypt(value){ const iv=crypto.randomBytes(12), cipher=crypto.createCi
 function decrypt(value){ const [iv,tag,data]=value.split('.'); const d=crypto.createDecipheriv('aes-256-gcm',key(),Buffer.from(iv,'base64url')); d.setAuthTag(Buffer.from(tag,'base64url')); return JSON.parse(Buffer.concat([d.update(Buffer.from(data,'base64url')),d.final()]).toString()); }
 const phpParser=new PHPParser({parser:{suppressErrors:false,extractDoc:false},ast:{withPositions:false}});
 async function ensureColumn(table,column,definition){const r=await q(`show columns from ${table} like ?`,[column]);if(!r.rows.length)await db.query(`alter table ${table} add column ${column} ${definition}`);}
-async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);await ensureColumn('sites','deployment_mode',"VARCHAR(30) NOT NULL DEFAULT 'webspace'");await ensureColumn('sites','source_repository','VARCHAR(255) NULL');await ensureColumn('sites','source_branch','VARCHAR(191) NULL');await ensureColumn('sites','source_root','TEXT NULL');await ensureColumn('sites','git_credentials','LONGTEXT NULL');await ensureColumn('sites','hostinger_target_directory','TEXT NULL');await ensureColumn('sites','monitor_expected_title','TEXT NULL');await ensureColumn('sites','monitor_check_dns','BOOLEAN NOT NULL DEFAULT TRUE');await ensureColumn('sites','monitor_check_wordpress','BOOLEAN NOT NULL DEFAULT FALSE');await ensureColumn('sites','alert_repeat_minutes','INT NOT NULL DEFAULT 60');await ensureColumn('monitor_state','last_alert_at','DATETIME NULL');await ensureColumn('monitor_state','alert_count','INT NOT NULL DEFAULT 0');await ensureColumn('seo_pages','final_url','TEXT NULL');await ensureColumn('seo_pages','redirect_count','INT NOT NULL DEFAULT 0');await ensureColumn('seo_pages','lang','VARCHAR(50) NULL');await ensureColumn('seo_pages','hreflang','LONGTEXT NULL');await ensureColumn('seo_pages','social','LONGTEXT NULL');await ensureColumn('seo_pages','security','LONGTEXT NULL');await ensureColumn('seo_pages','accessibility','LONGTEXT NULL');await ensureColumn('seo_pages','content_hash','CHAR(64) NULL');await ensureColumn('seo_pages','content_fingerprint','LONGTEXT NULL');await ensureColumn('seo_pages','indexable','BOOLEAN NOT NULL DEFAULT TRUE');}
+async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);await ensureColumn('sites','deployment_mode',"VARCHAR(30) NOT NULL DEFAULT 'webspace'");await ensureColumn('sites','source_repository','VARCHAR(255) NULL');await ensureColumn('sites','source_branch','VARCHAR(191) NULL');await ensureColumn('sites','source_root','TEXT NULL');await ensureColumn('sites','git_credentials','LONGTEXT NULL');await ensureColumn('sites','hostinger_target_directory','TEXT NULL');await ensureColumn('sites','monitor_expected_title','TEXT NULL');await ensureColumn('sites','monitor_check_dns','BOOLEAN NOT NULL DEFAULT TRUE');await ensureColumn('sites','monitor_check_wordpress','BOOLEAN NOT NULL DEFAULT FALSE');await ensureColumn('sites','alert_repeat_minutes','INT NOT NULL DEFAULT 60');await ensureColumn('monitor_state','last_alert_at','DATETIME NULL');await ensureColumn('monitor_state','alert_count','INT NOT NULL DEFAULT 0');await ensureColumn('seo_pages','final_url','TEXT NULL');await ensureColumn('seo_pages','redirect_count','INT NOT NULL DEFAULT 0');await ensureColumn('seo_pages','lang','VARCHAR(50) NULL');await ensureColumn('seo_pages','hreflang','LONGTEXT NULL');await ensureColumn('seo_pages','social','LONGTEXT NULL');await ensureColumn('seo_pages','security','LONGTEXT NULL');await ensureColumn('seo_pages','accessibility','LONGTEXT NULL');await ensureColumn('seo_pages','content_hash','CHAR(64) NULL');await ensureColumn('seo_pages','content_fingerprint','LONGTEXT NULL');await ensureColumn('seo_pages','indexable','BOOLEAN NOT NULL DEFAULT TRUE');await ensureColumn('synthetic_tests','next_run_at','DATETIME NULL');}
 async function loadSavedConfig(){
   const rows=(await q('select setting_key,setting_value,encrypted from app_settings')).rows;
   const values={};
@@ -77,6 +79,8 @@ async function loadSavedConfig(){
   apply('smtp_from','smtpFrom');
   apply('pagespeed_api_key','pageSpeedApiKey');
   apply('seo_max_pages','seoMaxPages',Number);
+  apply('browser_runner_url','browserRunnerUrl');
+  apply('browser_runner_token','browserRunnerToken');
 }
 async function storeSetting(settingKey,value,{secret=false}={}){
   const stored=secret&&value?encrypt(value):String(value??'');
@@ -89,7 +93,7 @@ async function saveAppSettings(x){
     ['default_backup_max_files','defaultBackupMaxFiles'],['default_monitor_interval_seconds','defaultMonitorIntervalSeconds'],
     ['default_monitor_failure_threshold','defaultMonitorFailureThreshold'],['default_ssl_warn_days','defaultSslWarnDays'],
     ['alert_email','alertEmail'],['alert_webhook','webhook'],['smtp_host','smtpHost'],['smtp_port','smtpPort'],
-    ['smtp_secure','smtpSecure'],['smtp_user','smtpUser'],['smtp_from','smtpFrom'],['seo_max_pages','seoMaxPages']
+    ['smtp_secure','smtpSecure'],['smtp_user','smtpUser'],['smtp_from','smtpFrom'],['seo_max_pages','seoMaxPages'],['browser_runner_url','browserRunnerUrl']
   ];
   for(const [keyName,target] of plain){
     if(x[target]===undefined)continue;
@@ -109,6 +113,10 @@ async function saveAppSettings(x){
     cfg.pageSpeedApiKey=x.pageSpeedApiKey;
     await storeSetting('pagespeed_api_key',x.pageSpeedApiKey,{secret:true});
   }
+  if(x.browserRunnerToken){
+    cfg.browserRunnerToken=x.browserRunnerToken;
+    await storeSetting('browser_runner_token',x.browserRunnerToken,{secret:true});
+  }
   backupRepoChecked=false;backupRepoMeta=null;
   commitTreeCache.clear();
   return publicSettings();
@@ -122,7 +130,8 @@ function publicSettings(){return{
   defaultSslWarnDays:cfg.defaultSslWarnDays,
   alertEmail:cfg.alertEmail,webhook:cfg.webhook,smtpHost:cfg.smtpHost,smtpPort:cfg.smtpPort,smtpSecure:cfg.smtpSecure,
   smtpUser:cfg.smtpUser,smtpPasswordConfigured:Boolean(cfg.smtpPassword),smtpFrom:cfg.smtpFrom,
-  pageSpeedApiKeyConfigured:Boolean(cfg.pageSpeedApiKey),seoMaxPages:cfg.seoMaxPages
+  pageSpeedApiKeyConfigured:Boolean(cfg.pageSpeedApiKey),seoMaxPages:cfg.seoMaxPages,
+  browserRunnerUrl:cfg.browserRunnerUrl,browserRunnerTokenConfigured:Boolean(cfg.browserRunnerToken),browserRunnerConfigured:Boolean(cfg.browserRunnerUrl&&cfg.browserRunnerToken)
 };}
 
 
@@ -136,7 +145,7 @@ class GitHubSourceAdapter {
     if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))throw new Error('Source repository must be owner/repository');
     if(!cred?.token)throw new Error('GitHub deploy token is missing');
     const api=async(path,{method='GET',body,allow404=false}={})=>{
-      const res=await fetch('https://api.github.com/repos/'+repo+path,{method,headers:{accept:'application/vnd.github+json',authorization:'Bearer '+cred.token,'x-github-api-version':'2022-11-28','user-agent':'Lorzen-SiteOps/0.9.0'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
+      const res=await fetch('https://api.github.com/repos/'+repo+path,{method,headers:{accept:'application/vnd.github+json',authorization:'Bearer '+cred.token,'x-github-api-version':'2022-11-28','user-agent':'Lorzen-SiteOps/1.0.0'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
       const raw=await res.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{data=raw;}}
       if(allow404&&res.status===404)return null;if(!res.ok)throw new Error('GitHub source '+method+' '+path+' failed ('+res.status+'): '+(data?.message||String(data||'').slice(0,500)));return data;
     };
@@ -277,7 +286,7 @@ async function gh(path,{method='GET',body,allow404=false,allow409=false}={}){
       accept:'application/vnd.github+json',
       authorization:'Bearer '+cfg.githubBackupToken,
       'x-github-api-version':'2022-11-28',
-      'user-agent':'Lorzen-SiteOps/0.9.0'
+      'user-agent':'Lorzen-SiteOps/1.0.0'
     },
     body:body===undefined?undefined:JSON.stringify(body),
     signal:AbortSignal.timeout(30000)
@@ -439,7 +448,7 @@ async function backupRestorePreview(backupId,actor='mcp'){const b=(await q('sele
 async function validateFiles(files){const results=[];for(const f of files){if(f.content===null||!f.path.endsWith('.php'))continue;try{phpParser.parseCode(f.content.toString('utf8'),f.path);results.push({path:f.path,ok:true,output:'PHP syntax parsed'});}catch(e){results.push({path:f.path,ok:false,output:String(e.message||e)});}}return results;}
 async function createPreview(siteId,files,description,actor='mcp'){const site=await getSite(siteId),remote=await connectSite(site),details=[],validationFiles=[];try{for(const f of files){const rp=joinRemote(site.remote_root,f.path),exists=await remote.exists(rp),old=exists?await remote.read(rp):null;let afterBuffer=null,afterEncoding='utf8',after=null;if(f.content===null){afterBuffer=null;}else if(f.sourceCommit){afterBuffer=await readCommitMaybe(site,f.path,f.sourceCommit);if(afterBuffer===null)throw new Error(`File missing in source commit: ${f.path}`);afterEncoding='git';after=f.sourceCommit;}else{afterBuffer=Buffer.isBuffer(f.content)?f.content:Buffer.from(f.content);afterEncoding=Buffer.isBuffer(f.content)?'base64':'utf8';after=Buffer.isBuffer(f.content)?afterBuffer.toString('base64'):f.content;}if(afterBuffer!==null)validationFiles.push({path:f.path,content:afterBuffer});details.push({path:f.path,beforeExists:exists,beforeHash:old?hash(old):null,afterExists:afterBuffer!==null,afterHash:afterBuffer?hash(afterBuffer):null,afterEncoding,after});}}finally{await remote.close();}const validation=await validateFiles(validationFiles);if(validation.some(v=>!v.ok))throw new Error(`Validation failed: ${JSON.stringify(validation)}`);const previewId=crypto.randomUUID();await q(`insert into change_previews(id,site_id,description,actor,changes,validation,expires_at) values(?,?,?,?,?,?,date_add(now(),interval 24 hour))`,[previewId,site.id,description,actor,JSON.stringify(details),JSON.stringify(validation)]);return{previewId,site:site.domain,description,files:details.map(d=>({path:d.path,beforeExists:d.beforeExists,beforeHash:d.beforeHash,afterExists:d.afterExists,afterHash:d.afterHash})),validation};}
 async function restoreRemoteSnapshot(site,paths,commit){const remote=await connectSite(site);try{for(const path of paths){const old=await readCommitMaybe(site,path,commit),rp=joinRemote(site.remote_root,path);if(old===null)await remote.remove(rp);else await remote.write(rp,old);}}finally{await remote.close();}}
-async function applyPreview(previewId){const p=await q(`select * from change_previews where id=? and status='pending' and expires_at>now()`,[previewId]),preview=p.rows[0];if(!preview)throw new Error('Preview not found or expired');const site=await getSite(preview.site_id),changes=preview.changes,paths=changes.map(c=>c.path),preCommit=await commitPaths(site,paths,'Pre-change snapshot'),remote=await connectSite(site),touched=[];let writeError=null;try{for(const c of changes){const rp=joinRemote(site.remote_root,c.path),exists=await remote.exists(rp);if(exists!==c.beforeExists)throw new Error(`Remote existence changed: ${c.path}`);if(exists&&hash(await remote.read(rp))!==c.beforeHash)throw new Error(`Remote file changed since preview: ${c.path}`);if(c.after===null){touched.push(c.path);await remote.remove(rp);}else{let payload;if(c.afterEncoding==='git'){payload=await readCommitMaybe(site,c.path,c.after);if(payload===null)throw new Error(`File missing in source commit during apply: ${c.path}`);}else payload=c.afterEncoding==='base64'?Buffer.from(c.after,'base64'):Buffer.from(c.after);touched.push(c.path);await remote.write(rp,payload);}}}catch(e){writeError=e;}finally{try{await remote.close();}catch{}}if(writeError){if(touched.length){try{await restoreRemoteSnapshot(site,touched,preCommit);}catch(restoreError){console.error('restore after transfer failure',site.domain,restoreError);}}throw writeError;}let postCommit;try{postCommit=await commitPaths(site,paths,preview.description);}catch(e){try{await restoreRemoteSnapshot(site,paths,preCommit);}catch(restoreError){console.error('restore after Git snapshot failure',site.domain,restoreError);}throw new Error(`Live files restored after Git snapshot failure: ${e.message||e}`);}const health=site.monitor_enabled?await checkSiteNow(site):null,status=site.deployment_mode==='hostinger_git'?'deploy_triggered':health&&!health.ok?'deployed_unhealthy':'deployed';const changeId=crypto.randomUUID();await q(`insert into changes(id,site_id,preview_id,description,actor,files,pre_commit,post_commit,status,health_result) values(?,?,?,?,?,?,?,?,?,?)`,[changeId,site.id,preview.id,preview.description,preview.actor,JSON.stringify(paths),preCommit,postCommit,status,health?JSON.stringify(health):null]);await q(`update change_previews set status='applied' where id=?`,[preview.id]);return{changeId,preCommit,postCommit,files:paths,status,health};}
+async function applyPreview(previewId){const p=await q(`select * from change_previews where id=? and status='pending' and expires_at>now()`,[previewId]),preview=p.rows[0];if(!preview)throw new Error('Preview not found or expired');const site=await getSite(preview.site_id),changes=preview.changes,paths=changes.map(c=>c.path),preCommit=await commitPaths(site,paths,'Pre-change snapshot'),remote=await connectSite(site),touched=[];let writeError=null;try{for(const c of changes){const rp=joinRemote(site.remote_root,c.path),exists=await remote.exists(rp);if(exists!==c.beforeExists)throw new Error(`Remote existence changed: ${c.path}`);if(exists&&hash(await remote.read(rp))!==c.beforeHash)throw new Error(`Remote file changed since preview: ${c.path}`);if(c.after===null){touched.push(c.path);await remote.remove(rp);}else{let payload;if(c.afterEncoding==='git'){payload=await readCommitMaybe(site,c.path,c.after);if(payload===null)throw new Error(`File missing in source commit during apply: ${c.path}`);}else payload=c.afterEncoding==='base64'?Buffer.from(c.after,'base64'):Buffer.from(c.after);touched.push(c.path);await remote.write(rp,payload);}}}catch(e){writeError=e;}finally{try{await remote.close();}catch{}}if(writeError){if(touched.length){try{await restoreRemoteSnapshot(site,touched,preCommit);}catch(restoreError){console.error('restore after transfer failure',site.domain,restoreError);}}throw writeError;}let postCommit;try{postCommit=await commitPaths(site,paths,preview.description);}catch(e){try{await restoreRemoteSnapshot(site,paths,preCommit);}catch(restoreError){console.error('restore after Git snapshot failure',site.domain,restoreError);}throw new Error(`Live files restored after Git snapshot failure: ${e.message||e}`);}const health=site.monitor_enabled?await checkSiteNow(site):null,status=site.deployment_mode==='hostinger_git'?'deploy_triggered':health&&!health.ok?'deployed_unhealthy':'deployed';const changeId=crypto.randomUUID();await q(`insert into changes(id,site_id,preview_id,description,actor,files,pre_commit,post_commit,status,health_result) values(?,?,?,?,?,?,?,?,?,?)`,[changeId,site.id,preview.id,preview.description,preview.actor,JSON.stringify(paths),preCommit,postCommit,status,health?JSON.stringify(health):null]);await q(`update change_previews set status='applied' where id=?`,[preview.id]);const syntheticValidation=await scheduleSyntheticValidation(site);return{changeId,preCommit,postCommit,files:paths,status,health,syntheticValidation};}
 async function listHistory(siteId,limit=30){const site=await getSite(siteId);return(await q('select id,description,actor,files,pre_commit,post_commit,status,created_at from changes where site_id=? order by created_at desc limit ?',[site.id,limit])).rows;}
 async function changeDiff(changeId){const r=await q('select * from changes where id=?',[changeId]),ch=r.rows[0];if(!ch)throw new Error('Change not found');return diffCommits(await getSite(ch.site_id),ch.pre_commit,ch.post_commit);}
 async function rollbackPreview(changeId,actor='mcp'){const r=await q('select * from changes where id=?',[changeId]),ch=r.rows[0];if(!ch)throw new Error('Change not found');const site=await getSite(ch.site_id),files=await changedFiles(site,ch.pre_commit,ch.post_commit),proposed=[];for(const path of files){const old=await readCommitMaybe(site,path,ch.pre_commit);proposed.push(old===null?{path,content:null}:{path,sourceCommit:ch.pre_commit});}return createPreview(site.id,proposed,`Rollback ${changeId}: ${ch.description}`,actor);}
@@ -448,7 +457,7 @@ async function sslDays(url){if(!url.startsWith('https:'))return null;const u=new
 async function fetchWithRedirectTrace(url,timeoutMs){
   const redirects=[];let current=url,response=null;
   for(let i=0;i<8;i++){
-    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/0.9.0'}});
+    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/1.0.0'}});
     if(response.status>=300&&response.status<400){
       const location=response.headers.get('location');if(!location)break;
       const next=new URL(location,current).toString();redirects.push({status:response.status,from:current,to:next});current=next;continue;
@@ -463,7 +472,7 @@ async function domainExpiryDays(domain){
   const key=String(domain||'').toLowerCase().replace(/^www\./,''),cached=domainExpiryCache.get(key);
   if(cached&&Date.now()-cached.at<12*60*60*1000)return cached.days;
   try{
-    const res=await fetch('https://rdap.org/domain/'+encodeURIComponent(key),{redirect:'follow',signal:AbortSignal.timeout(10000),headers:{'User-Agent':'Lorzen-SiteOps/0.9.0'}});
+    const res=await fetch('https://rdap.org/domain/'+encodeURIComponent(key),{redirect:'follow',signal:AbortSignal.timeout(10000),headers:{'User-Agent':'Lorzen-SiteOps/1.0.0'}});
     if(!res.ok)return null;const data=await res.json(),event=(data.events||[]).find(e=>/expiration/i.test(e.eventAction||''));
     const days=event?.eventDate?Math.floor((new Date(event.eventDate).getTime()-Date.now())/86400000):null;domainExpiryCache.set(key,{at:Date.now(),days});return days;
   }catch{return null;}
@@ -480,7 +489,7 @@ async function checkSiteNow(site){
     }
     if(!error&&site.monitor_check_wordpress){
       try{
-        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.9.0'}});
+        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/1.0.0'}});
         wp={ok:wpRes.ok,status:wpRes.status};
       }catch(e){wp={ok:false,error:String(e.message||e)};}
     }
@@ -506,6 +515,11 @@ async function sendAlert(subject,text){
   const settled=await Promise.allSettled(jobs.map(x=>x.promise));
   return jobs.map((x,i)=>({channel:x.channel,ok:settled[i]?.status==='fulfilled',error:settled[i]?.status==='rejected'?String(settled[i].reason?.message||settled[i].reason):null}));
 }
+async function sendAlertWithFixPrompt(subject,text,promptArgs){
+  let full=text;
+  try{const built=await buildFixPrompt(promptArgs);if(built?.prompt)full+='\n\n--- SiteOps Fix-Prompt für ChatGPT / Claude ---\n'+built.prompt.slice(0,16000);}catch(e){console.error('fix prompt for alert',subject,e);}
+  return sendAlert(subject,full);
+}
 async function incidentEvent(incidentId,siteId,eventType,details){await q('insert into incident_events(incident_id,site_id,event_type,details) values(?,?,?,?)',[incidentId,siteId,eventType,details?JSON.stringify(details):null]);}
 async function processMonitor(site){
   const result=await checkSiteNow(site);
@@ -525,13 +539,13 @@ async function processMonitor(site){
       incidentId=crypto.randomUUID();
       await q(`insert into incidents(id,site_id,status,title,details) values(?,?,'open',?,?)`,[incidentId,site.id,`${site.domain} unhealthy`,JSON.stringify(result)]);
       await incidentEvent(incidentId,site.id,'opened',{failureCount:failures,result});
-      const alertResult=await sendAlert(`DOWN: ${site.domain}`,JSON.stringify(result,null,2));
+      const alertResult=await sendAlertWithFixPrompt(`DOWN: ${site.domain}`,JSON.stringify(result,null,2),{kind:'monitor',site:site.id});
       alertCount=1;lastAlert=Date.now();await incidentEvent(incidentId,site.id,'alert',alertResult);
     }else if(incidentId){
       await incidentEvent(incidentId,site.id,'check_failed',{failureCount:failures,result});
       const repeatMs=Math.max(1,Number(site.alert_repeat_minutes||60))*60000;
       if(!lastAlert||Date.now()-lastAlert>=repeatMs){
-        const alertResult=await sendAlert(`STILL DOWN: ${site.domain}`,JSON.stringify({failures,result},null,2));
+        const alertResult=await sendAlertWithFixPrompt(`STILL DOWN: ${site.domain}`,JSON.stringify({failures,result},null,2),{kind:'monitor',site:site.id});
         alertCount++;lastAlert=Date.now();await incidentEvent(incidentId,site.id,'repeat_alert',{alertCount,delivery:alertResult});
       }
     }
@@ -589,7 +603,171 @@ async function searchText(siteId,needle,{maxFiles=50,maxBytes=524288}={}){
 
 async function getIncident(incidentId){const i=(await q('select i.*,s.slug,s.domain from incidents i join sites s on s.id=i.site_id where i.id=?',[incidentId])).rows[0];if(!i)throw new Error('Incident not found');const events=(await q('select id,event_type,details,created_at from incident_events where incident_id=? order by created_at asc',[incidentId])).rows;return{...i,events};}
 let monitorRunning=false;function startMonitor(){setInterval(async()=>{if(monitorRunning)return;monitorRunning=true;try{const sites=(await q(`select s.* from sites s left join monitor_state ms on ms.site_id=s.id where s.enabled=1 and s.monitor_enabled=1 and (ms.last_check_at is null or timestampdiff(second,ms.last_check_at,now())>=s.monitor_interval_seconds)`)).rows;for(const site of sites){try{await processMonitor(site);}catch(e){console.error('monitor',site.domain,e);}}}finally{monitorRunning=false;}},cfg.workerInterval).unref();}
-let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlert(`BACKUP FAILED: ${site.domain}`,msg);console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
+let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlertWithFixPrompt(`BACKUP FAILED: ${site.domain}`,msg,{kind:'backup',site:site.id});console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
+
+
+function publicSyntheticTest(t){
+  return{id:t.id,siteId:t.site_id,name:t.name,enabled:Boolean(t.enabled),startUrl:t.start_url,steps:Array.isArray(t.steps)?t.steps:[],secretsConfigured:Boolean(t.encrypted_secrets),intervalSeconds:t.interval_seconds,timeoutMs:t.timeout_ms,viewport:{width:t.viewport_width,height:t.viewport_height},visualEnabled:Boolean(t.visual_enabled),visualThreshold:Number(t.visual_threshold||0),baselineConfigured:Boolean(t.baseline_image),baselineHash:t.baseline_hash,lastRunAt:t.last_run_at,nextRunAt:t.next_run_at,createdAt:t.created_at,updatedAt:t.updated_at};
+}
+async function syntheticTestGet(id){const t=(await q('select * from synthetic_tests where id=?',[id])).rows[0];if(!t)throw new Error('Synthetic test not found');return t;}
+async function syntheticTestsList(siteId){
+  const site=await getSite(siteId),tests=(await q('select * from synthetic_tests where site_id=? order by name',[site.id])).rows;
+  const out=[];for(const t of tests){const last=(await q('select id,status,duration_ms,error,result,visual_mismatch,created_at,(screenshot_image is not null) screenshot_available from synthetic_runs where test_id=? order by created_at desc limit 1',[t.id])).rows[0]||null;out.push({...publicSyntheticTest(t),lastRun:last});}
+  return out;
+}
+function syntheticValidateStartUrl(site,url){const u=new URL(url);if(!['http:','https:'].includes(u.protocol))throw new Error('Synthetic start URL must use http or https');const a=u.hostname.toLowerCase().replace(/^www\./,''),b=String(site.domain||'').toLowerCase().replace(/^www\./,'');if(a!==b)throw new Error('Synthetic start URL must use the managed site hostname');return u.toString();}
+function syntheticSteps(value){if(!Array.isArray(value))throw new Error('steps must be an array');for(const [i,x] of value.entries())if(!x||typeof x!=='object'||!x.action)throw new Error('Step '+(i+1)+' needs an action');return value;}
+async function syntheticCreate(siteId,x){
+  const site=await getSite(siteId),id=crypto.randomUUID(),startUrl=syntheticValidateStartUrl(site,x.startUrl||site.monitor_url||('https://'+site.domain)),steps=syntheticSteps(x.steps||[]);
+  const secrets=x.secrets&&Object.keys(x.secrets).length?encrypt(x.secrets):null;
+  await q('insert into synthetic_tests(id,site_id,name,enabled,start_url,steps,encrypted_secrets,interval_seconds,timeout_ms,viewport_width,viewport_height,visual_enabled,visual_threshold) values(?,?,?,?,?,?,?,?,?,?,?,?,?)',[id,site.id,x.name, x.enabled===false?0:1,startUrl,JSON.stringify(steps),secrets,Number(x.intervalSeconds||3600),Number(x.timeoutMs||30000),Number(x.viewportWidth||1440),Number(x.viewportHeight||1000),x.visualEnabled?1:0,Number(x.visualThreshold??.01)]);
+  return publicSyntheticTest(await syntheticTestGet(id));
+}
+async function syntheticUpdate(id,x){
+  const t=await syntheticTestGet(id),site=await getSite(t.site_id),allowed={name:'name',enabled:'enabled',startUrl:'start_url',steps:'steps',intervalSeconds:'interval_seconds',timeoutMs:'timeout_ms',viewportWidth:'viewport_width',viewportHeight:'viewport_height',visualEnabled:'visual_enabled',visualThreshold:'visual_threshold'},sets=[],params=[];
+  for(const [key,col] of Object.entries(allowed)){if(x[key]===undefined)continue;let v=x[key];if(key==='startUrl')v=syntheticValidateStartUrl(site,v);if(key==='steps')v=JSON.stringify(syntheticSteps(v));if(['enabled','visualEnabled'].includes(key))v=v?1:0;sets.push(col+'=?');params.push(v);}
+  if(x.secrets&&Object.keys(x.secrets).length){sets.push('encrypted_secrets=?');params.push(encrypt(x.secrets));}
+  if(x.clearSecrets){sets.push('encrypted_secrets=null');}
+  if(sets.length){params.push(id);await q('update synthetic_tests set '+sets.join(',')+',updated_at=now() where id=?',params);}
+  return publicSyntheticTest(await syntheticTestGet(id));
+}
+function syntheticResolveSecrets(value,secrets){
+  if(typeof value==='string')return value.replace(/\{\{secret\.([A-Za-z0-9_.-]+)\}\}/g,(_m,k)=>{if(secrets[k]===undefined)throw new Error('Missing synthetic secret '+k);return String(secrets[k]);});
+  if(Array.isArray(value))return value.map(v=>syntheticResolveSecrets(v,secrets));
+  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,syntheticResolveSecrets(v,secrets)]));
+  return value;
+}
+async function browserRunnerRequest(path,{method='GET',body,token,url}={}){
+  const base=String((url??cfg.browserRunnerUrl)||'').replace(/\/+$/,'');const authToken=token??cfg.browserRunnerToken;
+  if(!base||!authToken)throw new Error('Browser Runner is not configured');
+  const res=await fetch(base+path,{method,headers:{authorization:'Bearer '+authToken,...(body!==undefined?{'content-type':'application/json'}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(150000)});
+  const raw=await res.text();let data;try{data=raw?JSON.parse(raw):{};}catch{data={error:raw.slice(0,1000)};}if(!res.ok)throw new Error('Browser Runner '+res.status+': '+(data.error||data.message||raw.slice(0,500)));return data;
+}
+async function browserRunnerTest({url,token}={}){return browserRunnerRequest('/auth-test',{url,token});}
+function publicSyntheticRun(r){if(!r)return null;return{id:r.id,testId:r.test_id,siteId:r.site_id,status:r.status,durationMs:r.duration_ms,error:r.error,result:r.result,visualMismatch:r.visual_mismatch,screenshotAvailable:Boolean(r.screenshot_available??r.screenshot_image),createdAt:r.created_at};}
+async function syntheticRunGet(id){const r=(await q('select id,test_id,site_id,status,duration_ms,error,result,visual_mismatch,created_at,(screenshot_image is not null) screenshot_available from synthetic_runs where id=?',[id])).rows[0];if(!r)throw new Error('Synthetic run not found');return publicSyntheticRun(r);}
+async function runSyntheticTest(testId,{saveBaseline=false,actor='manual'}={}){
+  const t=await syntheticTestGet(testId),site=await getSite(t.site_id),secrets=t.encrypted_secrets?decrypt(t.encrypted_secrets):{},steps=syntheticResolveSecrets(Array.isArray(t.steps)?t.steps:[],secrets),baseline=t.visual_enabled&&t.baseline_image?t.baseline_image:null;
+  const previous=(await q('select status from synthetic_runs where test_id=? order by created_at desc limit 1',[t.id])).rows[0]||null;
+  let result;try{result=await browserRunnerRequest('/run',{method:'POST',body:{baseUrl:t.start_url,startUrl:t.start_url,steps,timeoutMs:t.timeout_ms,viewport:{width:t.viewport_width,height:t.viewport_height},visualThreshold:Number(t.visual_threshold||.01),visualAssert:Boolean(t.visual_enabled&&baseline&&!saveBaseline),baselineBase64:saveBaseline?undefined:(baseline||undefined),captureScreenshot:Boolean(saveBaseline||t.visual_enabled)}});}catch(e){result={ok:false,error:'Browser Runner: '+String(e.message||e),durationMs:null,steps:[],consoleErrors:[],pageErrors:[],failedRequests:[],visual:null,screenshotHash:null,screenshotBase64:null};}
+  if(saveBaseline){if(!result.ok)throw new Error('Baseline not saved because the journey failed: '+(result.error||'unknown'));if(!result.screenshotBase64)throw new Error('Runner returned no screenshot for baseline');if(result.screenshotBase64.length>12*1024*1024)throw new Error('Baseline screenshot is too large');await q('update synthetic_tests set baseline_image=?,baseline_hash=?,updated_at=now() where id=?',[result.screenshotBase64,result.screenshotHash,t.id]);}
+  const screenshot=result.screenshotBase64&&(!result.ok||saveBaseline)&&result.screenshotBase64.length<=12*1024*1024?result.screenshotBase64:null,stored={...result};delete stored.screenshotBase64;
+  const runId=crypto.randomUUID(),status=result.ok?'passed':'failed';
+  await q('insert into synthetic_runs(id,test_id,site_id,status,duration_ms,error,result,visual_mismatch,screenshot_image) values(?,?,?,?,?,?,?,?,?)',[runId,t.id,site.id,status,result.durationMs||null,result.error||null,JSON.stringify({...stored,actor,baselineSaved:Boolean(saveBaseline)}),result.visual?.mismatch??null,screenshot]);
+  await q('update synthetic_tests set last_run_at=now(),next_run_at=null where id=?',[t.id]);
+  await q('update synthetic_runs set screenshot_image=null where test_id=? and created_at<date_sub(now(),interval 30 day)',[t.id]);
+  if(actor==='scheduler'&&status==='failed'&&previous?.status!=='failed')await sendAlertWithFixPrompt('SYNTHETIC FAILED: '+site.domain+' · '+t.name,result.error||'Browser journey failed',{kind:'synthetic',id:runId});
+  if(actor==='scheduler'&&status==='passed'&&previous?.status==='failed')await sendAlert('SYNTHETIC RECOVERED: '+site.domain+' · '+t.name,'Browser journey is healthy again.');
+  return syntheticRunGet(runId);
+}
+async function syntheticStatus(siteId){
+  const site=await getSite(siteId),tests=await syntheticTestsList(site.id),failed=tests.filter(t=>t.lastRun?.status==='failed').length,passed=tests.filter(t=>t.lastRun?.status==='passed').length;
+  return{configured:Boolean(cfg.browserRunnerUrl&&cfg.browserRunnerToken),total:tests.length,enabled:tests.filter(t=>t.enabled).length,passed,failed,tests};
+}
+let syntheticWorkerRunning=false;
+async function scheduleSyntheticValidation(site){
+  if(!cfg.browserRunnerUrl||!cfg.browserRunnerToken)return{scheduled:0,reason:'runner_not_configured'};
+  const delaySeconds=site.deployment_mode==='hostinger_git'?120:10,nextRun=new Date(Date.now()+delaySeconds*1000);
+  const r=await q('update synthetic_tests set next_run_at=? where site_id=? and enabled=1',[nextRun,site.id]);
+  return{scheduled:Number(r.meta?.affectedRows||0),delaySeconds};
+}
+function startSyntheticWorker(){setInterval(async()=>{if(syntheticWorkerRunning||!cfg.browserRunnerUrl||!cfg.browserRunnerToken)return;syntheticWorkerRunning=true;try{const tests=(await q(`select t.* from synthetic_tests t join sites s on s.id=t.site_id where t.enabled=1 and s.enabled=1 and ((t.next_run_at is not null and t.next_run_at<=now()) or (t.next_run_at is null and (t.last_run_at is null or timestampdiff(second,t.last_run_at,now())>=t.interval_seconds))) order by coalesce(t.next_run_at,t.last_run_at,'1970-01-01 00:00:00') limit 20`)).rows;for(const t of tests){try{await runSyntheticTest(t.id,{actor:'scheduler'});}catch(e){console.error('synthetic',t.name,e);}}}finally{syntheticWorkerRunning=false;}},cfg.syntheticWorkerInterval).unref();}
+
+function fixPromptBase(site){
+  return `Arbeite an der verwalteten Website "${site.name}" (${site.domain}) über das verbundene SiteOps-MCP. Website-Typ: ${site.site_type}. Deployment: ${site.deployment_mode||'webspace'}.
+
+Wichtig:
+- Untersuche zuerst die Ursache, statt nur das Symptom zu verstecken.
+- Nutze zunächst site_overview und danach files_find/text_search/file_read für die relevanten Quelldateien.
+- Bei Git-Deployment ist das konfigurierte Repository die Source of Truth; ändere nicht parallel den Live-Webspace.
+- Erstelle für Änderungen ausschließlich einen change_preview mit einer möglichst kleinen, nachvollziehbaren Änderung.
+- Rufe change_apply NICHT auf. Gib mir zuerst preview_id, betroffene Dateien, Ursache, Änderung und erwartete Wirkung zurück.
+- Deaktiviere keine Prüfungen, Monitoring-, Security-, SEO- oder Accessibility-Regeln, nur damit der Fehler verschwindet.
+- Nach meiner späteren Freigabe soll die Änderung mit site_status und dem passenden SEO-/Synthetic-Test validiert werden.
+
+`;
+}
+async function buildFixPrompt({kind,site:siteRef,id,issueCode}){
+  if(kind==='seo_page'){
+    const p=await seoPageGet(Number(id)),site=await getSite(p.site_id),issues=(Array.isArray(p.issues)?p.issues:[]).filter(x=>!issueCode||x.code===issueCode),problem=issues.length?issues.map(x=>x.level.toUpperCase()+' '+x.code+': '+x.text).join('\n'):'SEO-/Quality-Problem auf dieser Seite';
+    return{title:'Fix '+(issueCode||'SEO issues')+' · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Website Quality Audit
+URL: ${p.url}
+Title: ${p.title||'(kein Title)'}
+HTTP: ${p.status_code}
+Canonical: ${p.canonical||'(kein Canonical)'}
+H1: ${JSON.stringify(p.h1||[])}
+Probleme:
+${problem}
+
+Behebe die technische Ursache passend zur vorhandenen Codebasis. Prüfe insbesondere Templates/Layouts, SEO-Konfiguration, interne Links oder Header-Konfiguration, je nach Fehlerart. Erzeuge anschließend den change_preview.`};
+  }
+  if(kind==='seo_site'){
+    const site=await getSite(siteRef),data=await seoIssuesList(site.id,{limit:80}),issues=data.issues.filter(x=>x.level!=='info').slice(0,40);
+    return{title:'Fix Website Quality · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: letzter SiteOps Website Quality Audit
+Aktuelle Fehler/Warnungen:
+${issues.map(x=>x.level.toUpperCase()+' '+x.code+' · '+x.url+' · '+x.text).join('\n')||'Keine Fehlerdetails vorhanden.'}
+
+Priorisiere gemeinsame Root Causes und Template-Probleme, damit nicht dieselbe Korrektur seitenweise dupliziert wird. Erzeuge einen oder mehrere logisch getrennte change_preview-Vorschläge, aber wende nichts an.`};
+  }
+  if(kind==='incident'){
+    const incident=await getIncident(id),site=await getSite(incident.site_id);
+    return{title:'Fix Incident · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Monitoring Incident
+Incident: ${incident.title}
+Status: ${incident.status}
+Gestartet: ${incident.created_at}
+Details:
+${JSON.stringify(incident.details||{},null,2)}
+Letzte Ereignisse:
+${JSON.stringify((incident.events||[]).slice(-8),null,2)}
+
+Diagnostiziere, ob die Ursache im Deployment/Code, Redirect/DNS/SSL, WordPress oder in einer externen Abhängigkeit liegt. Wenn eine Codeänderung sinnvoll ist, erzeuge einen change_preview; wenn nicht, nenne die konkrete operative Maßnahme.`};
+  }
+  if(kind==='monitor'){
+    const site=await getSite(siteRef),check=(await q('select id,ok,http_status,response_ms,ssl_days,error,details,created_at from monitor_checks where site_id=? order by created_at desc limit 1',[site.id])).rows[0];
+    if(!check)throw new Error('No monitor check available');
+    return{title:'Fix Monitoring · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Monitoring
+Letzter Check: ${check.created_at}
+Status: ${check.ok?'OK':'FEHLER'}
+HTTP: ${check.http_status??'unbekannt'}
+Response: ${check.response_ms??'unbekannt'} ms
+SSL-Restlaufzeit: ${check.ssl_days??'unbekannt'} Tage
+Fehler: ${check.error||'(kein allgemeiner Fehlertext)'}
+Diagnose:
+${JSON.stringify(check.details||{},null,2)}
+
+Prüfe zuerst mit site_status, ob der Fehler noch besteht. Analysiere danach Redirects, erwarteten Inhalt/Titel, DNS/SSL, WordPress REST sowie relevante Quelldateien. Wenn die Ursache in Code oder Konfiguration der Website liegt, erzeuge einen change_preview. Wenn DNS, Zertifikat, Hosting oder eine externe Abhängigkeit die Ursache ist, nenne stattdessen die konkrete operative Maßnahme. Wende nichts ungefragt an.`};
+  }
+  if(kind==='backup'){
+    const site=await getSite(siteRef),status=await backupStatus(site.id);
+    return{title:'Fix Backup · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Backup
+Backup aktiviert: ${status.enabled}
+Intervall: ${status.intervalSeconds} Sekunden
+Max. Dateien: ${status.maxFiles}
+Letztes Backup:
+${JSON.stringify(status.last||{},null,2)}
+Backup-State:
+${JSON.stringify(status.state||{},null,2)}
+
+Analysiere mit backup_status, deployment_info und site_connection_test, warum das Backup fehlschlägt. Prüfe insbesondere Source-of-Truth, Dateilimits/Ausschlüsse, GitHub-Backupziel und Verbindungszugriff. Wenn der Fehler in der verwalteten Website bzw. ihrer Struktur liegt, erzeuge einen sicheren change_preview. Wenn es eine SiteOps-/Credential-/Hosting-Konfiguration ist, nenne exakt die Einstellung oder operative Maßnahme und ändere keine Prüfung, um den Fehler zu verstecken.`};
+  }
+  if(kind==='synthetic'){
+    const run=(await q('select r.*,t.name,t.start_url,t.steps,s.name site_name,s.domain,s.site_type,s.deployment_mode from synthetic_runs r join synthetic_tests t on t.id=r.test_id join sites s on s.id=r.site_id where r.id=?',[id])).rows[0];if(!run)throw new Error('Synthetic run not found');
+    const site={name:run.site_name,domain:run.domain,site_type:run.site_type,deployment_mode:run.deployment_mode};
+    return{title:'Fix Browser Test · '+run.name,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Synthetic Browser Test
+Test: ${run.name}
+Start-URL: ${run.start_url}
+Status: ${run.status}
+Fehler: ${run.error||'(kein Fehlertext)'}
+Visual mismatch: ${run.visual_mismatch==null?'nicht geprüft':(Number(run.visual_mismatch)*100).toFixed(2)+'%'}
+Testschritte:
+${JSON.stringify(run.steps||[],null,2)}
+Runner-Ergebnis:
+${JSON.stringify(run.result||{},null,2)}
+
+Reproduziere den fehlschlagenden Schritt gedanklich anhand des Codes. Achte besonders auf geänderte Selektoren, Navigation, JavaScript-Fehler, API-/Asset-Fehler und visuelle Regressionen. Passe den Test nur dann an, wenn die Website absichtlich geändert wurde und der Test nachweislich veraltet ist; ansonsten behebe die Website. Erzeuge bei Codeänderungen einen change_preview und wende ihn nicht an.`};
+  }
+  throw new Error('Unknown fix prompt kind');
+}
 
 
 const SEO_STOPWORDS=new Set('aber alle allem allen aller alles als also am an ander andere anderem anderen anderer anderes and auch auf aus bei bin bis bist da damit dann das dass dein deine dem den denn der des die dies diese diesem diesen dieser dieses doch dort du durch ein eine einem einen einer eines er es etwas für gegen gewesen hat hatte haben hier hin hinter ich im in ist ja jede jedem jeden jeder jedes jener jenes kann kein keine mit muss nach nicht nichts noch nun nur ob oder ohne sehr sein seine selbst sich sie sind so über um und uns unser unsere unter vom von vor war waren was weg weil weiter welche welchem welchen welcher welches wenn werde werden wie wieder will wir wo zu zum zur'.split(/\s+/));
@@ -861,13 +1039,13 @@ async function seoCompare(siteId){
 async function qualityOverview(siteId){
   const site=await getSite(siteId),latest=await seoLatest(site.id),compare=await seoCompare(site.id),checks=await listMonitorChecks(site.id,20),incidents=await listIncidents(site.id,20),backup=await backupStatus(site.id),last=checks[0]||null;
   const uptime=checks.length?Math.round(checks.filter(x=>x.ok).length/checks.length*10000)/100:null,seoScore=latest.run?.summary?.healthScore??null;
-  return{site:{id:site.id,slug:site.slug,name:site.name,domain:site.domain,type:site.site_type},qualityScore:seoScore,seo:latest.run?{runId:latest.run.id,status:latest.run.status,startedAt:latest.run.started_at,summary:latest.run.summary}:null,regression:compare,operations:{uptime,lastCheck:last,openIncidents:incidents.filter(x=>x.status==='open').length,backup}};
+  return{site:{id:site.id,slug:site.slug,name:site.name,domain:site.domain,type:site.site_type},qualityScore:seoScore,seo:latest.run?{runId:latest.run.id,status:latest.run.status,startedAt:latest.run.started_at,summary:latest.run.summary}:null,regression:compare,operations:{uptime,lastCheck:last,openIncidents:incidents.filter(x=>x.status==='open').length,backup},synthetics:await syntheticStatus(site.id)};
 }
 async function clientReportPage(slug){
-  const qv=await qualityOverview(slug),site=await getSite(slug),s=qv.seo?.summary||{},r=qv.regression||{},ops=qv.operations||{},score=s.healthScore??'–';
+  const qv=await qualityOverview(slug),site=await getSite(slug),s=qv.seo?.summary||{},r=qv.regression||{},ops=qv.operations||{},syn=qv.synthetics||{},score=s.healthScore??'–';
   const delta=r.available?(r.scoreDelta>0?'+':'')+r.scoreDelta:'–';
   let html='<a class="backlink" href="/sites/'+esc(site.slug)+'">← '+esc(site.name)+'</a><header><div><span class="eyebrow">QUALITY REPORT</span><h1>'+esc(site.name)+'</h1><p>'+esc(site.domain)+' · Bericht '+new Date().toLocaleDateString('de-DE')+'</p></div><div class="actions"><button onclick="window.print()">Drucken / PDF</button></div></header>';
-  html+='<div class="metrics big seo-metrics"><span>'+score+'<em>Health Score</em></span><span>'+delta+'<em>vs. vorheriger Audit</em></span><span>'+(ops.uptime??'–')+'%<em>Uptime letzte Checks</em></span><span>'+(ops.openIncidents??0)+'<em>Offene Incidents</em></span><span>'+(s.pages??0)+'<em>Gecrawlte Seiten</em></span><span>'+(s.issues?.error??0)+'<em>SEO-Fehler</em></span></div>';
+  html+='<div class="metrics big seo-metrics"><span>'+score+'<em>Health Score</em></span><span>'+delta+'<em>vs. vorheriger Audit</em></span><span>'+(ops.uptime??'–')+'%<em>Uptime letzte Checks</em></span><span>'+(ops.openIncidents??0)+'<em>Offene Incidents</em></span><span>'+(syn.failed??0)+'<em>Browser-Test-Fehler</em></span><span>'+(s.pages??0)+'<em>Gecrawlte Seiten</em></span><span>'+(s.issues?.error??0)+'<em>SEO-Fehler</em></span></div>';
   html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">SEO</span><h2>Technische Qualität</h2></div></div><dl class="facts compact-facts"><div><dt>Indexierbare Seiten</dt><dd>'+(s.indexablePages??'–')+'</dd></div><div><dt>Defekte interne Links</dt><dd>'+(s.brokenInternalLinks??0)+'</dd></div><div><dt>Redirect-Links</dt><dd>'+(s.redirectingInternalLinks??0)+'</dd></div><div><dt>Duplicate Content</dt><dd>'+(s.duplicateContent??0)+'</dd></div><div><dt>Near-Duplicates</dt><dd>'+(s.nearDuplicateContent??0)+'</dd></div><div><dt>Defekte Ressourcen</dt><dd>'+(s.brokenResources??0)+'</dd></div></dl></section><section><div class="sectionhead"><div><span class="eyebrow">Betrieb</span><h2>Website Care</h2></div></div><dl class="facts compact-facts"><div><dt>Letzter HTTP-Status</dt><dd>'+(ops.lastCheck?.http_status??'–')+'</dd></div><div><dt>Response</dt><dd>'+(ops.lastCheck?.response_ms??'–')+' ms</dd></div><div><dt>SSL Restlaufzeit</dt><dd>'+(ops.lastCheck?.ssl_days??'–')+' Tage</dd></div><div><dt>Domain Restlaufzeit</dt><dd>'+esc(ops.lastCheck?.details?.domainExpiryDays??'–')+' Tage</dd></div><div><dt>Backup zuletzt</dt><dd>'+esc(ops.backup?.last?.created_at?new Date(ops.backup.last.created_at).toLocaleString('de-DE'):'–')+'</dd></div></dl></section></div>';
   if(r.available)html+='<section><div class="sectionhead"><div><span class="eyebrow">Regression</span><h2>Seit dem letzten Audit</h2></div></div><div class="metrics"><span>'+r.newIssues.length+'<em>Neue Issues</em></span><span>'+r.resolvedIssues.length+'<em>Gelöste Issues</em></span><span>'+r.changedPages.length+'<em>Meta-/Status-Änderungen</em></span><span>'+r.newPages.length+'<em>Neue Seiten</em></span><span>'+r.removedPages.length+'<em>Entfernte Seiten</em></span></div></section>';
   return page('Report · '+site.name,html);
@@ -876,7 +1054,7 @@ async function clientReportPage(slug){
 
 const toolText=value=>({content:[{type:'text',text:typeof value==='string'?value:JSON.stringify(value,null,2)}]});
 function mcpServer(){
-  const s=new McpServer({name:'lorzen-siteops',version:'0.9.0'});
+  const s=new McpServer({name:'lorzen-siteops',version:'1.0.0'});
   s.registerTool('sites_list',{description:'List managed websites with deployment and monitor mode. Never returns credentials.',inputSchema:z.object({})},async()=>toolText((await listSites()).map(x=>({id:x.id,slug:x.slug,name:x.name,domain:x.domain,site_type:x.site_type,deployment_mode:x.deployment_mode,protocol:x.deployment_mode==='hostinger_git'?null:x.protocol,monitor_enabled:Boolean(x.monitor_enabled),backup_enabled:Boolean(x.backup_enabled)}))));
   s.registerTool('site_get',{description:'Get redacted SiteOps configuration for one website. Secrets are represented only as configured/not configured.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(publicSite(await getSite(site))));
   s.registerTool('site_overview',{description:'Get the main operational picture for a website in one call: redacted config, deployment, latest monitor state, open incidents and backup state.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await siteOverview(site)));
@@ -919,13 +1097,30 @@ function mcpServer(){
   s.registerTool('seo_page',{description:'Get full SEO details, WDF-IDF terms, Lighthouse values and outgoing links for one crawled page.',inputSchema:z.object({page_id:z.number().int().positive()})},async({page_id})=>toolText(await seoPageGet(page_id)));
   s.registerTool('seo_graph',{description:'Get strongest pages and internal links from the latest completed crawl for graphing/site-structure analysis.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(5).max(100).default(30)})},async({site,limit})=>toolText(await seoGraph(site,limit)));
   s.registerTool('seo_issues',{description:'List SEO issues from the latest crawl, optionally filtered by severity.',inputSchema:z.object({site:z.string(),level:z.enum(['error','warn','info']).optional(),limit:z.number().int().min(1).max(500).default(200)})},async({site,level,limit})=>toolText(await seoIssuesList(site,{level,limit})));s.registerTool('seo_compare',{description:'Compare the two latest completed SEO audits and return score delta, new/resolved issues, page changes and URL additions/removals.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await seoCompare(site)));s.registerTool('quality_overview',{description:'Return a combined SiteOps quality view with SEO health, regression, uptime, incidents and backup state.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await qualityOverview(site)));
+  s.registerTool('synthetics_list',{description:'List synthetic browser journeys for a managed website with latest run state. Secrets and screenshot bytes are never returned.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await syntheticTestsList(site)));
+  s.registerTool('synthetic_create',{description:'Create a scheduled Playwright journey. Use {{secret.NAME}} placeholders in fill values and pass the secret map separately.',inputSchema:z.object({site:z.string(),name:z.string().min(1),start_url:z.string().url().optional(),steps:z.array(z.any()),secrets:z.record(z.string(),z.string()).optional(),interval_seconds:z.number().int().min(300).max(2592000).default(3600),timeout_ms:z.number().int().min(3000).max(120000).default(30000),viewport_width:z.number().int().min(320).max(2560).default(1440),viewport_height:z.number().int().min(320).max(2000).default(1000),visual_enabled:z.boolean().default(false),visual_threshold:z.number().min(0).max(1).default(.01)})},async x=>toolText(await syntheticCreate(x.site,{name:x.name,startUrl:x.start_url,steps:x.steps,secrets:x.secrets,intervalSeconds:x.interval_seconds,timeoutMs:x.timeout_ms,viewportWidth:x.viewport_width,viewportHeight:x.viewport_height,visualEnabled:x.visual_enabled,visualThreshold:x.visual_threshold})));
+  s.registerTool('synthetic_update',{description:'Update a synthetic journey. Omitted secrets stay unchanged; clear_secrets removes them.',inputSchema:z.object({test_id:z.string().uuid(),name:z.string().min(1).optional(),enabled:z.boolean().optional(),start_url:z.string().url().optional(),steps:z.array(z.any()).optional(),secrets:z.record(z.string(),z.string()).optional(),clear_secrets:z.boolean().optional(),interval_seconds:z.number().int().min(300).max(2592000).optional(),timeout_ms:z.number().int().min(3000).max(120000).optional(),viewport_width:z.number().int().min(320).max(2560).optional(),viewport_height:z.number().int().min(320).max(2000).optional(),visual_enabled:z.boolean().optional(),visual_threshold:z.number().min(0).max(1).optional()})},async x=>{const {test_id,...v}=x;return toolText(await syntheticUpdate(test_id,{name:v.name,enabled:v.enabled,startUrl:v.start_url,steps:v.steps,secrets:v.secrets,clearSecrets:v.clear_secrets,intervalSeconds:v.interval_seconds,timeoutMs:v.timeout_ms,viewportWidth:v.viewport_width,viewportHeight:v.viewport_height,visualEnabled:v.visual_enabled,visualThreshold:v.visual_threshold}));});
+  s.registerTool('synthetic_run',{description:'Run a synthetic browser journey now. save_baseline stores the successful screenshot as the visual baseline.',inputSchema:z.object({test_id:z.string().uuid(),save_baseline:z.boolean().default(false)})},async({test_id,save_baseline})=>toolText(await runSyntheticTest(test_id,{saveBaseline:save_baseline,actor:'mcp'})));
+  s.registerTool('synthetic_run_get',{description:'Get one synthetic run result without screenshot bytes.',inputSchema:z.object({run_id:z.string().uuid()})},async({run_id})=>toolText(await syntheticRunGet(run_id)));
+  s.registerTool('fix_prompt',{description:'Generate a ready-to-copy repair prompt for ChatGPT/Claude from a SiteOps finding. The prompt instructs the agent to diagnose with MCP and create a preview without applying it.',inputSchema:z.object({kind:z.enum(['seo_page','seo_site','incident','synthetic','monitor','backup']),site:z.string().optional(),id:z.union([z.string(),z.number()]).optional(),issue_code:z.string().optional()})},async({kind,site,id,issue_code})=>toolText(await buildFixPrompt({kind,site,id,issueCode:issue_code})));
   s.registerTool('settings_get',{description:'Get redacted global SiteOps settings. Secrets are never returned.',inputSchema:z.object({})},async()=>toolText(publicSettings()));
   return s;
 }
 
 function dashboardAuth(req,reply){if(!cfg.dashboardUser||!cfg.dashboardPassword){reply.code(503).send('SiteOps dashboard authentication is not configured');return false;}const h=req.headers.authorization||'';if(!h.startsWith('Basic ')){reply.header('WWW-Authenticate','Basic realm="SiteOps"');reply.code(401).send('Authentication required');return false;}const decoded=Buffer.from(h.slice(6),'base64').toString(),i=decoded.indexOf(':'),u=i>=0?decoded.slice(0,i):'',p=i>=0?decoded.slice(i+1):'';if(!safeEqual(u,cfg.dashboardUser)||!safeEqual(p,cfg.dashboardPassword)){reply.header('WWW-Authenticate','Basic realm="SiteOps"');reply.code(401).send('Authentication required');return false;}return true;}
 function mcpAuth(req,reply){if(!cfg.mcpToken){reply.code(503).send({error:'MCP_API_TOKEN is not configured'});return false;}const h=req.headers.authorization||'',t=h.startsWith('Bearer ')?h.slice(7):'';if(!safeEqual(t,cfg.mcpToken)){reply.code(401).send({error:'unauthorized'});return false;}return true;}
-function page(title,body){return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=0.9.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main></body></html>`;}
+function page(title,body){return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.0.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+async function siteOpsCopyPrompt(payload,button){
+  const old=button?.textContent||'Prompt';
+  try{
+    if(button)button.textContent='Erzeuge…';
+    const r=await fetch('/api/fix-prompt',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}),x=await r.json();
+    if(!r.ok)throw new Error(x.message||x.error||JSON.stringify(x));
+    try{await navigator.clipboard.writeText(x.prompt);}catch{const ta=document.createElement('textarea');ta.value=x.prompt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
+    if(button){button.textContent='✓ Prompt kopiert';setTimeout(()=>button.textContent=old,1800);}
+  }catch(e){if(button)button.textContent='✗ '+String(e.message||e).slice(0,80);}
+}
+</script></body></html>`;}
 
 function mcpInfoPage(){
   const base=String(cfg.publicBaseUrl||'https://siteops.lorzen.cloud').replace(/\/$/,'');
@@ -934,6 +1129,7 @@ function mcpInfoPage(){
     ['Kontext','sites_list, site_get, site_overview, deployment_info, settings_get'],
     ['Monitoring','site_status, monitor_history, incidents_list, incident_get'],
     ['SEO & Quality','seo_start, seo_run_status, seo_latest, seo_page, seo_graph, seo_issues, seo_compare, quality_overview'],
+    ['Browser Tests','synthetics_list, synthetic_create, synthetic_update, synthetic_run, synthetic_run_get, fix_prompt'],
     ['Konfiguration','site_update, site_connection_test, site_connection_update'],
     ['Dateien','files_list, files_find, text_search, file_read'],
     ['Änderungen','change_preview, change_apply, history_list, history_diff, rollback_preview'],
@@ -943,7 +1139,7 @@ function mcpInfoPage(){
   const ps='$bytes = New-Object byte[] 32\n$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()\n$rng.GetBytes($bytes)\n($bytes | ForEach-Object { $_.ToString("x2") }) -join ""';
   const claude='mcp_servers: [{\n  type: "url",\n  url: "'+endpoint+'",\n  name: "siteops",\n  authorization_token: "DEIN_MCP_API_TOKEN"\n}]';
   let html='<header><div><span class="eyebrow">AI / AUTOMATION</span><h1>MCP einrichten</h1><p>SiteOps als Remote-MCP für Website-Betrieb, Backups, SEO, Monitoring und freigegebene Änderungen.</p></div><span class="pill '+(cfg.mcpToken?'ok':'bad')+'">'+(cfg.mcpToken?'AUTH KONFIGURIERT':'TOKEN FEHLT')+'</span></header>';
-  html+='<div class="metrics big mcp-metrics"><span>Streamable HTTP<em>Transport</em></span><span>'+(cfg.mcpToken?'aktiv':'fehlt')+'<em>Bearer Auth</em></span><span>'+groups.reduce((n,g)=>n+g[1].split(', ').length,0)+'<em>Tools</em></span><span>0.9.0<em>SiteOps MCP</em></span></div>';
+  html+='<div class="metrics big mcp-metrics"><span>Streamable HTTP<em>Transport</em></span><span>'+(cfg.mcpToken?'aktiv':'fehlt')+'<em>Bearer Auth</em></span><span>'+groups.reduce((n,g)=>n+g[1].split(', ').length,0)+'<em>Tools</em></span><span>1.0.0<em>SiteOps MCP</em></span></div>';
   html+='<section><div class="sectionhead"><div><span class="eyebrow">1 · SiteOps</span><h2>Server vorbereiten</h2></div></div><ol class="setup-steps"><li><strong>MCP_API_TOKEN in Hostinger setzen.</strong><span>Environment Variable der Node.js-App. Der Wert sollte lang und zufällig sein.</span></li><li><strong>PUBLIC_BASE_URL prüfen.</strong><span>Bei dir: <code>'+esc(base)+'</code></span></li><li><strong>Neu deployen.</strong><span>Danach muss <code>'+esc(health)+'</code> bei <code>missingConfig</code> keinen MCP_API_TOKEN mehr melden.</span></li><li><strong>MCP-Endpunkt verwenden.</strong><span><code>'+esc(endpoint)+'</code></span></li></ol><h3>Token unter Windows erzeugen</h3><pre class="codeblock"><code>'+esc(ps)+'</code></pre><div class="notice"><strong>Token nicht in Git speichern.</strong><span>Der MCP_API_TOKEN bleibt als Hostinger-Environment-Variable. SiteOps zeigt ihn absichtlich nirgendwo wieder an.</span></div></section>';
   html+='<section><div class="sectionhead"><div><span class="eyebrow">2 · Test</span><h2>MCP Inspector</h2></div></div><ol class="setup-steps"><li><strong>Inspector starten:</strong><span><code>npx @modelcontextprotocol/inspector</code></span></li><li><strong>Transport wählen:</strong><span>Streamable HTTP</span></li><li><strong>URL:</strong><span><code>'+esc(endpoint)+'</code></span></li><li><strong>Authorization Header:</strong><span><code>Bearer DEIN_MCP_API_TOKEN</code></span></li><li><strong>Verbinden und Tools prüfen.</strong><span>Mindestens <code>sites_list</code>, <code>site_overview</code>, <code>change_preview</code>, <code>seo_start</code> und <code>site_backup</code> sollten sichtbar sein.</span></li></ol></section>';
   html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">3 · ChatGPT</span><h2>Custom MCP App</h2></div></div><ol class="setup-steps"><li>Entwicklermodus für Custom Apps/MCP aktivieren.</li><li>Unter <strong>Apps → Create</strong> eine neue App anlegen.</li><li>Remote-Endpunkt <code>'+esc(endpoint)+'</code> eintragen.</li><li>Authentifizierung auswählen und anschließend <strong>Scan Tools</strong> ausführen.</li><li>Die App als Draft testen und bei Schreibaktionen die Freigabe kontrollieren.</li></ol><div class="callout"><strong>Aktueller ChatGPT-Stand:</strong> Vollständige MCP-Schreib-/Änderungsaktionen werden derzeit für Business, Enterprise und Edu bereitgestellt; Pro kann Custom MCP im Entwicklermodus für Read/Fetch nutzen. Die genaue UI kann sich ändern.</div><div class="notice"><strong>Bearer-Hinweis</strong><span>SiteOps nutzt derzeit statischen Bearer-Token. Falls die ChatGPT-App-Erstellung in deinem Workspace dafür keine passende Auth-Option anbietet, ist für die native Verbindung ein OAuth-Flow die nächste SiteOps-Ausbaustufe.</span></div></section>';
@@ -1006,6 +1202,15 @@ function settingsPage(){
         <div class="buttonrow"><button type="button" class="ghost" id="testPageSpeed">PageSpeed API testen</button><span class="inline-status" id="pageSpeedStatus"></span></div>
       </section>
 
+      <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Browser / Playwright</span><h2>Synthetic Runner</h2></div><span class="pill ${s.browserRunnerConfigured?'ok':''}">${s.browserRunnerConfigured?'VERBUNDEN':'OPTIONAL'}</span></div>
+        <p class="lead">Der Browser Runner führt echte Chromium-Journeys, Formular-/Checkout-Checks und visuelle Regressionstests aus. Er läuft separat auf einem Host, der Chromium starten kann.</p>
+        <div class="formgrid">
+          <label class="span2">Browser Runner URL <small>Beispiel: <code>https://browser.siteops.lorzen.cloud</code></small><input name="browserRunnerUrl" type="url" value="${esc(s.browserRunnerUrl||'')}" placeholder="https://browser.example.de"></label>
+          <label class="span2">Runner Bearer Token <small>${s.browserRunnerTokenConfigured?'Token gespeichert – leer lassen für unverändert.':'Muss dem BROWSER_RUNNER_TOKEN des Runner-Dienstes entsprechen.'}</small><input name="browserRunnerToken" type="password" autocomplete="new-password" placeholder="${s.browserRunnerTokenConfigured?'Token bereits gespeichert':'langes zufälliges Token'}"></label>
+        </div>
+        <div class="buttonrow"><button type="button" class="ghost" id="testBrowserRunner">Browser Runner testen</button><span class="inline-status" id="browserRunnerStatus"></span></div>
+      </section>
+
       <div class="sticky-save"><button type="submit">Einstellungen speichern</button><span id="configStatus"></span></div>
     </form>
     <script>
@@ -1020,15 +1225,40 @@ function settingsPage(){
         defaultSslWarnDays:Number(fd.get('defaultSslWarnDays')),alertEmail:fd.get('alertEmail').trim(),webhook:fd.get('webhook').trim(),
         smtpHost:fd.get('smtpHost').trim(),smtpPort:Number(fd.get('smtpPort')),smtpSecure:form.smtpSecure.checked,smtpUser:fd.get('smtpUser').trim(),
         smtpPassword:fd.get('smtpPassword'),smtpFrom:fd.get('smtpFrom').trim(),
-        seoMaxPages:Number(fd.get('seoMaxPages')),pageSpeedApiKey:fd.get('pageSpeedApiKey')
+        seoMaxPages:Number(fd.get('seoMaxPages')),pageSpeedApiKey:fd.get('pageSpeedApiKey'),browserRunnerUrl:String(fd.get('browserRunnerUrl')||'').trim(),browserRunnerToken:String(fd.get('browserRunnerToken')||'')
       };
     }
     form.onsubmit=async e=>{e.preventDefault();configStatus.textContent='Speichere…';const r=await fetch('/api/settings',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(payload())});const x=await r.json();configStatus.textContent=r.ok?'Gespeichert.':'Fehler: '+(x.message||x.error||JSON.stringify(x));if(r.ok)setTimeout(()=>location.reload(),500);};
     testGitHub.onclick=async()=>{githubStatus.textContent='Prüfe…';const p=payload();const r=await fetch('/api/settings/github-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({githubBackupRepo:p.githubBackupRepo,githubBackupToken:p.githubBackupToken,backupBranch:p.backupBranch})}),x=await r.json();githubStatus.textContent=r.ok?'✓ '+x.repository+' erreichbar und privat':'✗ '+(x.message||x.error||JSON.stringify(x));};
     testAlert.onclick=async()=>{alertStatus.textContent='Sende…';const r=await fetch('/api/settings/alert-test',{method:'POST'}),x=await r.json();alertStatus.textContent=r.ok?'✓ Test ausgelöst':'✗ '+(x.message||x.error||JSON.stringify(x));};
     testPageSpeed.onclick=async()=>{pageSpeedStatus.textContent='Prüfe…';const p=payload(),url=String(form.elements.namedItem('pageSpeedTestUrl')?.value||'').trim();const r=await fetch('/api/settings/pagespeed-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pageSpeedApiKey:p.pageSpeedApiKey,url})}),x=await r.json();pageSpeedStatus.textContent=r.ok?'✓ '+x.url+' · Performance '+(x.result?.scores?.performance??'–')+' · SEO '+(x.result?.scores?.seo??'–'):'✗ '+(x.message||x.error||JSON.stringify(x));};
+    testBrowserRunner.onclick=async()=>{browserRunnerStatus.textContent='Prüfe…';const p=payload();if(!p.browserRunnerUrl){browserRunnerStatus.textContent='✗ URL fehlt';return;}const r=await fetch('/api/settings/browser-runner-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({browserRunnerUrl:p.browserRunnerUrl,browserRunnerToken:p.browserRunnerToken})}),x=await r.json();browserRunnerStatus.textContent=r.ok?'✓ Runner '+(x.result?.version||'')+' erreichbar und authentifiziert':'✗ '+(x.message||x.error||JSON.stringify(x));};
     </script>`);
 }
+async function syntheticTestsPage(slug){
+  const site=await getSite(slug),tests=await syntheticTestsList(site.id),runner=Boolean(cfg.browserRunnerUrl&&cfg.browserRunnerToken);
+  let cards='';
+  for(const t of tests){
+    const last=t.lastRun,status=last?.status||'never',bad=status==='failed',mismatch=last?.visual_mismatch==null?'–':(Number(last.visual_mismatch)*100).toFixed(2)+'%';
+    cards+='<section class="synthetic-card"><div class="sectionhead"><div><span class="eyebrow">BROWSER JOURNEY</span><h2>'+esc(t.name)+'</h2><small>'+esc(t.startUrl)+'</small></div><span class="pill '+(status==='passed'?'ok':bad?'bad':'')+'">'+esc(status.toUpperCase())+'</span></div>';
+    cards+='<div class="metrics"><span>'+Math.round(t.intervalSeconds/60)+' min<em>Intervall</em></span><span>'+(last?.duration_ms??'–')+' ms<em>Letzter Lauf</em></span><span>'+mismatch+'<em>Visual Diff</em></span><span>'+(t.baselineConfigured?'JA':'NEIN')+'<em>Baseline</em></span></div>';
+    if(last?.error)cards+='<div class="notice bad"><strong>Letzter Fehler</strong><span>'+esc(last.error)+'</span></div>';
+    cards+='<div class="buttonrow"><button onclick="runSynthetic(\''+t.id+'\',false,this)">Jetzt testen</button><button class="ghost" onclick="runSynthetic(\''+t.id+'\',true,this)">Aktuellen Stand als Baseline</button><button class="ghost" onclick="toggleSynthetic(\''+t.id+'\','+(!t.enabled)+',this)">'+(t.enabled?'Pausieren':'Aktivieren')+'</button>';
+    if(bad&&last?.id)cards+='<button class="ghost" onclick="siteOpsCopyPrompt({kind:\'synthetic\',id:\''+last.id+'\'},this)">Fix-Prompt kopieren</button>';
+    if(last?.screenshot_available)cards+='<a class="button ghost" href="/api/synthetic-runs/'+last.id+'/screenshot" target="_blank">Fehler-Screenshot</a>';
+    if(t.baselineConfigured)cards+='<a class="button ghost" href="/api/synthetic-tests/'+t.id+'/baseline" target="_blank">Baseline</a>';
+    cards+='</div><details><summary>Testschritte</summary><pre class="codeblock"><code>'+esc(JSON.stringify(t.steps,null,2))+'</code></pre></details></section>';
+  }
+  if(!cards)cards='<section><div class="empty-state"><strong>Noch keine Browser-Journeys.</strong><p>Lege unten den ersten echten User-Flow an.</p></div></section>';
+  const sample=JSON.stringify([{action:'assertTitle',contains:''},{action:'click',selector:'a[href="/kontakt"]'},{action:'assertUrl',contains:'/kontakt'}],null,2);
+  let html='<a class="backlink" href="/sites/'+esc(site.slug)+'">← '+esc(site.name)+'</a><header><div><span class="eyebrow">PLAYWRIGHT SYNTHETICS</span><h1>Browser Tests · '+esc(site.name)+'</h1><p>Echte Chromium-Journeys, Fehler-Screenshots und visuelle Regressionen.</p></div><span class="pill '+(runner?'ok':'bad')+'">'+(runner?'RUNNER VERBUNDEN':'RUNNER FEHLT')+'</span></header>';
+  if(!runner)html+='<div class="notice bad"><strong>Browser Runner nicht konfiguriert</strong><span>Unter <a href="/settings">Einstellungen</a> Runner-URL und Bearer-Token hinterlegen. Tests können vorbereitet werden, aber noch nicht laufen.</span></div>';
+  html+=cards;
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">NEUER TEST</span><h2>Journey anlegen</h2></div></div><form id="syntheticForm" class="inner-form"><div class="formgrid"><label>Name<input name="name" required placeholder="Kontaktformular"></label><label>Start-URL<input name="startUrl" type="url" value="'+esc(site.monitor_url||'https://'+site.domain)+'"></label><label>Intervall (Min.)<input name="intervalMinutes" type="number" min="5" value="60"></label><label>Timeout (ms)<input name="timeoutMs" type="number" min="3000" max="120000" value="30000"></label><label>Viewport Breite<input name="viewportWidth" type="number" min="320" max="2560" value="1440"></label><label>Viewport Höhe<input name="viewportHeight" type="number" min="320" max="2000" value="1000"></label><label class="check standalone"><input name="visualEnabled" type="checkbox"> Visuelle Regression gegen Baseline prüfen</label><label>Erlaubte Abweichung (%)<input name="visualPercent" type="number" min="0" max="100" step="0.1" value="1"></label><label class="span2">Schritte als JSON <small>Keine beliebigen Scripts: nur sichere Playwright-Aktionen.</small><textarea name="steps" rows="12">'+esc(sample)+'</textarea></label><label class="span2">Secrets als JSON <small>Optional, z. B. {"PASSWORD":"..."}. In Schritten mit <code>{{secret.PASSWORD}}</code> referenzieren. Wird verschlüsselt gespeichert und nie wieder angezeigt.</small><textarea name="secrets" rows="4" placeholder="{&quot;PASSWORD&quot;:&quot;...&quot;}"></textarea></label></div><div class="buttonrow"><button>Journey anlegen</button><span id="syntheticCreateState"></span></div></form></section>';
+  html+='<script>const synForm=document.getElementById("syntheticForm");synForm.addEventListener("submit",async e=>{e.preventDefault();syntheticCreateState.textContent="Speichere…";try{const fd=new FormData(synForm),steps=JSON.parse(fd.get("steps")),secretRaw=String(fd.get("secrets")||"").trim(),secrets=secretRaw?JSON.parse(secretRaw):undefined,data={name:fd.get("name"),startUrl:fd.get("startUrl"),steps,secrets,intervalSeconds:Math.round(Number(fd.get("intervalMinutes"))*60),timeoutMs:Number(fd.get("timeoutMs")),viewportWidth:Number(fd.get("viewportWidth")),viewportHeight:Number(fd.get("viewportHeight")),visualEnabled:synForm.visualEnabled.checked,visualThreshold:Number(fd.get("visualPercent"))/100};const r=await fetch("/api/sites/'+encodeURIComponent(site.slug)+'/synthetics",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(data)}),x=await r.json();if(!r.ok)throw new Error(x.message||x.error||JSON.stringify(x));location.reload();}catch(e){syntheticCreateState.textContent="✗ "+String(e.message||e);}});async function runSynthetic(id,saveBaseline,button){const old=button.textContent;button.textContent=saveBaseline?"Erzeuge Baseline…":"Teste…";try{const r=await fetch("/api/synthetic-tests/"+id+"/run",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({saveBaseline})}),x=await r.json();if(!r.ok)throw new Error(x.message||x.error||JSON.stringify(x));button.textContent=x.status==="passed"?"✓ Bestanden":"✗ Fehlgeschlagen";setTimeout(()=>location.reload(),700);}catch(e){button.textContent="✗ "+String(e.message||e).slice(0,70);setTimeout(()=>button.textContent=old,2200);}}async function toggleSynthetic(id,enabled,button){button.textContent="Speichere…";const r=await fetch("/api/synthetic-tests/"+id,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({enabled})});if(r.ok)location.reload();else{const x=await r.json();button.textContent="✗ "+(x.message||x.error||"Fehler");}}</script>';
+  return page('Browser Tests · '+site.name,html);
+}
+
 function setupPage(){
   return page('Website hinzufügen',`
     <header><div><span class="eyebrow">Neue Website</span><h1>Website hinzufügen</h1><p>Lege zuerst fest, was für eine Website es ist und wie sie deployed wird. SiteOps behandelt einen Hostinger-Git-Deploy anders als einen klassischen FTP-/SFTP-Webspace.</p></div></header>
@@ -1259,7 +1489,7 @@ async function seoDashboardPage(slug){
   }
   if(!rows)rows='<tr><td colspan="10">Noch kein abgeschlossener Crawl.</td></tr>';
   let html='<a class="backlink" href="/sites/'+esc(site.slug)+'">← '+esc(site.name)+'</a>';
-  html+='<header><div><span class="eyebrow">WEBSITE QUALITY SUITE</span><h1>SEO · '+esc(site.name)+'</h1><p>Technischer SEO-Crawl, Duplicate-/Linkanalyse, Accessibility, Security-Header, Social Metadata, interne Seitenstärke, WDF×IDF und Lighthouse/PageSpeed.</p></div><div class="actions"><a class="button ghost" href="/sites/'+esc(site.slug)+'/report">Report</a><span class="pill '+statusClass+'">'+statusLabel+'</span></div></header>';
+  html+='<header><div><span class="eyebrow">WEBSITE QUALITY SUITE</span><h1>SEO · '+esc(site.name)+'</h1><p>Technischer SEO-Crawl, Duplicate-/Linkanalyse, Accessibility, Security-Header, Social Metadata, interne Seitenstärke, WDF×IDF und Lighthouse/PageSpeed.</p></div><div class="actions"><button class="ghost" onclick="siteOpsCopyPrompt({kind:\'seo_site\',site:\''+site.slug+'\'},this)">Fix-Prompt für Issues</button><a class="button ghost" href="/sites/'+esc(site.slug)+'/report">Report</a><span class="pill '+statusClass+'">'+statusLabel+'</span></div></header>';
   html+='<section class="seo-run-panel"><form id="seoRunForm" class="seo-run-form"><label>Max. Seiten<input name="maxPages" type="number" min="1" max="500" value="'+(run?.max_pages||cfg.seoMaxPages||100)+'"></label><label>PageSpeed / Lighthouse<select name="pageSpeed"><option value="homepage">Startseite</option><option value="all">Mehrere Seiten</option><option value="none">Nicht abrufen</option></select></label><label>Max. Lighthouse-Seiten<input name="pageSpeedMaxPages" type="number" min="1" max="50" value="10"></label><button type="submit">SEO-Check starten</button><span id="seoRunState"></span></form><p class="lead">Der Crawl folgt internen Links, robots.txt und Sitemaps. Lighthouse läuft nur mit hinterlegtem PageSpeed API-Key.</p></section>';
   if(run?.status==='running')html+='<div class="notice"><strong>Crawl läuft</strong><span>Gestartet '+new Date(run.started_at).toLocaleString('de-DE')+'. Die Seite aktualisiert sich automatisch.</span></div>';
   if(run?.status==='failed')html+='<div class="notice bad"><strong>SEO-Crawl fehlgeschlagen</strong><span>'+esc(run.error||'Unbekannter Fehler')+'</span></div>';
@@ -1273,7 +1503,7 @@ async function seoDashboardPage(slug){
 }
 async function seoPageDetailPage(id){
   const p=await seoPageGet(Number(id)),site=await getSite(p.site_id),issues=Array.isArray(p.issues)?p.issues:[],terms=Array.isArray(p.wdfidf)?p.wdfidf:[],h1=Array.isArray(p.h1)?p.h1:[],h2=Array.isArray(p.h2)?p.h2:[],links=p.links||[],mobile=p.lighthouse_mobile||null,desktop=p.lighthouse_desktop||null;
-  let issueRows='';issues.forEach(i=>issueRows+='<li class="seo-issue '+esc(i.level)+'"><strong>'+esc(i.code)+'</strong><span>'+esc(i.text)+'</span></li>');if(!issueRows)issueRows='<li class="seo-issue ok"><span>Keine Standardprobleme erkannt.</span></li>';
+  let issueRows='';issues.forEach(i=>issueRows+='<li class="seo-issue '+esc(i.level)+'"><strong>'+esc(i.code)+'</strong><span>'+esc(i.text)+'</span><button class="ghost prompt-button" onclick="siteOpsCopyPrompt({kind:\'seo_page\',id:'+p.id+',issueCode:\''+String(i.code).replace(/[^a-z0-9_-]/gi,'')+'\'},this)">Fix-Prompt</button></li>');if(!issueRows)issueRows='<li class="seo-issue ok"><span>Keine Standardprobleme erkannt.</span></li>';
   let termRows='';terms.forEach(t=>termRows+='<tr><td><strong>'+esc(t.term)+'</strong></td><td>'+t.freq+'</td><td>'+t.wdf+'</td><td>'+t.idf+'</td><td>'+t.score+'</td></tr>');if(!termRows)termRows='<tr><td colspan="5">Keine ausreichenden Textdaten.</td></tr>';
   let linkRows='';links.slice(0,150).forEach(l=>linkRows+='<tr><td>'+(l.internal_link?'intern':'extern')+'</td><td><a href="'+esc(l.target_url)+'" target="_blank" rel="noopener">'+esc(l.target_url)+'</a></td><td>'+esc(l.anchor_text||'–')+'</td><td>'+(l.nofollow?'nofollow':'follow')+'</td></tr>');if(!linkRows)linkRows='<tr><td colspan="4">Keine Links.</td></tr>';
   function lh(data,label){if(!data)return '<div class="lh-card muted"><strong>'+label+'</strong><p>Keine Lighthouse-Daten für diese URL.</p></div>';return '<div class="lh-card"><strong>'+label+'</strong><div class="lh-scores"><span>'+seoScoreValue(data.scores?.performance)+'<em>Performance</em></span><span>'+seoScoreValue(data.scores?.accessibility)+'<em>Accessibility</em></span><span>'+seoScoreValue(data.scores?.bestPractices)+'<em>Best Practices</em></span><span>'+seoScoreValue(data.scores?.seo)+'<em>SEO</em></span></div><dl class="facts compact-facts"><div><dt>FCP</dt><dd>'+seoMetricMs(data.metrics?.fcp)+'</dd></div><div><dt>LCP</dt><dd>'+seoMetricMs(data.metrics?.lcp)+'</dd></div><div><dt>TBT</dt><dd>'+seoMetricMs(data.metrics?.tbt)+'</dd></div><div><dt>CLS</dt><dd>'+(data.metrics?.cls==null?'–':Number(data.metrics.cls).toFixed(3))+'</dd></div><div><dt>Speed Index</dt><dd>'+seoMetricMs(data.metrics?.speedIndex)+'</dd></div></dl></div>';}
@@ -1296,9 +1526,10 @@ async function siteOperationsPage(slug){
   const historyRows=hist.map(h=>`<tr><td>${new Date(h.created_at).toLocaleString('de-DE')}</td><td>${esc(h.description)}</td><td>${esc(h.actor)}</td><td><span class="pill">${esc(h.status)}</span></td><td><button class="ghost" onclick="rollback('${h.id}')">Rollback</button></td></tr>`).join('')||'<tr><td colspan="5">Noch keine Änderungen.</td></tr>';
   return page(site.name,`
     <a class="backlink" href="/">← Übersicht</a>
-    <header><div><span class="eyebrow">${isGit?'HOSTINGER GIT':esc(site.protocol.toUpperCase())} · ${site.enabled?'AKTIV':'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit?esc(site.source_repository+' @ '+(site.source_branch||'main')):esc(site.remote_root)}</p></div><div class="actions"><a class="button ghost" href="/sites/${esc(site.slug)}/seo">Quality / SEO</a><a class="button ghost" href="/sites/${esc(site.slug)}/report">Report</a><button class="ghost" id="checkNow">Jetzt prüfen</button><button id="backupNow">Backup jetzt</button></div></header>
-    ${openIncidents.length?`<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span>${esc(openIncidents[0].title)} · seit ${new Date(openIncidents[0].created_at).toLocaleString('de-DE')}</span></div>`:''}
-    ${backupState?.last_error?`<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span></div>`:''}
+    <header><div><span class="eyebrow">${isGit?'HOSTINGER GIT':esc(site.protocol.toUpperCase())} · ${site.enabled?'AKTIV':'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit?esc(site.source_repository+' @ '+(site.source_branch||'main')):esc(site.remote_root)}</p></div><div class="actions"><a class="button ghost" href="/sites/${esc(site.slug)}/seo">Quality / SEO</a><a class="button ghost" href="/sites/${esc(site.slug)}/tests">Browser Tests</a><a class="button ghost" href="/sites/${esc(site.slug)}/report">Report</a><button class="ghost" id="checkNow">Jetzt prüfen</button><button id="backupNow">Backup jetzt</button></div></header>
+    ${latest&&!latest.ok?`<div class="notice bad"><strong>Monitoringfehler</strong><span>${esc(latest.error||latestDetails.error||('HTTP '+(latest.http_status??'unbekannt')))}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'monitor',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>`:''}
+    ${openIncidents.length?`<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span><a href="/incidents/${openIncidents[0].id}">${esc(openIncidents[0].title)}</a> · seit ${new Date(openIncidents[0].created_at).toLocaleString('de-DE')}</span></div>`:''}
+    ${backupState?.last_error?`<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'backup',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>`:''}
     <div class="metrics big ops-metrics"><span>${uptime}%<em>Uptime letzte ${checks.length} Checks</em></span><span>${latest?.response_ms??'–'} ms<em>Response</em></span><span>${latest?.ssl_days??'–'} d<em>SSL</em></span><span>${latest?.http_status??'–'}<em>HTTP</em></span><span>${backups[0]?.created_at?new Date(backups[0].created_at).toLocaleString('de-DE'):'–'}<em>Letztes Backup</em></span></div>
 
     <div class="twocol ops-grid">
@@ -1406,11 +1637,11 @@ async function siteOperationsPage(slug){
 async function incidentPage(id){
   const incident=await getIncident(id);
   const eventRows=incident.events.map(e=>`<tr><td>${new Date(e.created_at).toLocaleString('de-DE')}</td><td><span class="pill">${esc(e.event_type)}</span></td><td><pre class="event-json">${esc(e.details?JSON.stringify(e.details,null,2):'–')}</pre></td></tr>`).join('')||'<tr><td colspan="3">Keine Events.</td></tr>';
-  return page('Incident',`<a class="backlink" href="/sites/${esc(incident.slug)}">← ${esc(incident.domain)}</a><header><div><span class="eyebrow">INCIDENT · ${esc(incident.status.toUpperCase())}</span><h1>${esc(incident.title)}</h1><p>Gestartet ${new Date(incident.created_at).toLocaleString('de-DE')}${incident.resolved_at?' · beendet '+new Date(incident.resolved_at).toLocaleString('de-DE'):''}</p></div></header><section><div class="sectionhead"><div><span class="eyebrow">Timeline</span><h2>Ereignisse & Alerts</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Typ</th><th>Details</th></tr></thead><tbody>${eventRows}</tbody></table></div></section>`);
+  return page('Incident',`<a class="backlink" href="/sites/${esc(incident.slug)}">← ${esc(incident.domain)}</a><header><div><span class="eyebrow">INCIDENT · ${esc(incident.status.toUpperCase())}</span><h1>${esc(incident.title)}</h1><p>Gestartet ${new Date(incident.created_at).toLocaleString('de-DE')}${incident.resolved_at?' · beendet '+new Date(incident.resolved_at).toLocaleString('de-DE'):''}</p></div><div class="actions"><button onclick="siteOpsCopyPrompt({kind:'incident',id:'${incident.id}'},this)">Fix-Prompt kopieren</button></div></header><section><div class="sectionhead"><div><span class="eyebrow">Timeline</span><h2>Ereignisse & Alerts</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Typ</th><th>Details</th></tr></thead><tbody>${eventRows}</tbody></table></div></section>`);
 }
 async function dashboard(){const sites=await listSites(),checks=(await q('select mc.site_id,mc.ok,mc.http_status,mc.response_ms,mc.ssl_days,mc.created_at from monitor_checks mc join (select site_id,max(created_at) created_at from monitor_checks group by site_id) latest on latest.site_id=mc.site_id and latest.created_at=mc.created_at')).rows,checkMap=new Map(checks.map(x=>[x.site_id,x])),backups=(await q('select b.site_id,b.git_commit,b.file_count,b.created_at from backups b join (select site_id,max(created_at) created_at from backups group by site_id) latest on latest.site_id=b.site_id and latest.created_at=b.created_at')).rows,backupMap=new Map(backups.map(x=>[x.site_id,x])),incidents=(await q("select i.*,s.domain from incidents i join sites s on s.id=i.site_id where i.status='open' order by i.created_at desc")).rows,changes=(await q('select c.*,s.domain from changes c join sites s on s.id=c.site_id order by c.created_at desc limit 20')).rows;const cards=sites.map(s=>{const c=checkMap.get(s.id),b=backupMap.get(s.id),deploy=s.deployment_mode==='hostinger_git'?'HOSTINGER GIT':s.protocol.toUpperCase();return `<a class="card" href="/sites/${esc(s.slug)}"><div class="row"><strong>${esc(s.name)}</strong><span class="pill ${c?.ok?'ok':'bad'}">${c?c.ok?'ONLINE':'ALARM':'NO DATA'}</span></div><small>${esc(s.domain)} · ${esc(deploy)}</small><div class="metrics"><span>${c?.response_ms??'–'} ms<em>Response</em></span><span>${c?.ssl_days??'–'} d<em>SSL</em></span><span>${s.monitor_enabled?'ON':'OFF'}<em>Monitor</em></span><span>${b?.created_at?new Date(b.created_at).toLocaleDateString('de-DE'):'–'}<em>Backup</em></span></div></a>`}).join('');const inc=incidents.length?incidents.map(i=>`<li><b>${esc(i.domain)}</b> ${esc(i.title)}<small>${new Date(i.created_at).toLocaleString('de-DE')}</small></li>`).join(''):'<li>Keine offenen Incidents.</li>',hist=changes.map(c=>`<li><b>${esc(c.domain)}</b> ${esc(c.description)} <span class="pill">${esc(c.status)}</span><small>${new Date(c.created_at).toLocaleString('de-DE')} · ${esc(c.actor)}</small></li>`).join('')||'<li>Noch keine Änderungen.</li>';return page('SiteOps',`<header><div><span class="eyebrow">Lorzen</span><h1>SiteOps</h1><p>Websites, Backups, Monitoring und Rollbacks.</p></div><div class="actions"><a class="ghost btn" href="/settings">Einstellungen</a><a class="btn" href="/setup">+ Website</a></div></header><section><h2>Websites</h2><div class="grid">${cards}</div></section><div class="twocol"><section><h2>Offene Incidents</h2><ul>${inc}</ul></section><section><h2>Letzte Änderungen</h2><ul>${hist}</ul></section></div>`);}
 
-async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'0.9.0',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0];if(path==='/health'||path.startsWith('/assets/'))return;if(path==='/mcp'){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
+async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'1.0.0',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0];if(path==='/health'||path.startsWith('/assets/'))return;if(path==='/mcp'){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
 app.get('/api/sites/:site',async req=>publicSite(await getSite(req.params.site)));
 app.get('/api/sites/:site/overview',async req=>siteOverview(req.params.site));
 app.post('/api/sites/:site/connection-test',async req=>testStoredConnection(await getSite(req.params.site)));
@@ -1429,6 +1660,15 @@ app.get('/api/sites/:site/seo/graph',async req=>seoGraph(req.params.site,Math.mi
 app.get('/api/sites/:site/seo/issues',async req=>seoIssuesList(req.params.site,{level:req.query?.level||undefined,limit:Math.min(500,Math.max(1,Number(req.query?.limit||200)))}));app.get('/api/sites/:site/seo/compare',async req=>seoCompare(req.params.site));app.get('/api/sites/:site/quality',async req=>qualityOverview(req.params.site));
 app.get('/api/seo-runs/:id',async req=>seoRunGet(req.params.id));
 app.get('/api/seo-pages/:id',async req=>seoPageGet(Number(req.params.id)));
+const syntheticInputSchema=z.object({name:z.string().min(1).max(255),enabled:z.boolean().optional(),startUrl:z.string().url().optional(),steps:z.array(z.object({action:z.string().min(1)}).passthrough()),secrets:z.record(z.string(),z.string()).optional(),intervalSeconds:z.coerce.number().int().min(300).max(2592000).optional(),timeoutMs:z.coerce.number().int().min(3000).max(120000).optional(),viewportWidth:z.coerce.number().int().min(320).max(2560).optional(),viewportHeight:z.coerce.number().int().min(320).max(2000).optional(),visualEnabled:z.boolean().optional(),visualThreshold:z.coerce.number().min(0).max(1).optional()});
+app.get('/api/sites/:site/synthetics',async req=>syntheticTestsList(req.params.site));
+app.post('/api/sites/:site/synthetics',async(req,reply)=>reply.code(201).send(await syntheticCreate(req.params.site,syntheticInputSchema.parse(req.body||{}))));
+app.patch('/api/synthetic-tests/:id',async req=>syntheticUpdate(req.params.id,syntheticInputSchema.partial().extend({clearSecrets:z.boolean().optional()}).parse(req.body||{})));
+app.post('/api/synthetic-tests/:id/run',async req=>{const x=z.object({saveBaseline:z.boolean().default(false)}).parse(req.body||{});return runSyntheticTest(req.params.id,{saveBaseline:x.saveBaseline,actor:'dashboard'});});
+app.get('/api/synthetic-runs/:id',async req=>syntheticRunGet(req.params.id));
+app.get('/api/synthetic-runs/:id/screenshot',async(req,reply)=>{const row=(await q('select screenshot_image from synthetic_runs where id=?',[req.params.id])).rows[0];if(!row?.screenshot_image)return reply.code(404).send('No screenshot');return reply.type('image/png').send(Buffer.from(row.screenshot_image,'base64'));});
+app.get('/api/synthetic-tests/:id/baseline',async(req,reply)=>{const row=(await q('select baseline_image from synthetic_tests where id=?',[req.params.id])).rows[0];if(!row?.baseline_image)return reply.code(404).send('No baseline');return reply.type('image/png').send(Buffer.from(row.baseline_image,'base64'));});
+app.post('/api/fix-prompt',async req=>{const x=z.object({kind:z.enum(['seo_page','seo_site','incident','synthetic','monitor','backup']),site:z.string().optional(),id:z.union([z.string(),z.number()]).optional(),issueCode:z.string().optional()}).parse(req.body||{});return buildFixPrompt(x);});
 const siteCommonSchema=z.object({slug:z.string().regex(/^[a-z0-9-]+$/),name:z.string().min(1),domain:z.string().min(1),siteType:z.enum(['wordpress','php','static','node']).default('php'),monitorUrl:z.string().url().optional(),backupEnabled:z.boolean().optional(),backupIntervalSeconds:z.coerce.number().int().min(900).max(2592000).optional(),backupMaxFiles:z.coerce.number().int().min(100).max(200000).optional(),monitorEnabled:z.boolean().optional(),monitorIntervalSeconds:z.coerce.number().int().min(30).max(86400).optional(),monitorFailureThreshold:z.coerce.number().int().min(1).max(20).optional(),sslWarnDays:z.coerce.number().int().min(1).max(365).optional()});
 const webspaceSiteSchema=siteCommonSchema.extend({deploymentMode:z.literal('webspace'),protocol:z.enum(['sftp','ftps','ftp']),host:z.string().min(1),port:z.coerce.number().int().min(1).max(65535),username:z.string().min(1),password:z.string().optional(),privateKey:z.string().optional(),passphrase:z.string().optional(),remoteRoot:z.string().min(1),sourceRepository:z.string().optional(),sourceBranch:z.string().optional(),sourceRoot:z.string().optional(),gitToken:z.string().optional(),hostingerTargetDirectory:z.string().optional()});
 const hostingerGitSiteSchema=siteCommonSchema.extend({deploymentMode:z.literal('hostinger_git'),sourceRepository:z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),sourceBranch:z.string().min(1),sourceRoot:z.string().optional(),gitToken:z.string().min(1),hostingerTargetDirectory:z.string().optional(),protocol:z.enum(['sftp','ftps','ftp']).optional(),host:z.string().optional(),port:z.coerce.number().optional(),username:z.string().optional(),password:z.string().optional(),remoteRoot:z.string().optional()});
@@ -1436,7 +1676,7 @@ const siteCreateSchema=z.discriminatedUnion('deploymentMode',[webspaceSiteSchema
 app.post('/api/sites',async(req,reply)=>{const site=await createSite(siteCreateSchema.parse(req.body));return reply.code(201).send({id:site.id,slug:site.slug});});
 app.post('/api/site-connection-test',async req=>testSiteConnection(siteCreateSchema.parse(req.body)));
 app.get('/api/settings',async()=>publicSettings());
-app.patch('/api/settings',async req=>{const schema=z.object({publicBaseUrl:z.string().url(),githubBackupRepo:z.string().max(255),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().min(1).max(191),backupMaxFileBytes:z.coerce.number().int().min(1048576).max(94371840),defaultBackupIntervalSeconds:z.coerce.number().int().min(900).max(2592000),defaultBackupMaxFiles:z.coerce.number().int().min(100).max(200000),defaultMonitorIntervalSeconds:z.coerce.number().int().min(30).max(86400),defaultMonitorFailureThreshold:z.coerce.number().int().min(1).max(20),defaultSslWarnDays:z.coerce.number().int().min(1).max(365),alertEmail:z.string().max(320),webhook:z.string().max(2000),smtpHost:z.string().max(255),smtpPort:z.coerce.number().int().min(1).max(65535),smtpSecure:z.boolean(),smtpUser:z.string().max(255),smtpPassword:z.string().max(1000).optional(),smtpFrom:z.string().max(500),seoMaxPages:z.coerce.number().int().min(1).max(500),pageSpeedApiKey:z.string().max(1000).optional()});return{ok:true,settings:await saveAppSettings(schema.parse(req.body))};});
+app.patch('/api/settings',async req=>{const schema=z.object({publicBaseUrl:z.string().url(),githubBackupRepo:z.string().max(255),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().min(1).max(191),backupMaxFileBytes:z.coerce.number().int().min(1048576).max(94371840),defaultBackupIntervalSeconds:z.coerce.number().int().min(900).max(2592000),defaultBackupMaxFiles:z.coerce.number().int().min(100).max(200000),defaultMonitorIntervalSeconds:z.coerce.number().int().min(30).max(86400),defaultMonitorFailureThreshold:z.coerce.number().int().min(1).max(20),defaultSslWarnDays:z.coerce.number().int().min(1).max(365),alertEmail:z.string().max(320),webhook:z.string().max(2000),smtpHost:z.string().max(255),smtpPort:z.coerce.number().int().min(1).max(65535),smtpSecure:z.boolean(),smtpUser:z.string().max(255),smtpPassword:z.string().max(1000).optional(),smtpFrom:z.string().max(500),seoMaxPages:z.coerce.number().int().min(1).max(500),pageSpeedApiKey:z.string().max(1000).optional(),browserRunnerUrl:z.string().max(2000),browserRunnerToken:z.string().max(2000).optional()});return{ok:true,settings:await saveAppSettings(schema.parse(req.body))};});
 app.post('/api/settings/github-test',async req=>{const schema=z.object({githubBackupRepo:z.string().max(255).optional(),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().max(191).optional()}),x=schema.parse(req.body||{}),previous={repo:cfg.githubBackupRepo,token:cfg.githubBackupToken,branch:cfg.backupBranch};try{if(x.githubBackupRepo!==undefined)cfg.githubBackupRepo=x.githubBackupRepo.trim().replace(/^\/+|\/+$/g,'');if(x.githubBackupToken)cfg.githubBackupToken=x.githubBackupToken;if(x.backupBranch)cfg.backupBranch=x.backupBranch.trim();backupRepoChecked=false;backupRepoMeta=null;await ensureBackupRepository();const r=await gh('');return{ok:true,repository:r.full_name,private:r.private,defaultBranch:r.default_branch,branch:cfg.backupBranch};}finally{cfg.githubBackupRepo=previous.repo;cfg.githubBackupToken=previous.token;cfg.backupBranch=previous.branch;backupRepoChecked=false;backupRepoMeta=null;}});
 app.post('/api/settings/alert-test',async()=>{if(!(cfg.webhook||(cfg.alertEmail&&cfg.smtpHost)))throw new Error('Configure an alert email with SMTP or a webhook first');await sendAlert('TEST','SiteOps test notification from '+cfg.publicBaseUrl);return{ok:true};});app.post('/api/settings/pagespeed-test',async req=>{const schema=z.object({pageSpeedApiKey:z.string().max(1000).optional(),url:z.string().url()}),x=schema.parse(req.body||{}),previous=cfg.pageSpeedApiKey;try{
   if(x.pageSpeedApiKey)cfg.pageSpeedApiKey=x.pageSpeedApiKey;
@@ -1446,7 +1686,9 @@ app.post('/api/settings/alert-test',async()=>{if(!(cfg.webhook||(cfg.alertEmail&
   if(!probe.ok)throw new Error('Test-URL ist öffentlich nicht erfolgreich erreichbar: HTTP '+probe.status);
   if(!type.includes('text/html')&&!type.includes('application/xhtml+xml'))throw new Error('Test-URL liefert kein HTML, sondern '+(type||'unbekannten MIME-Typ')+'. Verwende eine öffentliche Website ohne Login.');
   return{ok:true,url:probe.url,result:await pageSpeedAudit(probe.url,'mobile')};
-}finally{cfg.pageSpeedApiKey=previous;}});app.post('/api/sites/:site/backup',async req=>{const site=await getSite(req.params.site);return fullBackup(site,site.backup_max_files||10000);});app.post('/api/sites/:site/check',async req=>processMonitor(await getSite(req.params.site)));app.patch('/api/sites/:site',async req=>{const schema=z.object({
+}finally{cfg.pageSpeedApiKey=previous;}});
+app.post('/api/settings/browser-runner-test',async req=>{const schema=z.object({browserRunnerUrl:z.string().url(),browserRunnerToken:z.string().max(2000).optional()}),x=schema.parse(req.body||{});return{ok:true,result:await browserRunnerTest({url:x.browserRunnerUrl,token:x.browserRunnerToken||cfg.browserRunnerToken})};});
+app.post('/api/sites/:site/backup',async req=>{const site=await getSite(req.params.site);return fullBackup(site,site.backup_max_files||10000);});app.post('/api/sites/:site/check',async req=>processMonitor(await getSite(req.params.site)));app.patch('/api/sites/:site',async req=>{const schema=z.object({
   name:z.string().min(1).optional(),domain:z.string().min(1).optional(),enabled:z.boolean().optional(),
   backup_enabled:z.boolean().optional(),backup_interval_seconds:z.coerce.number().int().min(900).max(2592000).optional(),backup_max_files:z.coerce.number().int().min(100).max(200000).optional(),
   monitor_enabled:z.boolean().optional(),monitor_url:z.string().url().optional(),monitor_interval_seconds:z.coerce.number().int().min(30).max(86400).optional(),
@@ -1455,6 +1697,6 @@ app.post('/api/settings/alert-test',async()=>{if(!(cfg.webhook||(cfg.alertEmail&
   monitor_failure_threshold:z.coerce.number().int().min(1).max(20).optional(),alert_repeat_minutes:z.coerce.number().int().min(1).max(1440).optional(),
   response_warn_ms:z.coerce.number().int().min(1).max(60000).nullable().optional(),ssl_warn_days:z.coerce.number().int().min(1).max(365).optional(),
   exclude_patterns:z.array(z.string()).optional()
-});const site=await updateSite(req.params.site,schema.parse(req.body));return{ok:true,site:publicSite(site)};});app.post('/api/backups/:id/restore-preview',async req=>backupRestorePreview(req.params.id,'dashboard'));app.post('/api/changes/:id/rollback-preview',async req=>rollbackPreview(req.params.id,'dashboard'));app.post('/api/previews/:id/apply',async req=>applyPreview(req.params.id));app.get('/mcp-info',async(_r,reply)=>reply.type('text/html').send(mcpInfoPage()));app.get('/settings',async(_r,reply)=>reply.type('text/html').send(settingsPage()));app.get('/setup',async(_r,reply)=>reply.type('text/html').send(setupPage()));app.get('/sites/:slug/seo',async(req,reply)=>reply.type('text/html').send(await seoDashboardPage(req.params.slug)));app.get('/sites/:slug/report',async(req,reply)=>reply.type('text/html').send(await clientReportPage(req.params.slug)));app.get('/seo/pages/:id',async(req,reply)=>reply.type('text/html').send(await seoPageDetailPage(req.params.id)));app.get('/sites/:slug',async(req,reply)=>reply.type('text/html').send(await siteOperationsPage(req.params.slug)));app.get('/incidents/:id',async(req,reply)=>reply.type('text/html').send(await incidentPage(req.params.id)));if(databaseReady){startMonitor();startBackupWorker();}await app.listen({host:cfg.host,port:cfg.port});app.log.info({port:cfg.port,host:cfg.host,databaseReady},'SiteOps listening');}
+});const site=await updateSite(req.params.site,schema.parse(req.body));return{ok:true,site:publicSite(site)};});app.post('/api/backups/:id/restore-preview',async req=>backupRestorePreview(req.params.id,'dashboard'));app.post('/api/changes/:id/rollback-preview',async req=>rollbackPreview(req.params.id,'dashboard'));app.post('/api/previews/:id/apply',async req=>applyPreview(req.params.id));app.get('/mcp-info',async(_r,reply)=>reply.type('text/html').send(mcpInfoPage()));app.get('/settings',async(_r,reply)=>reply.type('text/html').send(settingsPage()));app.get('/setup',async(_r,reply)=>reply.type('text/html').send(setupPage()));app.get('/sites/:slug/seo',async(req,reply)=>reply.type('text/html').send(await seoDashboardPage(req.params.slug)));app.get('/sites/:slug/tests',async(req,reply)=>reply.type('text/html').send(await syntheticTestsPage(req.params.slug)));app.get('/sites/:slug/report',async(req,reply)=>reply.type('text/html').send(await clientReportPage(req.params.slug)));app.get('/seo/pages/:id',async(req,reply)=>reply.type('text/html').send(await seoPageDetailPage(req.params.id)));app.get('/sites/:slug',async(req,reply)=>reply.type('text/html').send(await siteOperationsPage(req.params.slug)));app.get('/incidents/:id',async(req,reply)=>reply.type('text/html').send(await incidentPage(req.params.id)));if(databaseReady){startMonitor();startBackupWorker();startSyntheticWorker();}await app.listen({host:cfg.host,port:cfg.port});app.log.info({port:cfg.port,host:cfg.host,databaseReady},'SiteOps listening');}
 
 if(process.argv.includes('--check-runtime')){phpParser.parseCode('<?php echo 1;','smoke.php');await db.end();console.log('Runtime imports OK.');}else if(process.argv.includes('--migrate')){await migrate();await db.end();console.log('Database schema applied.');}else{start().catch(e=>{console.error(e);process.exit(1);});}
