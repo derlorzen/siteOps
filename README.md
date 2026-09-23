@@ -52,6 +52,8 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 - encrypted per-test secret variables referenced as `{{secret.NAME}}`
 - automatic repair prompts for SEO/Quality issues, monitoring incidents and failed browser journeys
 - one-click copy workflow for ChatGPT/Claude that instructs the agent to diagnose through SiteOps MCP and create a safe `change_preview` without applying it
+- DOWN, backup and synthetic failure alerts automatically include the generated repair prompt
+- successful `change_apply` queues enabled browser journeys for post-change validation (10s direct webspace, 120s Hostinger Git deploy)
 
 ## Hosting
 
