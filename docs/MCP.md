@@ -49,8 +49,12 @@ SiteOps never returns stored passwords, private keys, GitHub PATs, PageSpeed API
 - `seo_page` – full details for one crawled URL
 - `seo_graph` – strongest pages and internal link edges
 - `seo_issues` – bounded issue list, optionally by severity
+- `seo_compare` – compare the two latest completed crawls: Health Score delta, new/resolved issues, changed/new/removed pages
+- `quality_overview` – combined SEO quality, regression, uptime/incidents and backup state
 
 The WDF×IDF values are calculated against the corpus of the crawled website. They are useful for internal content analysis but are not a competitor SERP corpus.
+
+The Quality Suite additionally checks duplicate/near-duplicate content, broken internal links/resources, redirecting links, canonicals, sitemap coverage, hreflang, social metadata, static accessibility signals, security headers and AI crawler access declared in robots.txt. These checks are technical diagnostics; they do not claim search-engine ranking outcomes.
 
 ### Connections and configuration
 
