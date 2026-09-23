@@ -1,6 +1,6 @@
 # Deploy SiteOps on Hostinger Cloud Startup
 
-SiteOps 1.0 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
+SiteOps 1.1 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
 
 ## 1. Create the Hostinger MySQL database
 
@@ -84,9 +84,16 @@ DB_PASSWORD=...
 DB_NAME=...
 
 SITEOPS_MASTER_KEY=...
-MCP_API_TOKEN=...
 DASHBOARD_USER=kai
 DASHBOARD_PASSWORD=...
+
+# Optional compatibility token for older MCP clients:
+MCP_API_TOKEN=
+
+# Optional OAuth lifetime overrides:
+OAUTH_ACCESS_TOKEN_TTL_SECONDS=3600
+OAUTH_REFRESH_TOKEN_TTL_SECONDS=2592000
+OAUTH_CODE_TTL_SECONDS=600
 
 GITHUB_BACKUP_REPO=derlorzen/lorzen-site-backups
 GITHUB_BACKUP_TOKEN=...
@@ -101,7 +108,7 @@ Generate `SITEOPS_MASTER_KEY` locally:
 openssl rand -base64 32
 ```
 
-Use separate strong random values for `MCP_API_TOKEN` and `DASHBOARD_PASSWORD`.
+`DASHBOARD_PASSWORD` protects both the SiteOps dashboard and the human approval step of the built-in OAuth flow. Use a strong unique password. `MCP_API_TOKEN` is optional and should only be set when an older client still needs static Bearer authentication.
 
 ## 5. Backup limits
 
@@ -155,11 +162,11 @@ Expected response includes:
 ```json
 {
   "status": "ok",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "database": "mysql"
 }
 ```
 
-Then sign in to the dashboard and add the first customer site.
+Then sign in to the dashboard and add the first customer site. For ChatGPT or Claude, open **MCP & OAuth** in SiteOps after deployment and connect the remote MCP URL. No separate OAuth provider is required.
 
 If startup fails, check Hostinger Node.js runtime logs and verify the five `DB_*` variables first.
