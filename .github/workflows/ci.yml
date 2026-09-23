@@ -27,6 +27,8 @@ jobs:
         run: npm install --ignore-scripts
       - name: Syntax check
         run: npm run check
+      - name: Browser runner syntax check
+        run: node --check runner/server.mjs
       - name: Runtime import check
         env:
           SITEOPS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
