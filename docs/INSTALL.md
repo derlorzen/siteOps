@@ -1,6 +1,6 @@
 # Deploy SiteOps on Hostinger Cloud Startup
 
-SiteOps 0.4 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
+SiteOps 0.9 is a Node.js/Fastify application designed for Hostinger Cloud Startup. It uses Hostinger's managed MySQL database and does not require a VPS, Docker, systemd, PostgreSQL, a local Git binary, a PHP binary or persistent application storage.
 
 ## 1. Create the Hostinger MySQL database
 
@@ -118,7 +118,13 @@ wp-content/uploads
 
 Uploads are excluded because storing a large media library in Git is usually inefficient. A later object-storage/media-backup layer should be used for complete WordPress disaster recovery.
 
-## 6. Verification after deployment
+## 6. Quality Suite notes
+
+The technical SEO crawler, duplicate-content checks, link/resource checks, accessibility quick checks, security-header analysis and crawl comparison work without a paid API. Google PageSpeed/Lighthouse remains optional and requires `PAGESPEED_API_KEY`.
+
+SiteOps also reads public RDAP data for domain-expiry monitoring. Failed/unavailable RDAP lookups are treated as unknown rather than as a site outage.
+
+## 7. Verification after deployment
 
 Open:
 
@@ -131,7 +137,7 @@ Expected response includes:
 ```json
 {
   "status": "ok",
-  "version": "0.4.0",
+  "version": "0.9.0",
   "database": "mysql"
 }
 ```
