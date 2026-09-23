@@ -111,6 +111,44 @@ app.get('/auth-test', async (req, reply) => {
   if (!auth(req, reply)) return;
   return { ok: true, version: '1.0.0' };
 });
+app.post('/render', async (req, reply) => {
+  if (!auth(req, reply)) return;
+  const body = req.body || {},
+    url = String(body.url || '');
+  if (!url) throw new Error('url is required');
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('url is invalid');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Only http/https URLs are supported');
+  const timeoutMs = Math.min(60000, Math.max(3000, Number(body.timeoutMs || 20000)));
+  let browser = null,
+    error = null,
+    html = null,
+    finalUrl = null,
+    statusCode = null;
+  try {
+    browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] });
+    const context = await browser.newContext({ ignoreHTTPSErrors: false });
+    const page = await context.newPage();
+    page.setDefaultTimeout(timeoutMs);
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
+    // Give client-rendered content a chance to hydrate/fetch, but don't let a page with a
+    // persistent connection (analytics, websockets) block the whole render indefinitely -
+    // capture whatever DOM state exists once the network goes quiet or this soft wait expires.
+    await page.waitForLoadState('networkidle', { timeout: Math.min(timeoutMs, 8000) }).catch(() => {});
+    statusCode = response ? response.status() : null;
+    finalUrl = page.url();
+    html = await page.content();
+  } catch (e) {
+    error = String(e.message || e);
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+  return { ok: !error, error, html, finalUrl, statusCode };
+});
 app.post('/run', async (req, reply) => {
   if (!auth(req, reply)) return;
   const body = req.body || {},

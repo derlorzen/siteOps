@@ -371,8 +371,34 @@ The OAuth issuer and MCP resource URLs are derived from this value, so it must b
 - `SEO_MAX_PAGES`
 - `PAGESPEED_API_KEY`
 - `SEO_USER_AGENT`
+- `SEO_RENDER_MAX_PAGES` — max pages per crawl re-rendered through the Browser Runner when the raw HTML looks too thin (default `20`, see below)
 
 The normal SiteOps SEO crawler does **not** require a PageSpeed API key.
+
+### Content analysis on client-rendered pages (Next.js and similar)
+
+The SEO crawler fetches pages as plain HTTP and does not execute JavaScript.
+For a client-rendered page (e.g. `next/dynamic(..., { ssr: false })`, or a
+client component that fetches its content after mount) that raw HTML can be
+mostly empty, which used to be misreported as thin content.
+
+Two mitigations:
+
+- Content extraction prefers `<main>`/`<article>`, but now falls back to the
+  full `<body>` when that element is suspiciously empty relative to the rest
+  of the page (a common shape for a React/Next.js shell).
+- If a page's raw-HTML word count is still below the thin-content threshold
+  (250 words) **and** a [Browser Runner](#browser-runner-setup) is
+  configured, SiteOps re-fetches that one page through the Browser Runner
+  (a real headless Chromium render) and uses that content instead if it
+  is meaningfully longer. Such pages are marked with an informational
+  `content_rendered` issue in the SEO report. This only affects pages that
+  would otherwise look thin, capped at `SEO_RENDER_MAX_PAGES` renders per
+  crawl, so it does not slow down a normal crawl of an already
+  server-rendered site.
+
+Without a configured Browser Runner, thin client-rendered pages are still
+reported as thin content exactly as before.
 
 ## OAuth
 

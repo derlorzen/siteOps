@@ -58,6 +58,7 @@ const cfg = {
   backupWorkerInterval: Number(env('BACKUP_WORKER_INTERVAL_MS', '60000')),
   pageSpeedApiKey: process.env.PAGESPEED_API_KEY || '',
   seoMaxPages: Number(env('SEO_MAX_PAGES', '100')),
+  seoRenderMaxPages: Number(env('SEO_RENDER_MAX_PAGES', '20')),
   seoUserAgent: env('SEO_USER_AGENT', 'Lorzen-SiteOps-SEO/1.0'),
   browserRunnerUrl: process.env.BROWSER_RUNNER_URL || '',
   browserRunnerToken: process.env.BROWSER_RUNNER_TOKEN || '',
@@ -2544,6 +2545,7 @@ function seoHealthScore(pages) {
     for (const i of p.issues || []) penalty += i.level === 'error' ? 5 : i.level === 'warn' ? 2 : 0.5;
   return Math.max(0, Math.round(100 - (penalty / pages.length) * 2));
 }
+const SEO_THIN_CONTENT_WORDS = 250;
 function seoIssues(page) {
   const issues = [];
   if (page.statusCode !== 200) issues.push({ level: 'error', code: 'http_status', text: 'HTTP ' + page.statusCode });
@@ -2580,7 +2582,7 @@ function seoIssues(page) {
     issues.push({ level: 'error', code: 'noindex', text: 'Seite steht auf noindex' });
   if (/nofollow/i.test(page.robots || ''))
     issues.push({ level: 'warn', code: 'page_nofollow', text: 'Robots-Meta enthält nofollow' });
-  if (page.wordCount < 250)
+  if (page.wordCount < SEO_THIN_CONTENT_WORDS)
     issues.push({ level: 'warn', code: 'thin_content', text: 'Wenig Text (' + page.wordCount + ' Wörter)' });
   if (page.imagesMissingAlt > 0)
     issues.push({ level: 'warn', code: 'image_alt', text: page.imagesMissingAlt + ' Bilder ohne Alt-Text' });
@@ -2725,7 +2727,7 @@ async function seoFetchDocument(url) {
   }
   throw new Error('Zu viele Redirects');
 }
-async function crawlSeoPage(url, rootHost, depth) {
+async function crawlSeoPage(url, rootHost, depth, renderBudget) {
   const started = Date.now();
   let res,
     html = '',
@@ -2782,7 +2784,60 @@ async function crawlSeoPage(url, rootHost, depth) {
       ...empty,
       issues: [{ level: 'error', code: error ? 'fetch_error' : 'not_html', text: error || 'Kein HTML-Dokument' }]
     };
-  const $ = cheerio.load(html);
+  const security = seoSecurity(res.headers, finalUrl);
+  let extracted = seoExtractDocument(cheerio.load(html), { finalUrl, rootHost, sourceUrl: url, statusCode });
+  let renderedFallback = false;
+  if (
+    extracted.wordCount < SEO_THIN_CONTENT_WORDS &&
+    cfg.browserRunnerUrl &&
+    cfg.browserRunnerToken &&
+    renderBudget?.remaining > 0
+  ) {
+    renderBudget.remaining--;
+    try {
+      const rendered = await browserRunnerRequest('/render', {
+        method: 'POST',
+        body: { url: finalUrl, timeoutMs: 20000, waitUntil: 'networkidle' }
+      });
+      if (rendered.ok && rendered.html) {
+        const reExtracted = seoExtractDocument(cheerio.load(rendered.html), {
+          finalUrl: rendered.finalUrl || finalUrl,
+          rootHost,
+          sourceUrl: url,
+          statusCode
+        });
+        if (reExtracted.wordCount > extracted.wordCount) {
+          extracted = reExtracted;
+          renderedFallback = true;
+        }
+      }
+    } catch {
+      // Browser Runner not reachable/misconfigured - keep the raw-HTML extraction instead of failing the crawl.
+    }
+  }
+  const page = {
+    url,
+    finalUrl,
+    path: new URL(url).pathname + (new URL(url).search || ''),
+    statusCode,
+    responseMs,
+    contentBytes,
+    depth,
+    redirectCount: redirects.length,
+    redirects,
+    security,
+    ...extracted
+  };
+  page.issues = seoIssues(page);
+  if (renderedFallback)
+    page.issues.push({
+      level: 'info',
+      code: 'content_rendered',
+      text: 'Inhalt wurde über gerendertes DOM ermittelt (rohes HTML lieferte zu wenig Text, z.B. clientseitig gerenderte Inhalte)'
+    });
+  return page;
+}
+function seoExtractDocument($, { finalUrl, rootHost, sourceUrl, statusCode }) {
   const title = $('title').first().text().replace(/\s+/g, ' ').trim(),
     metaDescription = $('meta[name="description"]').attr('content')?.trim() || '',
     canonicalHref = $('link[rel="canonical"]').attr('href') || '',
@@ -2815,14 +2870,24 @@ async function crawlSeoPage(url, rootHost, depth) {
     if (href) hreflang.push({ lang: (el.attr('hreflang') || '').trim(), href });
   });
   const social = seoSocial($),
-    accessibility = seoAccessibility($),
-    security = seoSecurity(res.headers, finalUrl);
+    accessibility = seoAccessibility($);
   const images = $('img').length,
     imagesMissingAlt = $('img').filter((_, e) => !($(e).attr('alt') || '').trim()).length;
-  const body = $('main,article').first().length ? $('main,article').first().clone() : $('body').clone();
-  body.find('script,style,noscript,svg,template').remove();
-  const text = body.text().replace(/\s+/g, ' ').trim(),
-    wordCount = seoTokens(text).length,
+  const stripped = el => {
+    const clone = el.clone();
+    clone.find('script,style,noscript,svg,template').remove();
+    return clone.text().replace(/\s+/g, ' ').trim();
+  };
+  const bodyText = stripped($('body').length ? $('body') : $.root());
+  const mainCandidate = $('main,article').first();
+  // Prefer <main>/<article> to exclude nav/header/footer boilerplate, but fall back to the
+  // full body when that candidate is suspiciously empty relative to it (e.g. a Next.js/React
+  // shell where the real content is a client-rendered child that hasn't hydrated into it).
+  const mainText = mainCandidate.length ? stripped(mainCandidate) : '';
+  const bodyWords = seoTokens(bodyText).length,
+    mainWords = seoTokens(mainText).length;
+  const text = mainCandidate.length && (mainWords >= 40 || mainWords >= bodyWords * 0.6) ? mainText : bodyText;
+  const wordCount = seoTokens(text).length,
     contentHash = hash(Buffer.from(text.toLowerCase())),
     contentFingerprint = seoFingerprint(text);
   const links = [];
@@ -2835,7 +2900,7 @@ async function crawlSeoPage(url, rootHost, depth) {
       internal = tu.hostname === rootHost,
       anchor = $(e).text().replace(/\s+/g, ' ').trim().slice(0, 250),
       nofollow = /\bnofollow\b/i.test($(e).attr('rel') || '');
-    links.push({ source: url, target, anchor, internal, nofollow });
+    links.push({ source: sourceUrl, target, anchor, internal, nofollow });
   });
   const resources = [];
   $('img[src],script[src],link[rel="stylesheet"][href]').each((_, e) => {
@@ -2845,17 +2910,12 @@ async function crawlSeoPage(url, rootHost, depth) {
     if (target) resources.push(target);
   });
   const indexable = statusCode === 200 && !/noindex/i.test(robots || '');
-  const page = {
-    url,
-    finalUrl,
-    path: new URL(url).pathname + (new URL(url).search || ''),
-    statusCode,
-    responseMs,
-    contentBytes,
+  return {
     title,
     metaDescription,
     canonical,
     robots,
+    lang,
     h1,
     h2,
     wordCount,
@@ -2865,20 +2925,13 @@ async function crawlSeoPage(url, rootHost, depth) {
     links,
     resources,
     text,
-    depth,
-    redirectCount: redirects.length,
-    redirects,
-    lang,
     hreflang,
     social,
-    security,
     accessibility,
     contentHash,
     contentFingerprint,
     indexable
   };
-  page.issues = seoIssues(page);
-  return page;
 }
 async function seoAuditResources(pages, rootHost, limit = 250) {
   const owners = new Map();
@@ -2947,7 +3000,8 @@ async function runSeoAudit(
     queued = new Set([root]),
     crawled = new Set(),
     pages = [],
-    links = [];
+    links = [],
+    renderBudget = { remaining: cfg.seoRenderMaxPages };
   const sitemap = await seoDiscoverSitemaps(root, Math.min(maxPages * 3, 1500)),
     sitemapSet = new Set(sitemap.pages),
     sitemapPending = sitemap.pages.filter(url => url !== root);
@@ -2967,7 +3021,7 @@ async function runSeoAudit(
       queued.delete(item.url);
       if (crawled.has(item.url)) continue;
       crawled.add(item.url);
-      const page = await crawlSeoPage(item.url, rootHost, item.depth);
+      const page = await crawlSeoPage(item.url, rootHost, item.depth, renderBudget);
       pages.push(page);
       links.push(...page.links);
       for (const l of page.links) {
@@ -6269,7 +6323,7 @@ async function start() {
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');
 }
 
-export { migrate, q, db };
+export { migrate, q, db, seoExtractDocument };
 
 const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMainModule) await runCli();
