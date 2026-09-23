@@ -13,6 +13,7 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 - DNS, redirect-chain, title/content, SSL, response-time and optional WordPress REST monitoring
 - incident event timeline with repeated alert escalation and recovery delivery
 - expanded MCP toolkit for site overview, configuration, connection testing, file discovery, monitoring, incidents, backups, SEO and safe changes
+- built-in OAuth 2.1 authorization server for ChatGPT and Claude remote MCP: PKCE S256, CIMD, DCR, refresh-token rotation and revocation
 - SEO crawler with robots.txt/sitemap discovery, technical on-page checks, internal-link graph and crawl depth
 - PageRank-style internal page-strength analysis and per-page site-corpus WDF×IDF terms
 - optional Google PageSpeed Insights / Lighthouse mobile and desktop audits
@@ -67,6 +68,12 @@ Prefer SFTP for managed customer websites. FTPS exists for legacy hosts; plain F
 
 See `docs/INSTALL.md` and `docs/MCP.md`.
 
+
+## MCP OAuth
+
+SiteOps can be connected natively to ChatGPT and Claude without sharing the dashboard password or requiring a third-party identity provider. The MCP endpoint publishes OAuth Protected Resource Metadata and Authorization Server Metadata, supports ChatGPT CIMD and Claude-compatible Dynamic Client Registration, and issues short-lived resource-bound access tokens plus rotating refresh tokens.
+
+The existing `MCP_API_TOKEN` remains an optional compatibility path for older clients. See `docs/MCP.md` and the in-app **MCP & OAuth** page.
 
 ## Browser Runner
 
