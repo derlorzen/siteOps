@@ -607,7 +607,7 @@ let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(ba
 
 
 function publicSyntheticTest(t){
-  return{id:t.id,siteId:t.site_id,name:t.name,enabled:Boolean(t.enabled),startUrl:t.start_url,steps:Array.isArray(t.steps)?t.steps:[],secretsConfigured:Boolean(t.encrypted_secrets),intervalSeconds:t.interval_seconds,timeoutMs:t.timeout_ms,viewport:{width:t.viewport_width,height:t.viewport_height},visualEnabled:Boolean(t.visual_enabled),visualThreshold:Number(t.visual_threshold||0),baselineConfigured:Boolean(t.baseline_image),baselineHash:t.baseline_hash,lastRunAt:t.last_run_at,createdAt:t.created_at,updatedAt:t.updated_at};
+  return{id:t.id,siteId:t.site_id,name:t.name,enabled:Boolean(t.enabled),startUrl:t.start_url,steps:Array.isArray(t.steps)?t.steps:[],secretsConfigured:Boolean(t.encrypted_secrets),intervalSeconds:t.interval_seconds,timeoutMs:t.timeout_ms,viewport:{width:t.viewport_width,height:t.viewport_height},visualEnabled:Boolean(t.visual_enabled),visualThreshold:Number(t.visual_threshold||0),baselineConfigured:Boolean(t.baseline_image),baselineHash:t.baseline_hash,lastRunAt:t.last_run_at,nextRunAt:t.next_run_at,createdAt:t.created_at,updatedAt:t.updated_at};
 }
 async function syntheticTestGet(id){const t=(await q('select * from synthetic_tests where id=?',[id])).rows[0];if(!t)throw new Error('Synthetic test not found');return t;}
 async function syntheticTestsList(siteId){
