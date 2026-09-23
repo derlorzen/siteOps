@@ -584,6 +584,48 @@ async function getIncident(incidentId){const i=(await q('select i.*,s.slug,s.dom
 let monitorRunning=false;function startMonitor(){setInterval(async()=>{if(monitorRunning)return;monitorRunning=true;try{const sites=(await q(`select s.* from sites s left join monitor_state ms on ms.site_id=s.id where s.enabled=1 and s.monitor_enabled=1 and (ms.last_check_at is null or timestampdiff(second,ms.last_check_at,now())>=s.monitor_interval_seconds)`)).rows;for(const site of sites){try{await processMonitor(site);}catch(e){console.error('monitor',site.domain,e);}}}finally{monitorRunning=false;}},cfg.workerInterval).unref();}
 let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlert(`BACKUP FAILED: ${site.domain}`,msg);console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
 
+let seoWorkerRunning=false;
+function startSeoWorker(){
+  setInterval(async()=>{
+    if(seoWorkerRunning)return;seoWorkerRunning=true;
+    try{
+      const sites=(await q(`select s.*
+        from sites s
+        left join (select site_id,max(finished_at) last_seo_at from seo_runs where status='completed' group by site_id) sr on sr.site_id=s.id
+        left join seo_state ss on ss.site_id=s.id
+        where s.enabled=1 and s.seo_enabled=1
+          and not exists (select 1 from seo_runs active where active.site_id=s.id and active.status='running')
+          and (sr.last_seo_at is null or timestampdiff(second,sr.last_seo_at,now())>=s.seo_interval_seconds)
+          and (ss.last_attempt_at is null or timestampdiff(second,ss.last_attempt_at,now())>=least(s.seo_interval_seconds,3600))
+        order by coalesce(sr.last_seo_at,'1970-01-01 00:00:00')`)).rows;
+      for(const site of sites){
+        const previous=(await q('select * from seo_state where site_id=?',[site.id])).rows[0]||null;
+        const previousRun=(await q("select summary from seo_runs where site_id=? and status='completed' order by finished_at desc limit 1",[site.id])).rows[0]||null;
+        await q(`insert into seo_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);
+        const runId=crypto.randomUUID();
+        await q('insert into seo_runs(id,site_id,status,max_pages) values(?,?,?,?)',[runId,site.id,'running',site.seo_max_pages||cfg.seoMaxPages||100]);
+        try{
+          await runSeoAudit(runId,site,{maxPages:site.seo_max_pages||cfg.seoMaxPages||100,pageSpeed:site.seo_pagespeed_mode||'homepage',pageSpeedMaxPages:10});
+          const run=(await q('select summary from seo_runs where id=?',[runId])).rows[0]||{},summary=run.summary||{},health=Number(summary.healthScore??0),errors=Number(summary.issues?.error??0);
+          await q(`update seo_state set last_success_at=now(),last_error=null,last_health_score=?,last_error_count=?,updated_at=now() where site_id=?`,[health,errors,site.id]);
+          if(site.seo_regression_alerts){
+            const oldHealth=previous?.last_health_score??previousRun?.summary?.healthScore,oldErrors=previous?.last_error_count??previousRun?.summary?.issues?.error;
+            const drop=oldHealth==null?0:Number(oldHealth)-health,newErrors=oldErrors==null?0:errors-Number(oldErrors);
+            if(drop>=cfg.seoRegressionAlertDrop||newErrors>0){
+              await sendAlert(`SEO REGRESSION: ${site.domain}`,`SEO Health ${oldHealth??'–'} → ${health}. Fehler ${oldErrors??'–'} → ${errors}. ${drop>=cfg.seoRegressionAlertDrop?'Health-Score sank um '+drop+' Punkte. ':''}${newErrors>0?newErrors+' neue Fehler.':''}`);
+            }
+          }
+        }catch(e){
+          const msg=String(e.message||e).slice(0,4000);
+          await q('update seo_state set last_error=?,updated_at=now() where site_id=?',[msg,site.id]);
+          if(!previous?.last_error)await sendAlert(`SEO AUDIT FAILED: ${site.domain}`,msg);
+          console.error('seo worker',site.domain,e);
+        }
+      }
+    }finally{seoWorkerRunning=false;}
+  },cfg.seoWorkerInterval).unref();
+}
+
 
 const SEO_STOPWORDS=new Set('aber alle allem allen aller alles als also am an ander andere anderem anderen anderer anderes and auch auf aus bei bin bis bist da damit dann das dass dein deine dem den denn der des die dies diese diesem diesen dieser dieses doch dort du durch ein eine einem einen einer eines er es etwas für gegen gewesen hat hatte haben hier hin hinter ich im in ist ja jede jedem jeden jeder jedes jener jenes kann kein keine mit muss nach nicht nichts noch nun nur ob oder ohne sehr sein seine selbst sich sie sind so über um und uns unser unsere unter vom von vor war waren was weg weil weiter welche welchem welchen welcher welches wenn werde werden wie wieder will wir wo zu zum zur'.split(/\s+/));
 function seoNormalizeUrl(value,base){
