@@ -14,6 +14,7 @@ import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
+import { pageAuditIssues, summarizeSeoAudit, linkHealthCheck, siteIntelligenceAudit, compareSeoRuns, robotsAllows } from './lib/site-intelligence.mjs';
 
 function env(name, fallback = undefined) { const value = process.env[name] ?? fallback; if (value === undefined) throw new Error(`Missing env ${name}`); return value; }
 const cfg = {
@@ -32,10 +33,11 @@ const cfg = {
   workerInterval: Number(env('MONITOR_WORKER_INTERVAL_MS','30000')),
   backupWorkerInterval: Number(env('BACKUP_WORKER_INTERVAL_MS','60000')),
   pageSpeedApiKey: process.env.PAGESPEED_API_KEY || '', seoMaxPages: Number(env('SEO_MAX_PAGES','100')),
-  seoUserAgent: env('SEO_USER_AGENT','Lorzen-SiteOps-SEO/0.8')
+  seoLinkCheckLimit: Number(env('SEO_LINK_CHECK_LIMIT','1000')), seoExternalLinkCheckLimit: Number(env('SEO_EXTERNAL_LINK_CHECK_LIMIT','300')),
+  seoUserAgent: env('SEO_USER_AGENT','Lorzen-SiteOps-SEO/0.9')
 };
 const db=mysql.createPool(cfg.databaseUrl||{host:cfg.dbHost,port:cfg.dbPort,user:cfg.dbUser,password:cfg.dbPassword,database:cfg.dbName,connectionLimit:5,charset:'utf8mb4'});
-const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details','summary','issues','wdfidf','structured_data','lighthouse_mobile','lighthouse_desktop']);
+const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details','summary','issues','wdfidf','structured_data','lighthouse_mobile','lighthouse_desktop','signals','result']);
 function normalizeRow(row){if(!row||typeof row!=='object')return row;for(const k of jsonFields)if(typeof row[k]==='string'){try{row[k]=JSON.parse(row[k]);}catch{}}return row;}
 async function q(text,params=[]){const [raw]=await db.query(text,params);return{rows:Array.isArray(raw)?raw.map(normalizeRow):[],meta:raw};}
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -47,7 +49,7 @@ function encrypt(value){ const iv=crypto.randomBytes(12), cipher=crypto.createCi
 function decrypt(value){ const [iv,tag,data]=value.split('.'); const d=crypto.createDecipheriv('aes-256-gcm',key(),Buffer.from(iv,'base64url')); d.setAuthTag(Buffer.from(tag,'base64url')); return JSON.parse(Buffer.concat([d.update(Buffer.from(data,'base64url')),d.final()]).toString()); }
 const phpParser=new PHPParser({parser:{suppressErrors:false,extractDoc:false},ast:{withPositions:false}});
 async function ensureColumn(table,column,definition){const r=await q(`show columns from ${table} like ?`,[column]);if(!r.rows.length)await db.query(`alter table ${table} add column ${column} ${definition}`);}
-async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);await ensureColumn('sites','deployment_mode',"VARCHAR(30) NOT NULL DEFAULT 'webspace'");await ensureColumn('sites','source_repository','VARCHAR(255) NULL');await ensureColumn('sites','source_branch','VARCHAR(191) NULL');await ensureColumn('sites','source_root','TEXT NULL');await ensureColumn('sites','git_credentials','LONGTEXT NULL');await ensureColumn('sites','hostinger_target_directory','TEXT NULL');await ensureColumn('sites','monitor_expected_title','TEXT NULL');await ensureColumn('sites','monitor_check_dns','BOOLEAN NOT NULL DEFAULT TRUE');await ensureColumn('sites','monitor_check_wordpress','BOOLEAN NOT NULL DEFAULT FALSE');await ensureColumn('sites','alert_repeat_minutes','INT NOT NULL DEFAULT 60');await ensureColumn('monitor_state','last_alert_at','DATETIME NULL');await ensureColumn('monitor_state','alert_count','INT NOT NULL DEFAULT 0');}
+async function migrate(){const sql=await readFile(new URL('./schema.sql',import.meta.url),'utf8');for(const statement of sql.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean))await db.query(statement);await ensureColumn('sites','deployment_mode',"VARCHAR(30) NOT NULL DEFAULT 'webspace'");await ensureColumn('sites','source_repository','VARCHAR(255) NULL');await ensureColumn('sites','source_branch','VARCHAR(191) NULL');await ensureColumn('sites','source_root','TEXT NULL');await ensureColumn('sites','git_credentials','LONGTEXT NULL');await ensureColumn('sites','hostinger_target_directory','TEXT NULL');await ensureColumn('sites','monitor_expected_title','TEXT NULL');await ensureColumn('sites','monitor_check_dns','BOOLEAN NOT NULL DEFAULT TRUE');await ensureColumn('sites','monitor_check_wordpress','BOOLEAN NOT NULL DEFAULT FALSE');await ensureColumn('sites','alert_repeat_minutes','INT NOT NULL DEFAULT 60');await ensureColumn('monitor_state','last_alert_at','DATETIME NULL');await ensureColumn('monitor_state','alert_count','INT NOT NULL DEFAULT 0');await ensureColumn('seo_pages','signals','LONGTEXT NULL');await ensureColumn('seo_pages','content_hash','CHAR(64) NULL');await ensureColumn('seo_links','target_status','INT NULL');await ensureColumn('seo_links','target_response_ms','INT NULL');await ensureColumn('seo_links','target_error','TEXT NULL');await ensureColumn('seo_links','target_location','TEXT NULL');}
 async function loadSavedConfig(){
   const rows=(await q('select setting_key,setting_value,encrypted from app_settings')).rows;
   const values={};
