@@ -32,10 +32,12 @@ const cfg = {
   workerInterval: Number(env('MONITOR_WORKER_INTERVAL_MS','30000')),
   backupWorkerInterval: Number(env('BACKUP_WORKER_INTERVAL_MS','60000')),
   pageSpeedApiKey: process.env.PAGESPEED_API_KEY || '', seoMaxPages: Number(env('SEO_MAX_PAGES','100')),
-  seoUserAgent: env('SEO_USER_AGENT','Lorzen-SiteOps-SEO/0.8')
+  seoUserAgent: env('SEO_USER_AGENT','Lorzen-SiteOps-SEO/1.0'),
+  browserRunnerUrl: process.env.BROWSER_RUNNER_URL || '', browserRunnerToken: process.env.BROWSER_RUNNER_TOKEN || '',
+  syntheticWorkerInterval: Number(env('SYNTHETIC_WORKER_INTERVAL_MS','60000'))
 };
 const db=mysql.createPool(cfg.databaseUrl||{host:cfg.dbHost,port:cfg.dbPort,user:cfg.dbUser,password:cfg.dbPassword,database:cfg.dbName,connectionLimit:5,charset:'utf8mb4'});
-const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details','summary','issues','wdfidf','structured_data','lighthouse_mobile','lighthouse_desktop','hreflang','social','security','accessibility','content_fingerprint']);
+const jsonFields=new Set(['exclude_patterns','changes','validation','files','health_result','details','summary','issues','wdfidf','structured_data','lighthouse_mobile','lighthouse_desktop','hreflang','social','security','accessibility','content_fingerprint','steps','result']);
 function normalizeRow(row){if(!row||typeof row!=='object')return row;for(const k of jsonFields)if(typeof row[k]==='string'){try{row[k]=JSON.parse(row[k]);}catch{}}return row;}
 async function q(text,params=[]){const [raw]=await db.query(text,params);return{rows:Array.isArray(raw)?raw.map(normalizeRow):[],meta:raw};}
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -77,6 +79,8 @@ async function loadSavedConfig(){
   apply('smtp_from','smtpFrom');
   apply('pagespeed_api_key','pageSpeedApiKey');
   apply('seo_max_pages','seoMaxPages',Number);
+  apply('browser_runner_url','browserRunnerUrl');
+  apply('browser_runner_token','browserRunnerToken');
 }
 async function storeSetting(settingKey,value,{secret=false}={}){
   const stored=secret&&value?encrypt(value):String(value??'');
@@ -89,7 +93,7 @@ async function saveAppSettings(x){
     ['default_backup_max_files','defaultBackupMaxFiles'],['default_monitor_interval_seconds','defaultMonitorIntervalSeconds'],
     ['default_monitor_failure_threshold','defaultMonitorFailureThreshold'],['default_ssl_warn_days','defaultSslWarnDays'],
     ['alert_email','alertEmail'],['alert_webhook','webhook'],['smtp_host','smtpHost'],['smtp_port','smtpPort'],
-    ['smtp_secure','smtpSecure'],['smtp_user','smtpUser'],['smtp_from','smtpFrom'],['seo_max_pages','seoMaxPages']
+    ['smtp_secure','smtpSecure'],['smtp_user','smtpUser'],['smtp_from','smtpFrom'],['seo_max_pages','seoMaxPages'],['browser_runner_url','browserRunnerUrl']
   ];
   for(const [keyName,target] of plain){
     if(x[target]===undefined)continue;
@@ -109,6 +113,10 @@ async function saveAppSettings(x){
     cfg.pageSpeedApiKey=x.pageSpeedApiKey;
     await storeSetting('pagespeed_api_key',x.pageSpeedApiKey,{secret:true});
   }
+  if(x.browserRunnerToken){
+    cfg.browserRunnerToken=x.browserRunnerToken;
+    await storeSetting('browser_runner_token',x.browserRunnerToken,{secret:true});
+  }
   backupRepoChecked=false;backupRepoMeta=null;
   commitTreeCache.clear();
   return publicSettings();
@@ -122,7 +130,8 @@ function publicSettings(){return{
   defaultSslWarnDays:cfg.defaultSslWarnDays,
   alertEmail:cfg.alertEmail,webhook:cfg.webhook,smtpHost:cfg.smtpHost,smtpPort:cfg.smtpPort,smtpSecure:cfg.smtpSecure,
   smtpUser:cfg.smtpUser,smtpPasswordConfigured:Boolean(cfg.smtpPassword),smtpFrom:cfg.smtpFrom,
-  pageSpeedApiKeyConfigured:Boolean(cfg.pageSpeedApiKey),seoMaxPages:cfg.seoMaxPages
+  pageSpeedApiKeyConfigured:Boolean(cfg.pageSpeedApiKey),seoMaxPages:cfg.seoMaxPages,
+  browserRunnerUrl:cfg.browserRunnerUrl,browserRunnerTokenConfigured:Boolean(cfg.browserRunnerToken),browserRunnerConfigured:Boolean(cfg.browserRunnerUrl&&cfg.browserRunnerToken)
 };}
 
 
@@ -592,6 +601,136 @@ let monitorRunning=false;function startMonitor(){setInterval(async()=>{if(monito
 let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlert(`BACKUP FAILED: ${site.domain}`,msg);console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
 
 
+function publicSyntheticTest(t){
+  return{id:t.id,siteId:t.site_id,name:t.name,enabled:Boolean(t.enabled),startUrl:t.start_url,steps:Array.isArray(t.steps)?t.steps:[],secretsConfigured:Boolean(t.encrypted_secrets),intervalSeconds:t.interval_seconds,timeoutMs:t.timeout_ms,viewport:{width:t.viewport_width,height:t.viewport_height},visualEnabled:Boolean(t.visual_enabled),visualThreshold:Number(t.visual_threshold||0),baselineConfigured:Boolean(t.baseline_image),baselineHash:t.baseline_hash,lastRunAt:t.last_run_at,createdAt:t.created_at,updatedAt:t.updated_at};
+}
+async function syntheticTestGet(id){const t=(await q('select * from synthetic_tests where id=?',[id])).rows[0];if(!t)throw new Error('Synthetic test not found');return t;}
+async function syntheticTestsList(siteId){
+  const site=await getSite(siteId),tests=(await q('select * from synthetic_tests where site_id=? order by name',[site.id])).rows;
+  const out=[];for(const t of tests){const last=(await q('select id,status,duration_ms,error,result,visual_mismatch,created_at,(screenshot_image is not null) screenshot_available from synthetic_runs where test_id=? order by created_at desc limit 1',[t.id])).rows[0]||null;out.push({...publicSyntheticTest(t),lastRun:last});}
+  return out;
+}
+function syntheticValidateStartUrl(site,url){const u=new URL(url),a=u.hostname.toLowerCase().replace(/^www\./,''),b=String(site.domain||'').toLowerCase().replace(/^www\./,'');if(a!==b)throw new Error('Synthetic start URL must use the managed site hostname');return u.toString();}
+function syntheticSteps(value){if(!Array.isArray(value))throw new Error('steps must be an array');for(const [i,x] of value.entries())if(!x||typeof x!=='object'||!x.action)throw new Error('Step '+(i+1)+' needs an action');return value;}
+async function syntheticCreate(siteId,x){
+  const site=await getSite(siteId),id=crypto.randomUUID(),startUrl=syntheticValidateStartUrl(site,x.startUrl||site.monitor_url||('https://'+site.domain)),steps=syntheticSteps(x.steps||[]);
+  const secrets=x.secrets&&Object.keys(x.secrets).length?encrypt(x.secrets):null;
+  await q('insert into synthetic_tests(id,site_id,name,enabled,start_url,steps,encrypted_secrets,interval_seconds,timeout_ms,viewport_width,viewport_height,visual_enabled,visual_threshold) values(?,?,?,?,?,?,?,?,?,?,?,?,?)',[id,site.id,x.name, x.enabled===false?0:1,startUrl,JSON.stringify(steps),secrets,Number(x.intervalSeconds||3600),Number(x.timeoutMs||30000),Number(x.viewportWidth||1440),Number(x.viewportHeight||1000),x.visualEnabled?1:0,Number(x.visualThreshold??.01)]);
+  return publicSyntheticTest(await syntheticTestGet(id));
+}
+async function syntheticUpdate(id,x){
+  const t=await syntheticTestGet(id),site=await getSite(t.site_id),allowed={name:'name',enabled:'enabled',startUrl:'start_url',steps:'steps',intervalSeconds:'interval_seconds',timeoutMs:'timeout_ms',viewportWidth:'viewport_width',viewportHeight:'viewport_height',visualEnabled:'visual_enabled',visualThreshold:'visual_threshold'},sets=[],params=[];
+  for(const [key,col] of Object.entries(allowed)){if(x[key]===undefined)continue;let v=x[key];if(key==='startUrl')v=syntheticValidateStartUrl(site,v);if(key==='steps')v=JSON.stringify(syntheticSteps(v));if(['enabled','visualEnabled'].includes(key))v=v?1:0;sets.push(col+'=?');params.push(v);}
+  if(x.secrets&&Object.keys(x.secrets).length){sets.push('encrypted_secrets=?');params.push(encrypt(x.secrets));}
+  if(x.clearSecrets){sets.push('encrypted_secrets=null');}
+  if(sets.length){params.push(id);await q('update synthetic_tests set '+sets.join(',')+',updated_at=now() where id=?',params);}
+  return publicSyntheticTest(await syntheticTestGet(id));
+}
+function syntheticResolveSecrets(value,secrets){
+  if(typeof value==='string')return value.replace(/\{\{secret\.([A-Za-z0-9_.-]+)\}\}/g,(_m,k)=>{if(secrets[k]===undefined)throw new Error('Missing synthetic secret '+k);return String(secrets[k]);});
+  if(Array.isArray(value))return value.map(v=>syntheticResolveSecrets(v,secrets));
+  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,syntheticResolveSecrets(v,secrets)]));
+  return value;
+}
+async function browserRunnerRequest(path,{method='GET',body,token,url}={}){
+  const base=String(url??cfg.browserRunnerUrl||'').replace(/\/+$/,'');const authToken=token??cfg.browserRunnerToken;
+  if(!base||!authToken)throw new Error('Browser Runner is not configured');
+  const res=await fetch(base+path,{method,headers:{authorization:'Bearer '+authToken,...(body!==undefined?{'content-type':'application/json'}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(150000)});
+  const raw=await res.text();let data;try{data=raw?JSON.parse(raw):{};}catch{data={error:raw.slice(0,1000)};}if(!res.ok)throw new Error('Browser Runner '+res.status+': '+(data.error||data.message||raw.slice(0,500)));return data;
+}
+async function browserRunnerTest({url,token}={}){return browserRunnerRequest('/auth-test',{url,token});}
+function publicSyntheticRun(r){if(!r)return null;return{id:r.id,testId:r.test_id,siteId:r.site_id,status:r.status,durationMs:r.duration_ms,error:r.error,result:r.result,visualMismatch:r.visual_mismatch,screenshotAvailable:Boolean(r.screenshot_available??r.screenshot_image),createdAt:r.created_at};}
+async function syntheticRunGet(id){const r=(await q('select id,test_id,site_id,status,duration_ms,error,result,visual_mismatch,created_at,(screenshot_image is not null) screenshot_available from synthetic_runs where id=?',[id])).rows[0];if(!r)throw new Error('Synthetic run not found');return publicSyntheticRun(r);}
+async function runSyntheticTest(testId,{saveBaseline=false,actor='manual'}={}){
+  const t=await syntheticTestGet(testId),site=await getSite(t.site_id),secrets=t.encrypted_secrets?decrypt(t.encrypted_secrets):{},steps=syntheticResolveSecrets(Array.isArray(t.steps)?t.steps:[],secrets),baseline=t.visual_enabled&&t.baseline_image?t.baseline_image:null;
+  const previous=(await q('select status from synthetic_runs where test_id=? order by created_at desc limit 1',[t.id])).rows[0]||null;
+  const result=await browserRunnerRequest('/run',{method:'POST',body:{baseUrl:t.start_url,startUrl:t.start_url,steps,timeoutMs:t.timeout_ms,viewport:{width:t.viewport_width,height:t.viewport_height},visualThreshold:Number(t.visual_threshold||.01),visualAssert:Boolean(t.visual_enabled&&baseline),baselineBase64:baseline||undefined,captureScreenshot:Boolean(saveBaseline||t.visual_enabled)}});
+  if(saveBaseline){if(!result.ok)throw new Error('Baseline not saved because the journey failed: '+(result.error||'unknown'));if(!result.screenshotBase64)throw new Error('Runner returned no screenshot for baseline');if(result.screenshotBase64.length>12*1024*1024)throw new Error('Baseline screenshot is too large');await q('update synthetic_tests set baseline_image=?,baseline_hash=?,updated_at=now() where id=?',[result.screenshotBase64,result.screenshotHash,t.id]);}
+  const screenshot=result.screenshotBase64&&(!result.ok||saveBaseline)&&result.screenshotBase64.length<=12*1024*1024?result.screenshotBase64:null,stored={...result};delete stored.screenshotBase64;
+  const runId=crypto.randomUUID(),status=result.ok?'passed':'failed';
+  await q('insert into synthetic_runs(id,test_id,site_id,status,duration_ms,error,result,visual_mismatch,screenshot_image) values(?,?,?,?,?,?,?,?,?)',[runId,t.id,site.id,status,result.durationMs||null,result.error||null,JSON.stringify({...stored,actor,baselineSaved:Boolean(saveBaseline)}),result.visual?.mismatch??null,screenshot]);
+  await q('update synthetic_tests set last_run_at=now() where id=?',[t.id]);
+  await q('update synthetic_runs set screenshot_image=null where test_id=? and created_at<date_sub(now(),interval 30 day)',[t.id]);
+  if(status==='failed'&&previous?.status!=='failed')await sendAlert('SYNTHETIC FAILED: '+site.domain+' · '+t.name,result.error||'Browser journey failed');
+  if(status==='passed'&&previous?.status==='failed')await sendAlert('SYNTHETIC RECOVERED: '+site.domain+' · '+t.name,'Browser journey is healthy again.');
+  return syntheticRunGet(runId);
+}
+async function syntheticStatus(siteId){
+  const site=await getSite(siteId),tests=await syntheticTestsList(site.id),failed=tests.filter(t=>t.lastRun?.status==='failed').length,passed=tests.filter(t=>t.lastRun?.status==='passed').length;
+  return{configured:Boolean(cfg.browserRunnerUrl&&cfg.browserRunnerToken),total:tests.length,enabled:tests.filter(t=>t.enabled).length,passed,failed,tests};
+}
+let syntheticWorkerRunning=false;
+function startSyntheticWorker(){setInterval(async()=>{if(syntheticWorkerRunning||!cfg.browserRunnerUrl||!cfg.browserRunnerToken)return;syntheticWorkerRunning=true;try{const tests=(await q(`select t.* from synthetic_tests t join sites s on s.id=t.site_id where t.enabled=1 and s.enabled=1 and (t.last_run_at is null or timestampdiff(second,t.last_run_at,now())>=t.interval_seconds) order by coalesce(t.last_run_at,'1970-01-01 00:00:00') limit 20`)).rows;for(const t of tests){try{await runSyntheticTest(t.id,{actor:'scheduler'});}catch(e){console.error('synthetic',t.name,e);}}}finally{syntheticWorkerRunning=false;}},cfg.syntheticWorkerInterval).unref();}
+
+function fixPromptBase(site){
+  return `Arbeite an der verwalteten Website "${site.name}" (${site.domain}) über das verbundene SiteOps-MCP. Website-Typ: ${site.site_type}. Deployment: ${site.deployment_mode||'webspace'}.
+
+Wichtig:
+- Untersuche zuerst die Ursache, statt nur das Symptom zu verstecken.
+- Nutze zunächst site_overview und danach files_find/text_search/file_read für die relevanten Quelldateien.
+- Bei Git-Deployment ist das konfigurierte Repository die Source of Truth; ändere nicht parallel den Live-Webspace.
+- Erstelle für Änderungen ausschließlich einen change_preview mit einer möglichst kleinen, nachvollziehbaren Änderung.
+- Rufe change_apply NICHT auf. Gib mir zuerst preview_id, betroffene Dateien, Ursache, Änderung und erwartete Wirkung zurück.
+- Deaktiviere keine Prüfungen, Monitoring-, Security-, SEO- oder Accessibility-Regeln, nur damit der Fehler verschwindet.
+- Nach meiner späteren Freigabe soll die Änderung mit site_status und dem passenden SEO-/Synthetic-Test validiert werden.
+
+`;
+}
+async function buildFixPrompt({kind,site:siteRef,id,issueCode}){
+  if(kind==='seo_page'){
+    const p=await seoPageGet(Number(id)),site=await getSite(p.site_id),issues=(Array.isArray(p.issues)?p.issues:[]).filter(x=>!issueCode||x.code===issueCode),problem=issues.length?issues.map(x=>x.level.toUpperCase()+' '+x.code+': '+x.text).join('\n'):'SEO-/Quality-Problem auf dieser Seite';
+    return{title:'Fix '+(issueCode||'SEO issues')+' · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Website Quality Audit
+URL: ${p.url}
+Title: ${p.title||'(kein Title)'}
+HTTP: ${p.status_code}
+Canonical: ${p.canonical||'(kein Canonical)'}
+H1: ${JSON.stringify(p.h1||[])}
+Probleme:
+${problem}
+
+Behebe die technische Ursache passend zur vorhandenen Codebasis. Prüfe insbesondere Templates/Layouts, SEO-Konfiguration, interne Links oder Header-Konfiguration, je nach Fehlerart. Erzeuge anschließend den change_preview.`};
+  }
+  if(kind==='seo_site'){
+    const site=await getSite(siteRef),data=await seoIssuesList(site.id,{limit:80}),issues=data.issues.filter(x=>x.level!=='info').slice(0,40);
+    return{title:'Fix Website Quality · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: letzter SiteOps Website Quality Audit
+Aktuelle Fehler/Warnungen:
+${issues.map(x=>x.level.toUpperCase()+' '+x.code+' · '+x.url+' · '+x.text).join('\n')||'Keine Fehlerdetails vorhanden.'}
+
+Priorisiere gemeinsame Root Causes und Template-Probleme, damit nicht dieselbe Korrektur seitenweise dupliziert wird. Erzeuge einen oder mehrere logisch getrennte change_preview-Vorschläge, aber wende nichts an.`};
+  }
+  if(kind==='incident'){
+    const incident=await getIncident(id),site=await getSite(incident.site_id);
+    return{title:'Fix Incident · '+site.domain,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Monitoring Incident
+Incident: ${incident.title}
+Status: ${incident.status}
+Gestartet: ${incident.created_at}
+Details:
+${JSON.stringify(incident.details||{},null,2)}
+Letzte Ereignisse:
+${JSON.stringify((incident.events||[]).slice(-8),null,2)}
+
+Diagnostiziere, ob die Ursache im Deployment/Code, Redirect/DNS/SSL, WordPress oder in einer externen Abhängigkeit liegt. Wenn eine Codeänderung sinnvoll ist, erzeuge einen change_preview; wenn nicht, nenne die konkrete operative Maßnahme.`};
+  }
+  if(kind==='synthetic'){
+    const run=(await q('select r.*,t.name,t.start_url,t.steps,s.name site_name,s.domain,s.site_type,s.deployment_mode from synthetic_runs r join synthetic_tests t on t.id=r.test_id join sites s on s.id=r.site_id where r.id=?',[id])).rows[0];if(!run)throw new Error('Synthetic run not found');
+    const site={name:run.site_name,domain:run.domain,site_type:run.site_type,deployment_mode:run.deployment_mode};
+    return{title:'Fix Browser Test · '+run.name,prompt:fixPromptBase(site)+`Problemquelle: SiteOps Synthetic Browser Test
+Test: ${run.name}
+Start-URL: ${run.start_url}
+Status: ${run.status}
+Fehler: ${run.error||'(kein Fehlertext)'}
+Visual mismatch: ${run.visual_mismatch==null?'nicht geprüft':(Number(run.visual_mismatch)*100).toFixed(2)+'%'}
+Testschritte:
+${JSON.stringify(run.steps||[],null,2)}
+Runner-Ergebnis:
+${JSON.stringify(run.result||{},null,2)}
+
+Reproduziere den fehlschlagenden Schritt gedanklich anhand des Codes. Achte besonders auf geänderte Selektoren, Navigation, JavaScript-Fehler, API-/Asset-Fehler und visuelle Regressionen. Passe den Test nur dann an, wenn die Website absichtlich geändert wurde und der Test nachweislich veraltet ist; ansonsten behebe die Website. Erzeuge bei Codeänderungen einen change_preview und wende ihn nicht an.`};
+  }
+  throw new Error('Unknown fix prompt kind');
+}
+
+
 const SEO_STOPWORDS=new Set('aber alle allem allen aller alles als also am an ander andere anderem anderen anderer anderes and auch auf aus bei bin bis bist da damit dann das dass dein deine dem den denn der des die dies diese diesem diesen dieser dieses doch dort du durch ein eine einem einen einer eines er es etwas für gegen gewesen hat hatte haben hier hin hinter ich im in ist ja jede jedem jeden jeder jedes jener jenes kann kein keine mit muss nach nicht nichts noch nun nur ob oder ohne sehr sein seine selbst sich sie sind so über um und uns unser unsere unter vom von vor war waren was weg weil weiter welche welchem welchen welcher welches wenn werde werden wie wieder will wir wo zu zum zur'.split(/\s+/));
 function seoNormalizeUrl(value,base){
   try{
@@ -861,7 +1000,7 @@ async function seoCompare(siteId){
 async function qualityOverview(siteId){
   const site=await getSite(siteId),latest=await seoLatest(site.id),compare=await seoCompare(site.id),checks=await listMonitorChecks(site.id,20),incidents=await listIncidents(site.id,20),backup=await backupStatus(site.id),last=checks[0]||null;
   const uptime=checks.length?Math.round(checks.filter(x=>x.ok).length/checks.length*10000)/100:null,seoScore=latest.run?.summary?.healthScore??null;
-  return{site:{id:site.id,slug:site.slug,name:site.name,domain:site.domain,type:site.site_type},qualityScore:seoScore,seo:latest.run?{runId:latest.run.id,status:latest.run.status,startedAt:latest.run.started_at,summary:latest.run.summary}:null,regression:compare,operations:{uptime,lastCheck:last,openIncidents:incidents.filter(x=>x.status==='open').length,backup}};
+  return{site:{id:site.id,slug:site.slug,name:site.name,domain:site.domain,type:site.site_type},qualityScore:seoScore,seo:latest.run?{runId:latest.run.id,status:latest.run.status,startedAt:latest.run.started_at,summary:latest.run.summary}:null,regression:compare,operations:{uptime,lastCheck:last,openIncidents:incidents.filter(x=>x.status==='open').length,backup},synthetics:await syntheticStatus(site.id)};
 }
 async function clientReportPage(slug){
   const qv=await qualityOverview(slug),site=await getSite(slug),s=qv.seo?.summary||{},r=qv.regression||{},ops=qv.operations||{},score=s.healthScore??'–';
