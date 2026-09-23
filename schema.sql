@@ -249,7 +249,7 @@ CREATE TABLE IF NOT EXISTS synthetic_tests (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_synthetic_tests_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
   INDEX idx_synthetic_tests_site (site_id),
-  INDEX idx_synthetic_tests_schedule (enabled,last_run_at)
+  INDEX idx_synthetic_tests_schedule (enabled,next_run_at,last_run_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS synthetic_runs (
