@@ -753,8 +753,8 @@ async function startSeoAudit(siteId,options={}){
   return{id:runId,status:'running',site:site.slug,maxPages,pageSpeed:options.pageSpeed||'homepage',pageSpeedConfigured:Boolean(cfg.pageSpeedApiKey)};
 }
 async function seoRunGet(runId){const run=(await q('select * from seo_runs where id=?',[runId])).rows[0];if(!run)throw new Error('SEO run not found');return run;}
-async function seoLatest(siteId){const site=await getSite(siteId),run=(await q('select * from seo_runs where site_id=? order by started_at desc limit 1',[site.id])).rows[0]||null;if(!run)return{site:site.slug,run:null,pages:[]};const pages=(await q('select id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop from seo_pages where run_id=? order by pagerank desc',[run.id])).rows;return{site:site.slug,run,pages};}
-async function seoPageGet(pageId){const page=(await q('select * from seo_pages where id=?',[pageId])).rows[0];if(!page)throw new Error('SEO page not found');const links=(await q('select source_url,target_url,anchor_text,internal_link,nofollow from seo_links where run_id=? and source_url=?',[page.run_id,page.url])).rows;return{...page,links};}
+async function seoLatest(siteId){const site=await getSite(siteId),run=(await q('select * from seo_runs where site_id=? order by started_at desc limit 1',[site.id])).rows[0]||null;if(!run)return{site:site.slug,run:null,pages:[]};const pages=(await q('select id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop,signals,content_hash from seo_pages where run_id=? order by pagerank desc',[run.id])).rows;return{site:site.slug,run,pages};}
+async function seoPageGet(pageId){const page=(await q('select * from seo_pages where id=?',[pageId])).rows[0];if(!page)throw new Error('SEO page not found');const links=(await q('select source_url,target_url,anchor_text,internal_link,nofollow,target_status,target_response_ms,target_error,target_location from seo_links where run_id=? and source_url=?',[page.run_id,page.url])).rows;return{...page,links};}
 async function seoGraph(siteId,limit=30){
   const site=await getSite(siteId),run=(await q("select * from seo_runs where site_id=? and status='completed' order by started_at desc limit 1",[site.id])).rows[0];
   if(!run)return{run:null,nodes:[],edges:[]};
@@ -769,6 +769,55 @@ async function seoIssuesList(siteId,{level,limit=200}={}){
   const issues=[];
   for(const p of latest.pages)for(const issue of (Array.isArray(p.issues)?p.issues:[]))if(!level||issue.level===level)issues.push({pageId:p.id,url:p.url,path:p.path,title:p.title,...issue});
   return{run:latest.run,issues:issues.slice(0,limit)};
+}
+
+
+async function seoRunSnapshot(run){
+  if(!run)return null;
+  const pages=(await q('select id,url,path,status_code,response_ms,title,meta_description,canonical,robots,issues,content_hash,signals from seo_pages where run_id=?',[run.id])).rows;
+  return{run,pages};
+}
+async function seoCompare(siteId){
+  const site=await getSite(siteId),runs=(await q("select * from seo_runs where site_id=? and status='completed' order by started_at desc limit 2",[site.id])).rows;
+  if(!runs.length)return{available:false,current:null,previous:null};
+  return compareSeoRuns(await seoRunSnapshot(runs[0]),runs[1]?await seoRunSnapshot(runs[1]):null);
+}
+async function seoRecommendations(siteId){
+  const latest=await seoLatest(siteId),summary=latest.run?.summary||{};
+  return{run:latest.run?{id:latest.run.id,status:latest.run.status,started_at:latest.run.started_at,finished_at:latest.run.finished_at}:null,healthScore:summary.healthScore??null,categoryScores:summary.categoryScores||{},recommendations:summary.recommendations||[]};
+}
+async function seoLinkHealth(siteId,{limit=300}={}){
+  const site=await getSite(siteId),run=(await q("select * from seo_runs where site_id=? and status='completed' order by started_at desc limit 1",[site.id])).rows[0];
+  if(!run)return{run:null,summary:null,links:[]};
+  const links=(await q('select source_url,target_url,anchor_text,internal_link,nofollow,target_status,target_response_ms,target_error,target_location from seo_links where run_id=? and (target_status>=300 or target_error is not null) order by internal_link desc,target_status desc limit ?',[run.id,Math.min(1000,Math.max(1,limit))])).rows;
+  return{run:{id:run.id,started_at:run.started_at},summary:run.summary?.linkHealth||null,links};
+}
+async function persistIntelligence(site,result,error=null){
+  const id=crypto.randomUUID();
+  if(error)await q('insert into site_intelligence_runs(id,site_id,status,error,finished_at) values(?,?,?,?,now())',[id,site.id,'failed',String(error).slice(0,10000)]);
+  else await q('insert into site_intelligence_runs(id,site_id,status,overall_score,result,finished_at) values(?,?,?,?,?,now())',[id,site.id,'completed',result.scores?.overall??null,JSON.stringify(result)]);
+  return id;
+}
+async function runSiteIntelligence(siteId){
+  const site=await getSite(siteId),base=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!base)throw new Error('Invalid site URL');
+  try{const result=await siteIntelligenceAudit(new URL(base).origin+'/',{userAgent:'Lorzen-SiteOps-Intelligence/0.9'});const id=await persistIntelligence(site,result);return{id,site:site.slug,...result};}
+  catch(e){await persistIntelligence(site,null,String(e.message||e));throw e;}
+}
+async function siteIntelligenceLatest(siteId){
+  const site=await getSite(siteId),run=(await q('select * from site_intelligence_runs where site_id=? order by started_at desc limit 1',[site.id])).rows[0]||null;
+  return{site:site.slug,run};
+}
+async function clientReportData(siteId){
+  const site=await getSite(siteId),overview=await siteOverview(site.id),seo=await seoLatest(site.id),intelligence=await siteIntelligenceLatest(site.id);
+  const checks=await listMonitorChecks(site.id,200),incidents=await listIncidents(site.id,100),backups=await listBackups(site,100),history=await listHistory(site.id,100);
+  const uptime=checks.length?Math.round(checks.filter(x=>x.ok).length/checks.length*10000)/100:null;
+  return{
+    generatedAt:new Date().toISOString(),site:publicSite(site),
+    operations:{uptime,lastCheck:checks[0]||null,checks:checks.length,openIncidents:incidents.filter(x=>x.status==='open').length,incidents:incidents.length,lastBackup:backups[0]||null,backups:backups.length,changes:history.length},
+    seo:seo.run?{run:{id:seo.run.id,status:seo.run.status,started_at:seo.run.started_at,finished_at:seo.run.finished_at},summary:seo.run.summary||{}}:null,
+    intelligence:intelligence.run?.status==='completed'?{score:intelligence.run.overall_score,result:intelligence.run.result,finished_at:intelligence.run.finished_at}:null,
+    overview
+  };
 }
 
 
