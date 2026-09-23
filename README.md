@@ -51,6 +51,8 @@ SiteOps combines website operations, safe changes, monitoring, Git-backed backup
 - internal and external Link Health with HTTP status, redirect and response-time data
 - optional Google PageSpeed Insights / Lighthouse mobile and desktop audits
 - SEO Health Score, category scores, prioritized remediation recommendations and audit-to-audit comparison
+- optional recurring per-site audits with regression alerts for score drops and newly introduced errors
+- Fleet dashboard across all customer projects with uptime, backup, SEO Health, broken-link and Site Intelligence signals
 
 ### AI Search / GEO
 
@@ -64,7 +66,7 @@ SiteOps combines website operations, safe changes, monitoring, Git-backed backup
 - printable client report combining uptime, incidents, backups, changes, SEO health and Site Intelligence
 - per-site Site Intelligence dashboard
 - Streamable HTTP MCP endpoint with Bearer authentication
-- MCP tools for operations, monitoring, files, safe changes, backups, SEO, Link Health, Site Intelligence and client-report data
+- MCP tools for operations, fleet overview, monitoring, files, safe changes, backups, SEO, Link Health, Site Intelligence and client-report data
 - in-app MCP setup guide for MCP Inspector, ChatGPT and Claude/API
 
 ## Hosting
