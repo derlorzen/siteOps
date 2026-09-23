@@ -271,7 +271,1409 @@ async function readRemoteText(siteId,path){const site=await getSite(siteId),r=aw
 
 
 function wpHeaderValue(text,label){
-  const escaped=label.replace(/[.*+?^$()|[\]\\{}]/g,'\\$&'),m=String(text||'').match(new RegExp('^[\\\\s/*#@]*'+escaped+':\\\\s*(.+?)\\\\s*$','im'));
+  const escaped=label.replace(/[.*+?^$()|[\]\\{}]/g,'\\$&'),m=String(text||'').match(new RegExp('^[\\s/*#@]*'+escaped+':\\s*(.+?)\\s*);
+  return m?m[1].trim().replace(/\*\/\s*$/,'').trim():null;
+}
+async function wpReadMaybe(remote,path,maxBytes=131072){
+  try{if(!(await remote.exists(path)))return null;const b=await remote.read(path);return b.subarray(0,maxBytes).toString('utf8');}catch{return null;}
+}
+function versionParts(value){return String(value||'').replace(/^[vV]/,'').split(/[.+_-]/).map(x=>/^\d+$/.test(x)?Number(x):x.toLowerCase());}
+function versionCompare(a,b){
+  const aa=versionParts(a),bb=versionParts(b),n=Math.max(aa.length,bb.length);
+  for(let i=0;i<n;i++){const x=aa[i]??0,y=bb[i]??0;if(x===y)continue;if(typeof x==='number'&&typeof y==='number')return x>y?1:-1;if(typeof x==='number')return 1;if(typeof y==='number')return -1;return String(x)>String(y)?1:-1;}
+  return 0;
+}
+async function wpOrgInfo(kind,slug){
+  const endpoint=kind==='plugin'?'https://api.wordpress.org/plugins/info/1.2/':'https://api.wordpress.org/themes/info/1.2/';
+  const action=kind==='plugin'?'plugin_information':'theme_information',params=new URLSearchParams({action});
+  params.set('request[slug]',slug);params.set('request[fields][sections]','0');params.set('request[fields][description]','0');params.set('request[fields][screenshots]','0');
+  try{
+    const res=await fetch(endpoint+'?'+params.toString(),{signal:AbortSignal.timeout(12000),headers:{'User-Agent':'Lorzen-SiteOps-WordPress/0.9',accept:'application/json'}});
+    if(!res.ok)return null;const data=await res.json();if(!data||data.error)return null;
+    return{version:data.version||null,requires:data.requires||null,requiresPhp:data.requires_php||null,tested:data.tested||null,lastUpdated:data.last_updated||null,homepage:data.homepage||null};
+  }catch{return null;}
+}
+async function mapConcurrent(items,limit,fn){
+  const out=new Array(items.length);let cursor=0;
+  async function worker(){while(cursor<items.length){const i=cursor++;out[i]=await fn(items[i],i);}}
+  await Promise.all(Array.from({length:Math.min(limit,items.length||1)},()=>worker()));return out;
+}
+async function wordpressInventory(siteId){
+  const site=await getSite(siteId);if(site.site_type!=='wordpress')throw new Error('Website type is not WordPress');
+  const remote=await connectSite(site),root=site.remote_root;
+  try{
+    const versionFile=await wpReadMaybe(remote,joinRemote(root,'wp-includes/version.php')),coreVersion=versionFile?.match(/\$wp_version\s*=\s*['"]([^'"]+)['"]/)?.[1]||null;
+    let coreLatest=null;
+    if(coreVersion)try{const u=new URL('https://api.wordpress.org/core/version-check/1.7/');u.searchParams.set('version',coreVersion);u.searchParams.set('php','8.2');u.searchParams.set('locale','de_DE');const res=await fetch(u,{signal:AbortSignal.timeout(12000),headers:{'User-Agent':'Lorzen-SiteOps-WordPress/0.9',accept:'application/json'}});if(res.ok){const data=await res.json();coreLatest=data.offers?.find(x=>x.response==='upgrade')?.current||data.offers?.[0]?.current||coreVersion;}}catch{}
+    const pluginRoot=joinRemote(root,'wp-content/plugins'),pluginEntries=await remote.list(pluginRoot).catch(()=>[]),plugins=[];
+    for(const entry of pluginEntries.slice(0,150)){
+      if(entry.type==='directory'){
+        const files=(await remote.list(joinRemote(pluginRoot,entry.name)).catch(()=>[])).filter(x=>x.type==='file'&&/\.php$/i.test(x.name));
+        files.sort((a,b)=>(a.name===entry.name+'.php'?-1:0)-(b.name===entry.name+'.php'?-1:0));
+        for(const file of files.slice(0,20)){
+          const text=await wpReadMaybe(remote,joinRemote(pluginRoot,entry.name+'/'+file.name),65536),name=wpHeaderValue(text,'Plugin Name');if(!name)continue;
+          plugins.push({slug:entry.name,file:entry.name+'/'+file.name,name,version:wpHeaderValue(text,'Version'),requiresWp:wpHeaderValue(text,'Requires at least'),requiresPhp:wpHeaderValue(text,'Requires PHP'),author:wpHeaderValue(text,'Author')});break;
+        }
+      }else if(entry.type==='file'&&/\.php$/i.test(entry.name)){
+        const text=await wpReadMaybe(remote,joinRemote(pluginRoot,entry.name),65536),name=wpHeaderValue(text,'Plugin Name');if(name)plugins.push({slug:entry.name.replace(/\.php$/i,''),file:entry.name,name,version:wpHeaderValue(text,'Version'),requiresWp:wpHeaderValue(text,'Requires at least'),requiresPhp:wpHeaderValue(text,'Requires PHP'),author:wpHeaderValue(text,'Author')});
+      }
+    }
+    const themeRoot=joinRemote(root,'wp-content/themes'),themeEntries=(await remote.list(themeRoot).catch(()=>[])).filter(x=>x.type==='directory').slice(0,100),themes=[];
+    for(const entry of themeEntries){
+      const text=await wpReadMaybe(remote,joinRemote(themeRoot,entry.name+'/style.css'),65536);if(!text)continue;const name=wpHeaderValue(text,'Theme Name');if(name)themes.push({slug:entry.name,name,version:wpHeaderValue(text,'Version'),template:wpHeaderValue(text,'Template'),requiresWp:wpHeaderValue(text,'Requires at least'),requiresPhp:wpHeaderValue(text,'Requires PHP'),author:wpHeaderValue(text,'Author')});
+    }
+    const muRoot=joinRemote(root,'wp-content/mu-plugins'),muEntries=(await remote.list(muRoot).catch(()=>[])).filter(x=>x.type==='file'&&/\.php$/i.test(x.name)).slice(0,100),muPlugins=[];
+    for(const entry of muEntries){const text=await wpReadMaybe(remote,joinRemote(muRoot,entry.name),65536),name=wpHeaderValue(text,'Plugin Name')||entry.name;if(text)muPlugins.push({file:entry.name,name,version:wpHeaderValue(text,'Version')});}
+    const config=await wpReadMaybe(remote,joinRemote(root,'wp-config.php'),262144),configFlags={};
+    if(config)for(const key of ['WP_DEBUG','WP_DEBUG_LOG','WP_DEBUG_DISPLAY','DISALLOW_FILE_EDIT','DISALLOW_FILE_MODS','AUTOMATIC_UPDATER_DISABLED','WP_AUTO_UPDATE_CORE']){const re=new RegExp("define\\(\\s*['\\\"]"+key+"['\\\"]\\s*,\\s*([^\\)]+)\\)",'i'),m=config.match(re);if(m)configFlags[key]=m[1].trim().replace(/^['"]|['"]$/g,'');}
+    const pluginInfo=await mapConcurrent(plugins,5,p=>wpOrgInfo('plugin',p.slug)),themeInfo=await mapConcurrent(themes,5,t=>wpOrgInfo('theme',t.slug));
+    plugins.forEach((p,i)=>{const info=pluginInfo[i];p.wordpressOrg=info;p.latestVersion=info?.version||null;p.updateAvailable=Boolean(p.version&&info?.version&&versionCompare(info.version,p.version)>0);});
+    themes.forEach((t,i)=>{const info=themeInfo[i];t.wordpressOrg=info;t.latestVersion=info?.version||null;t.updateAvailable=Boolean(t.version&&info?.version&&versionCompare(info.version,t.version)>0);});
+    const updates={core:Boolean(coreVersion&&coreLatest&&versionCompare(coreLatest,coreVersion)>0),plugins:plugins.filter(x=>x.updateAvailable).map(x=>({slug:x.slug,name:x.name,current:x.version,latest:x.latestVersion})),themes:themes.filter(x=>x.updateAvailable).map(x=>({slug:x.slug,name:x.name,current:x.version,latest:x.latestVersion}))};
+    return{site:site.slug,domain:site.domain,scannedAt:new Date().toISOString(),core:{version:coreVersion,latestVersion:coreLatest,updateAvailable:updates.core},plugins,muPlugins,themes,configFlags,updates,summary:{plugins:plugins.length,themes:themes.length,muPlugins:muPlugins.length,updates:(updates.core?1:0)+updates.plugins.length+updates.themes.length,wordpressOrgMatchedPlugins:plugins.filter(x=>x.wordpressOrg).length,wordpressOrgMatchedThemes:themes.filter(x=>x.wordpressOrg).length}};
+  }finally{await remote.close();}
+}
+async function wordpressUpdatePlan(siteId){
+  const inventory=await wordpressInventory(siteId);
+  return{site:inventory.site,domain:inventory.domain,scannedAt:inventory.scannedAt,core:inventory.core,updates:inventory.updates,configFlags:inventory.configFlags,summary:inventory.summary,note:'Read-only plan. SiteOps 0.9 does not auto-apply WordPress updates.'};
+}
+
+
+let backupLock=Promise.resolve();
+function withBackupLock(fn){const next=backupLock.then(fn,fn);backupLock=next.catch(()=>{});return next;}
+function backupRepoPath(path=''){return '/repos/'+cfg.githubBackupRepo+path;}
+function gitBlobSha(content){const b=Buffer.isBuffer(content)?content:Buffer.from(content),header=Buffer.from('blob '+b.length+'\0');return crypto.createHash('sha1').update(header).update(b).digest('hex');}
+async function gh(path,{method='GET',body,allow404=false,allow409=false}={}){
+  const res=await fetch('https://api.github.com'+backupRepoPath(path),{
+    method,
+    headers:{
+      accept:'application/vnd.github+json',
+      authorization:'Bearer '+cfg.githubBackupToken,
+      'x-github-api-version':'2022-11-28',
+      'user-agent':'Lorzen-SiteOps/0.8.2'
+    },
+    body:body===undefined?undefined:JSON.stringify(body),
+    signal:AbortSignal.timeout(30000)
+  });
+  const raw=await res.text();
+  let data=null;
+  if(raw){try{data=JSON.parse(raw);}catch{data=raw;}}
+  if(allow404&&res.status===404)return null;
+  if(allow409&&res.status===409)return null;
+  if(!res.ok)throw new Error('GitHub '+method+' '+path+' failed ('+res.status+'): '+(data?.message||String(data||'').slice(0,500)));
+  return data;
+}
+let backupRepoChecked=false,backupRepoMeta=null;
+async function ensureBackupRepository(){
+  cfg.githubBackupRepo=String(cfg.githubBackupRepo||'').trim().replace(/^\/+|\/+$/g,'');
+  if(!cfg.githubBackupRepo||!cfg.githubBackupToken)throw new Error('GitHub backup is not configured. Set GITHUB_BACKUP_REPO and GITHUB_BACKUP_TOKEN.');
+  if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(cfg.githubBackupRepo))throw new Error('GITHUB_BACKUP_REPO must be owner/repository');
+  if(backupRepoChecked&&backupRepoMeta)return backupRepoMeta;
+  const r=await gh('');
+  if(!r.private)throw new Error('Backup repository must be private');
+  if(r.archived)throw new Error('Backup repository is archived');
+  backupRepoMeta=r;backupRepoChecked=true;return r;
+}
+async function initializeEmptyBackupRepository(repoMeta){
+  const marker=Buffer.from('SiteOps backup repository\n').toString('base64');
+  try{
+    await gh('/contents/.siteops',{method:'PUT',body:{message:'Initialize SiteOps backup repository',content:marker}});
+  }catch(e){
+    // A concurrent request may have initialized the repository in the meantime.
+    const defaultBranch=encodeURIComponent(repoMeta?.default_branch||'main');
+    const existing=await gh('/git/ref/heads/'+defaultBranch,{allow404:true,allow409:true});
+    if(!existing)throw e;
+  }
+}
+async function branchState(){
+  const repoMeta=await ensureBackupRepository();
+  const configuredBranch=String(cfg.backupBranch||repoMeta.default_branch||'main');
+  const defaultBranch=String(repoMeta.default_branch||'main');
+
+  let ref=await gh('/git/ref/heads/'+encodeURIComponent(configuredBranch),{allow404:true,allow409:true});
+  if(!ref){
+    let defaultRef=await gh('/git/ref/heads/'+encodeURIComponent(defaultBranch),{allow404:true,allow409:true});
+    if(!defaultRef){
+      await initializeEmptyBackupRepository(repoMeta);
+      defaultRef=await gh('/git/ref/heads/'+encodeURIComponent(defaultBranch),{allow404:true});
+      if(!defaultRef)throw new Error('Backup repository initialization succeeded but no default branch is available');
+    }
+    if(configuredBranch===defaultBranch)ref=defaultRef;
+    else{
+      try{await gh('/git/refs',{method:'POST',body:{ref:'refs/heads/'+configuredBranch,sha:defaultRef.object.sha}});}
+      catch(e){
+        const raced=await gh('/git/ref/heads/'+encodeURIComponent(configuredBranch),{allow404:true});
+        if(!raced)throw e;
+      }
+      ref=await gh('/git/ref/heads/'+encodeURIComponent(configuredBranch));
+    }
+  }
+
+  const commit=await gh('/git/commits/'+ref.object.sha);
+  const tree=await gh('/git/trees/'+commit.tree.sha+'?recursive=1');
+  if(tree.truncated)throw new Error('Backup repository tree is too large for safe recursive processing');
+  const map=new Map((tree.tree||[]).filter(x=>x.type==='blob').map(x=>[x.path,x]));
+  return{headSha:ref.object.sha,rootTreeSha:commit.tree.sha,treeMap:map};
+}
+async function createGitBlob(content){
+  const b=Buffer.isBuffer(content)?content:Buffer.from(content);
+  if(b.length>cfg.backupMaxFileBytes)throw new Error('Backup file exceeds BACKUP_MAX_FILE_BYTES ('+b.length+' bytes)');
+  return gh('/git/blobs',{method:'POST',body:{content:b.toString('base64'),encoding:'base64'}});
+}
+async function commitTreeChanges(state,changes,message){
+  if(!changes.length)return state.headSha;
+  const treeBody={tree:changes,base_tree:state.rootTreeSha};
+  const tree=await gh('/git/trees',{method:'POST',body:treeBody});
+  if(tree.sha===state.rootTreeSha)return state.headSha;
+  const commit=await gh('/git/commits',{method:'POST',body:{message,tree:tree.sha,parents:[state.headSha]}});
+  await gh('/git/refs/heads/'+encodeURIComponent(cfg.backupBranch),{method:'PATCH',body:{sha:commit.sha,force:false}});
+  return commit.sha;
+}
+async function commitPaths(site,paths,message){
+  return withBackupLock(async()=>{
+    const state=await branchState(),remote=await connectSite(site),changes=[];
+    try{
+      for(const path of paths){
+        const repoPath='sites/'+site.slug+'/public/'+path,rp=joinRemote(site.remote_root,path),existing=state.treeMap.get(repoPath);
+        if(await remote.exists(rp)){
+          const content=await remote.read(rp),sha=gitBlobSha(content);
+          if(existing?.sha!==sha){const blob=await createGitBlob(content);changes.push({path:repoPath,mode:'100644',type:'blob',sha:blob.sha});}
+        }else if(existing)changes.push({path:repoPath,mode:'100644',type:'blob',sha:null});
+      }
+    }finally{await remote.close();}
+    return commitTreeChanges(state,changes,'['+site.domain+'] '+message);
+  });
+}
+const commitTreeCache=new Map();
+async function treeForCommit(commit){
+  if(commitTreeCache.has(commit))return commitTreeCache.get(commit);
+  const c=await gh('/git/commits/'+commit),tree=await gh('/git/trees/'+c.tree.sha+'?recursive=1');
+  if(tree.truncated)throw new Error('Commit tree is too large for safe recursive processing');
+  const map=new Map((tree.tree||[]).filter(x=>x.type==='blob').map(x=>[x.path,x]));
+  commitTreeCache.set(commit,map);
+  if(commitTreeCache.size>50)commitTreeCache.delete(commitTreeCache.keys().next().value);
+  return map;
+}
+async function readCommitMaybe(site,path,commit){
+  const map=await treeForCommit(commit),entry=map.get('sites/'+site.slug+'/public/'+path);
+  if(!entry)return null;
+  const blob=await gh('/git/blobs/'+entry.sha);
+  return Buffer.from(String(blob.content||'').replace(/\n/g,''),'base64');
+}
+async function diffCommits(site,before,after){
+  const cmp=await gh('/compare/'+before+'...'+after),prefix='sites/'+site.slug+'/public/';
+  const files=(cmp.files||[]).filter(x=>x.filename.startsWith(prefix));
+  if(!files.length)return'No file differences.';
+  return files.map(f=>{
+    const name=f.filename.slice(prefix.length),head='--- '+name+' ['+f.status+', +'+f.additions+' -'+f.deletions+']';
+    return head+'\n'+(f.patch||'[binary file or patch unavailable]');
+  }).join('\n\n');
+}
+async function changedFiles(site,before,after){
+  const [a,b]=await Promise.all([treeForCommit(before),treeForCommit(after)]),prefix='sites/'+site.slug+'/public/',paths=new Set();
+  for(const p of a.keys())if(p.startsWith(prefix))paths.add(p);
+  for(const p of b.keys())if(p.startsWith(prefix))paths.add(p);
+  return[...paths].filter(p=>a.get(p)?.sha!==b.get(p)?.sha).map(p=>p.slice(prefix.length)).sort();
+}
+async function fullBackup(site,maxFiles=10000){
+  return withBackupLock(async()=>{
+    const state=await branchState(),remote=await connectSite(site),prefix='sites/'+site.slug+'/',publicPrefix=prefix+'public/',changes=[],seen=new Set();
+    let count=0;
+    const patterns=Array.isArray(site.exclude_patterns)?site.exclude_patterns:[],excluded=p=>patterns.some(x=>p.includes(x));
+    async function addFile(rel){
+      if(++count>maxFiles)throw new Error('Backup stopped after '+maxFiles+' files');
+      const repoPath=publicPrefix+rel,content=await remote.read(joinRemote(site.remote_root,rel)),existing=state.treeMap.get(repoPath);
+      seen.add(repoPath);
+      if(existing?.sha!==gitBlobSha(content)){const blob=await createGitBlob(content);changes.push({path:repoPath,mode:'100644',type:'blob',sha:blob.sha});}
+    }
+    async function walk(rel=''){
+      for(const e of await remote.list(joinRemote(site.remote_root,rel))){
+        const child=rel?rel+'/'+e.name:e.name;
+        if(excluded(child))continue;
+        if(e.type==='directory')await walk(child);
+        else if(e.type==='file')await addFile(child);
+      }
+    }
+    try{
+      await walk();
+      const metaPath=prefix+'.siteops.json',meta=Buffer.from(JSON.stringify({domain:site.domain,fileCount:count},null,2)+'\n'),metaExisting=state.treeMap.get(metaPath);
+      seen.add(metaPath);
+      if(metaExisting?.sha!==gitBlobSha(meta)){const blob=await createGitBlob(meta);changes.push({path:metaPath,mode:'100644',type:'blob',sha:blob.sha});}
+      for(const p of state.treeMap.keys())if(p.startsWith(prefix)&&!seen.has(p))changes.push({path:p,mode:'100644',type:'blob',sha:null});
+      const commit=await commitTreeChanges(state,changes,'['+site.domain+'] Full backup'),changed=commit!==state.headSha;
+      const backupId=crypto.randomUUID();await q('insert into backups(id,site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?,?)',[backupId,site.id,commit,'full',count,changed]);
+      return{commit,files:count,changed};
+    }finally{try{await remote.close();}catch{}}
+  });
+}
+async function listBackups(site,limit=30){return(await q('select id,git_commit,backup_type,file_count,changed,created_at from backups where site_id=? order by created_at desc limit ?',[site.id,limit])).rows;}
+async function backupRestorePreview(backupId,actor='mcp'){const b=(await q('select * from backups where id=?',[backupId])).rows[0];if(!b)throw new Error('Backup not found');const site=await getSite(b.site_id);const safety=await fullBackup(site,site.backup_max_files||10000);const files=await changedFiles(site,b.git_commit,safety.commit);if(!files.length)return{site:site.domain,backupId,noChanges:true,safetyCommit:safety.commit,message:'Live state already matches this backup'};const proposed=[];for(const path of files){const old=await readCommitMaybe(site,path,b.git_commit);proposed.push(old===null?{path,content:null}:{path,sourceCommit:b.git_commit});}const preview=await createPreview(site.id,proposed,'Restore backup '+backupId+' ('+String(b.git_commit).slice(0,8)+')',actor);return{...preview,backupId,safetyCommit:safety.commit};}
+
+async function validateFiles(files){const results=[];for(const f of files){if(f.content===null||!f.path.endsWith('.php'))continue;try{phpParser.parseCode(f.content.toString('utf8'),f.path);results.push({path:f.path,ok:true,output:'PHP syntax parsed'});}catch(e){results.push({path:f.path,ok:false,output:String(e.message||e)});}}return results;}
+async function createPreview(siteId,files,description,actor='mcp'){const site=await getSite(siteId),remote=await connectSite(site),details=[],validationFiles=[];try{for(const f of files){const rp=joinRemote(site.remote_root,f.path),exists=await remote.exists(rp),old=exists?await remote.read(rp):null;let afterBuffer=null,afterEncoding='utf8',after=null;if(f.content===null){afterBuffer=null;}else if(f.sourceCommit){afterBuffer=await readCommitMaybe(site,f.path,f.sourceCommit);if(afterBuffer===null)throw new Error(`File missing in source commit: ${f.path}`);afterEncoding='git';after=f.sourceCommit;}else{afterBuffer=Buffer.isBuffer(f.content)?f.content:Buffer.from(f.content);afterEncoding=Buffer.isBuffer(f.content)?'base64':'utf8';after=Buffer.isBuffer(f.content)?afterBuffer.toString('base64'):f.content;}if(afterBuffer!==null)validationFiles.push({path:f.path,content:afterBuffer});details.push({path:f.path,beforeExists:exists,beforeHash:old?hash(old):null,afterExists:afterBuffer!==null,afterHash:afterBuffer?hash(afterBuffer):null,afterEncoding,after});}}finally{await remote.close();}const validation=await validateFiles(validationFiles);if(validation.some(v=>!v.ok))throw new Error(`Validation failed: ${JSON.stringify(validation)}`);const previewId=crypto.randomUUID();await q(`insert into change_previews(id,site_id,description,actor,changes,validation,expires_at) values(?,?,?,?,?,?,date_add(now(),interval 24 hour))`,[previewId,site.id,description,actor,JSON.stringify(details),JSON.stringify(validation)]);return{previewId,site:site.domain,description,files:details.map(d=>({path:d.path,beforeExists:d.beforeExists,beforeHash:d.beforeHash,afterExists:d.afterExists,afterHash:d.afterHash})),validation};}
+async function restoreRemoteSnapshot(site,paths,commit){const remote=await connectSite(site);try{for(const path of paths){const old=await readCommitMaybe(site,path,commit),rp=joinRemote(site.remote_root,path);if(old===null)await remote.remove(rp);else await remote.write(rp,old);}}finally{await remote.close();}}
+async function applyPreview(previewId){const p=await q(`select * from change_previews where id=? and status='pending' and expires_at>now()`,[previewId]),preview=p.rows[0];if(!preview)throw new Error('Preview not found or expired');const site=await getSite(preview.site_id),changes=preview.changes,paths=changes.map(c=>c.path),preCommit=await commitPaths(site,paths,'Pre-change snapshot'),remote=await connectSite(site),touched=[];let writeError=null;try{for(const c of changes){const rp=joinRemote(site.remote_root,c.path),exists=await remote.exists(rp);if(exists!==c.beforeExists)throw new Error(`Remote existence changed: ${c.path}`);if(exists&&hash(await remote.read(rp))!==c.beforeHash)throw new Error(`Remote file changed since preview: ${c.path}`);if(c.after===null){touched.push(c.path);await remote.remove(rp);}else{let payload;if(c.afterEncoding==='git'){payload=await readCommitMaybe(site,c.path,c.after);if(payload===null)throw new Error(`File missing in source commit during apply: ${c.path}`);}else payload=c.afterEncoding==='base64'?Buffer.from(c.after,'base64'):Buffer.from(c.after);touched.push(c.path);await remote.write(rp,payload);}}}catch(e){writeError=e;}finally{try{await remote.close();}catch{}}if(writeError){if(touched.length){try{await restoreRemoteSnapshot(site,touched,preCommit);}catch(restoreError){console.error('restore after transfer failure',site.domain,restoreError);}}throw writeError;}let postCommit;try{postCommit=await commitPaths(site,paths,preview.description);}catch(e){try{await restoreRemoteSnapshot(site,paths,preCommit);}catch(restoreError){console.error('restore after Git snapshot failure',site.domain,restoreError);}throw new Error(`Live files restored after Git snapshot failure: ${e.message||e}`);}const health=site.monitor_enabled?await checkSiteNow(site):null,status=site.deployment_mode==='hostinger_git'?'deploy_triggered':health&&!health.ok?'deployed_unhealthy':'deployed';const changeId=crypto.randomUUID();await q(`insert into changes(id,site_id,preview_id,description,actor,files,pre_commit,post_commit,status,health_result) values(?,?,?,?,?,?,?,?,?,?)`,[changeId,site.id,preview.id,preview.description,preview.actor,JSON.stringify(paths),preCommit,postCommit,status,health?JSON.stringify(health):null]);await q(`update change_previews set status='applied' where id=?`,[preview.id]);return{changeId,preCommit,postCommit,files:paths,status,health};}
+async function listHistory(siteId,limit=30){const site=await getSite(siteId);return(await q('select id,description,actor,files,pre_commit,post_commit,status,created_at from changes where site_id=? order by created_at desc limit ?',[site.id,limit])).rows;}
+async function changeDiff(changeId){const r=await q('select * from changes where id=?',[changeId]),ch=r.rows[0];if(!ch)throw new Error('Change not found');return diffCommits(await getSite(ch.site_id),ch.pre_commit,ch.post_commit);}
+async function rollbackPreview(changeId,actor='mcp'){const r=await q('select * from changes where id=?',[changeId]),ch=r.rows[0];if(!ch)throw new Error('Change not found');const site=await getSite(ch.site_id),files=await changedFiles(site,ch.pre_commit,ch.post_commit),proposed=[];for(const path of files){const old=await readCommitMaybe(site,path,ch.pre_commit);proposed.push(old===null?{path,content:null}:{path,sourceCommit:ch.pre_commit});}return createPreview(site.id,proposed,`Rollback ${changeId}: ${ch.description}`,actor);}
+
+async function sslDays(url){if(!url.startsWith('https:'))return null;const u=new URL(url);return new Promise(resolve=>{const s=tls.connect(Number(u.port||443),u.hostname,{servername:u.hostname,rejectUnauthorized:true,timeout:7000},()=>{const cert=s.getPeerCertificate();s.end();resolve(cert.valid_to?Math.floor((new Date(cert.valid_to).getTime()-Date.now())/86400000):null);});s.on('error',()=>resolve(null));s.on('timeout',()=>{s.destroy();resolve(null);});});}
+async function fetchWithRedirectTrace(url,timeoutMs){
+  const redirects=[];let current=url,response=null;
+  for(let i=0;i<8;i++){
+    response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(timeoutMs),headers:{'User-Agent':'Lorzen-SiteOps/0.8.2'}});
+    if(response.status>=300&&response.status<400){
+      const location=response.headers.get('location');if(!location)break;
+      const next=new URL(location,current).toString();redirects.push({status:response.status,from:current,to:next});current=next;continue;
+    }
+    break;
+  }
+  return{response,finalUrl:current,redirects};
+}
+function htmlTitle(body){const m=String(body||'').match(/<title[^>]*>([\s\S]*?)<\/title>/i);return m?m[1].replace(/\s+/g,' ').trim():null;}
+async function checkSiteNow(site){
+  const url=site.monitor_url||`https://${site.domain}`,started=Date.now();let status=null,error=null,body='',finalUrl=url,redirects=[],dns=null,wp=null,title=null;
+  try{
+    const host=new URL(url).hostname;
+    if(site.monitor_check_dns){try{dns=(await dnsLookup(host,{all:true})).map(x=>x.address);}catch(e){dns=[];error='DNS: '+String(e.message||e);}}
+    if(!error){
+      const traced=await fetchWithRedirectTrace(url,site.monitor_timeout_ms);status=traced.response?.status??null;finalUrl=traced.finalUrl;redirects=traced.redirects;
+      if(traced.response)body=(await traced.response.text()).slice(0,262144);
+      title=htmlTitle(body);
+    }
+    if(!error&&site.monitor_check_wordpress){
+      try{
+        const origin=new URL(finalUrl).origin,wpRes=await fetch(origin+'/wp-json/',{redirect:'follow',signal:AbortSignal.timeout(site.monitor_timeout_ms),headers:{'User-Agent':'Lorzen-SiteOps/0.8.2'}});
+        wp={ok:wpRes.ok,status:wpRes.status};
+      }catch(e){wp={ok:false,error:String(e.message||e)};}
+    }
+  }catch(e){error=e.message||String(e);}
+  const responseMs=Date.now()-started,ssl=await sslDays(finalUrl||url);
+  const checks={
+    dns:!site.monitor_check_dns||(Array.isArray(dns)&&dns.length>0),
+    http:status===site.monitor_expected_status,
+    content:!site.monitor_content||body.includes(site.monitor_content),
+    title:!site.monitor_expected_title||title===site.monitor_expected_title,
+    wordpress:!site.monitor_check_wordpress||Boolean(wp?.ok),
+    speed:!site.response_warn_ms||responseMs<=site.response_warn_ms,
+    ssl:ssl===null||ssl>=site.ssl_warn_days
+  };
+  const ok=!error&&Object.values(checks).every(Boolean);
+  return{ok,url,finalUrl,status,responseMs,sslDays:ssl,title,dns,redirects,wordpress:wp,error,checks,checkedAt:new Date().toISOString()};
+}
+async function sendAlert(subject,text){
+  const jobs=[];
+  if(cfg.alertEmail&&cfg.smtpHost){const t=nodemailer.createTransport({host:cfg.smtpHost,port:cfg.smtpPort,secure:cfg.smtpSecure,auth:cfg.smtpUser?{user:cfg.smtpUser,pass:cfg.smtpPassword}:undefined});jobs.push({channel:'email',promise:t.sendMail({from:cfg.smtpFrom,to:cfg.alertEmail,subject:`[SiteOps] ${subject}`,text})});}
+  if(cfg.webhook)jobs.push({channel:'webhook',promise:fetch(cfg.webhook,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:'siteops',subject,text,timestamp:new Date().toISOString()})})});
+  const settled=await Promise.allSettled(jobs.map(x=>x.promise));
+  return jobs.map((x,i)=>({channel:x.channel,ok:settled[i]?.status==='fulfilled',error:settled[i]?.status==='rejected'?String(settled[i].reason?.message||settled[i].reason):null}));
+}
+async function incidentEvent(incidentId,siteId,eventType,details){await q('insert into incident_events(incident_id,site_id,event_type,details) values(?,?,?,?)',[incidentId,siteId,eventType,details?JSON.stringify(details):null]);}
+async function processMonitor(site){
+  const result=await checkSiteNow(site);
+  await q('insert into monitor_checks(site_id,ok,http_status,response_ms,ssl_days,error,details) values(?,?,?,?,?,?,?)',[site.id,result.ok,result.status,result.responseMs,result.sslDays,result.error,JSON.stringify(result)]);
+  const state=(await q('select * from monitor_state where site_id=?',[site.id])).rows[0],open=state?.incident_id||null;let failures=state?.consecutive_failures||0;
+  if(result.ok){
+    if(open){
+      await q("update incidents set resolved_at=now(),status='resolved' where id=?",[open]);
+      await incidentEvent(open,site.id,'recovered',{responseMs:result.responseMs,status:result.status});
+      const alertResult=await sendAlert(`RECOVERED: ${site.domain}`,`${site.domain} is healthy again. Response ${result.responseMs} ms.`);
+      await incidentEvent(open,site.id,'recovery_alert',alertResult);
+    }
+    await q(`insert into monitor_state(site_id,consecutive_failures,last_check_at,last_ok_at,last_alert_at,alert_count,incident_id) values(?,0,now(),now(),null,0,null) on duplicate key update consecutive_failures=0,last_check_at=now(),last_ok_at=now(),last_alert_at=null,alert_count=0,incident_id=null`,[site.id]);
+  }else{
+    failures++;let incidentId=open,alertCount=Number(state?.alert_count||0),lastAlert=state?.last_alert_at?new Date(state.last_alert_at).getTime():0;
+    if(!open&&failures>=site.monitor_failure_threshold){
+      incidentId=crypto.randomUUID();
+      await q(`insert into incidents(id,site_id,status,title,details) values(?,?,'open',?,?)`,[incidentId,site.id,`${site.domain} unhealthy`,JSON.stringify(result)]);
+      await incidentEvent(incidentId,site.id,'opened',{failureCount:failures,result});
+      const alertResult=await sendAlert(`DOWN: ${site.domain}`,JSON.stringify(result,null,2));
+      alertCount=1;lastAlert=Date.now();await incidentEvent(incidentId,site.id,'alert',alertResult);
+    }else if(incidentId){
+      await incidentEvent(incidentId,site.id,'check_failed',{failureCount:failures,result});
+      const repeatMs=Math.max(1,Number(site.alert_repeat_minutes||60))*60000;
+      if(!lastAlert||Date.now()-lastAlert>=repeatMs){
+        const alertResult=await sendAlert(`STILL DOWN: ${site.domain}`,JSON.stringify({failures,result},null,2));
+        alertCount++;lastAlert=Date.now();await incidentEvent(incidentId,site.id,'repeat_alert',{alertCount,delivery:alertResult});
+      }
+    }
+    await q(`insert into monitor_state(site_id,consecutive_failures,last_check_at,last_alert_at,alert_count,incident_id) values(?,?,now(),?,?,?) on duplicate key update consecutive_failures=?,last_check_at=now(),last_alert_at=?,alert_count=?,incident_id=?`,
+      [site.id,failures,lastAlert?new Date(lastAlert):null,alertCount,incidentId,failures,lastAlert?new Date(lastAlert):null,alertCount,incidentId]);
+  }
+  return result;
+}
+async function listMonitorChecks(siteId,limit=50){const site=await getSite(siteId);return(await q('select id,ok,http_status,response_ms,ssl_days,error,details,created_at from monitor_checks where site_id=? order by created_at desc limit ?',[site.id,limit])).rows;}
+async function listIncidents(siteId,limit=50){const site=await getSite(siteId);return(await q('select id,status,title,details,created_at,resolved_at from incidents where site_id=? order by created_at desc limit ?',[site.id,limit])).rows;}
+async function deploymentInfo(siteId){
+  const site=await getSite(siteId);
+  if(site.deployment_mode!=='hostinger_git')return{mode:'webspace',protocol:site.protocol,host:site.host,port:site.port,remoteRoot:site.remote_root};
+  let headSha=null,repositoryReachable=false,error=null;
+  try{const remote=await connectSite(site);headSha=remote.headSha||null;repositoryReachable=true;await remote.close();}catch(e){error=String(e.message||e);}
+  return{mode:'hostinger_git',repository:site.source_repository,branch:site.source_branch||'main',sourceRoot:site.source_root||'',hostingerTargetDirectory:site.hostinger_target_directory||'public_html',repositoryReachable,headSha,error};
+}
+async function backupStatus(siteId){
+  const site=await getSite(siteId),state=(await q('select * from backup_state where site_id=?',[site.id])).rows[0]||null,last=(await q('select id,git_commit,backup_type,file_count,changed,created_at from backups where site_id=? order by created_at desc limit 1',[site.id])).rows[0]||null;
+  return{enabled:Boolean(site.backup_enabled),intervalSeconds:site.backup_interval_seconds,maxFiles:site.backup_max_files,state,last};
+}
+async function siteOverview(siteId){
+  const site=await getSite(siteId),latestCheck=(await q('select id,ok,http_status,response_ms,ssl_days,error,details,created_at from monitor_checks where site_id=? order by created_at desc limit 1',[site.id])).rows[0]||null,state=(await q('select * from monitor_state where site_id=?',[site.id])).rows[0]||null,openIncidents=(await q("select id,status,title,created_at from incidents where site_id=? and status='open' order by created_at desc",[site.id])).rows;
+  return{site:publicSite(site),deployment:await deploymentInfo(site.id),monitor:{latestCheck,state,openIncidents},backup:await backupStatus(site.id)};
+}
+async function findFiles(siteId,needle,limit=100){
+  const site=await getSite(siteId),remote=await connectSite(site),results=[],qneedle=String(needle||'').toLowerCase(),patterns=Array.isArray(site.exclude_patterns)?site.exclude_patterns:[];
+  const excluded=p=>patterns.some(x=>p.includes(x));
+  async function walk(rel=''){
+    if(results.length>=limit)return;
+    for(const e of await remote.list(joinRemote(site.remote_root,rel))){
+      if(results.length>=limit)break;
+      const child=rel?rel+'/'+e.name:e.name;if(excluded(child))continue;
+      if(child.toLowerCase().includes(qneedle))results.push({path:child,type:e.type,size:e.size??null});
+      if(e.type==='directory')await walk(child);
+    }
+  }
+  try{await walk();return results;}finally{await remote.close();}
+}
+async function searchText(siteId,needle,{maxFiles=50,maxBytes=524288}={}){
+  const site=await getSite(siteId),remote=await connectSite(site),matches=[],patterns=Array.isArray(site.exclude_patterns)?site.exclude_patterns:[],term=String(needle||'').toLowerCase();let scanned=0;
+  const excluded=p=>patterns.some(x=>p.includes(x));
+  async function walk(rel=''){
+    if(scanned>=maxFiles)return;
+    for(const e of await remote.list(joinRemote(site.remote_root,rel))){
+      if(scanned>=maxFiles)break;
+      const child=rel?rel+'/'+e.name:e.name;if(excluded(child))continue;
+      if(e.type==='directory'){await walk(child);continue;}
+      if(e.type!=='file'||Number(e.size||0)>maxBytes)continue;
+      scanned++;try{const b=await remote.read(joinRemote(site.remote_root,child));if(b.includes(0))continue;const txt=b.toString('utf8'),idx=txt.toLowerCase().indexOf(term);if(idx>=0)matches.push({path:child,index:idx,excerpt:txt.slice(Math.max(0,idx-100),Math.min(txt.length,idx+term.length+180)).replace(/\s+/g,' ')});}catch{}
+    }
+  }
+  try{await walk();return{needle,scanned,matches};}finally{await remote.close();}
+}
+
+async function getIncident(incidentId){const i=(await q('select i.*,s.slug,s.domain from incidents i join sites s on s.id=i.site_id where i.id=?',[incidentId])).rows[0];if(!i)throw new Error('Incident not found');const events=(await q('select id,event_type,details,created_at from incident_events where incident_id=? order by created_at asc',[incidentId])).rows;return{...i,events};}
+let monitorRunning=false;function startMonitor(){setInterval(async()=>{if(monitorRunning)return;monitorRunning=true;try{const sites=(await q(`select s.* from sites s left join monitor_state ms on ms.site_id=s.id where s.enabled=1 and s.monitor_enabled=1 and (ms.last_check_at is null or timestampdiff(second,ms.last_check_at,now())>=s.monitor_interval_seconds)`)).rows;for(const site of sites){try{await processMonitor(site);}catch(e){console.error('monitor',site.domain,e);}}}finally{monitorRunning=false;}},cfg.workerInterval).unref();}
+let backupRunning=false;function startBackupWorker(){setInterval(async()=>{if(backupRunning)return;backupRunning=true;try{const sites=(await q(`select s.* from sites s left join (select site_id,max(created_at) last_backup_at from backups group by site_id) b on b.site_id=s.id left join backup_state bs on bs.site_id=s.id where s.enabled=1 and s.backup_enabled=1 and (b.last_backup_at is null or timestampdiff(second,b.last_backup_at,now())>=s.backup_interval_seconds) and (bs.last_attempt_at is null or timestampdiff(second,bs.last_attempt_at,now())>=least(s.backup_interval_seconds,900)) order by coalesce(b.last_backup_at,'1970-01-01 00:00:00')`)).rows;for(const site of sites){const previous=(await q('select * from backup_state where site_id=?',[site.id])).rows[0];await q(`insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);try{await fullBackup(site,site.backup_max_files||10000);await q(`update backup_state set last_success_at=now(),last_error=null,updated_at=now() where site_id=?`,[site.id]);}catch(e){const msg=String(e.message||e).slice(0,4000);await q(`update backup_state set last_error=?,updated_at=now() where site_id=?`,[msg,site.id]);if(!previous?.last_error)await sendAlert(`BACKUP FAILED: ${site.domain}`,msg);console.error('backup',site.domain,e);}}}finally{backupRunning=false;}},cfg.backupWorkerInterval).unref();}
+
+let seoWorkerRunning=false;
+function startSeoWorker(){
+  setInterval(async()=>{
+    if(seoWorkerRunning)return;seoWorkerRunning=true;
+    try{
+      const sites=(await q(`select s.*
+        from sites s
+        left join (select site_id,max(finished_at) last_seo_at from seo_runs where status='completed' group by site_id) sr on sr.site_id=s.id
+        left join seo_state ss on ss.site_id=s.id
+        where s.enabled=1 and s.seo_enabled=1
+          and not exists (select 1 from seo_runs active where active.site_id=s.id and active.status='running')
+          and (sr.last_seo_at is null or timestampdiff(second,sr.last_seo_at,now())>=s.seo_interval_seconds)
+          and (ss.last_attempt_at is null or timestampdiff(second,ss.last_attempt_at,now())>=least(s.seo_interval_seconds,3600))
+        order by coalesce(sr.last_seo_at,'1970-01-01 00:00:00')`)).rows;
+      for(const site of sites){
+        const previous=(await q('select * from seo_state where site_id=?',[site.id])).rows[0]||null;
+        const previousRun=(await q("select summary from seo_runs where site_id=? and status='completed' order by finished_at desc limit 1",[site.id])).rows[0]||null;
+        await q(`insert into seo_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,[site.id]);
+        const runId=crypto.randomUUID();
+        await q('insert into seo_runs(id,site_id,status,max_pages) values(?,?,?,?)',[runId,site.id,'running',site.seo_max_pages||cfg.seoMaxPages||100]);
+        try{
+          await runSeoAudit(runId,site,{maxPages:site.seo_max_pages||cfg.seoMaxPages||100,pageSpeed:site.seo_pagespeed_mode||'homepage',pageSpeedMaxPages:10});
+          const run=(await q('select summary from seo_runs where id=?',[runId])).rows[0]||{},summary=run.summary||{},health=Number(summary.healthScore??0),errors=Number(summary.issues?.error??0);
+          await q(`update seo_state set last_success_at=now(),last_error=null,last_health_score=?,last_error_count=?,updated_at=now() where site_id=?`,[health,errors,site.id]);
+          if(site.seo_regression_alerts){
+            const oldHealth=previous?.last_health_score??previousRun?.summary?.healthScore,oldErrors=previous?.last_error_count??previousRun?.summary?.issues?.error;
+            const drop=oldHealth==null?0:Number(oldHealth)-health,newErrors=oldErrors==null?0:errors-Number(oldErrors);
+            if(drop>=cfg.seoRegressionAlertDrop||newErrors>0){
+              await sendAlert(`SEO REGRESSION: ${site.domain}`,`SEO Health ${oldHealth??'–'} → ${health}. Fehler ${oldErrors??'–'} → ${errors}. ${drop>=cfg.seoRegressionAlertDrop?'Health-Score sank um '+drop+' Punkte. ':''}${newErrors>0?newErrors+' neue Fehler.':''}`);
+            }
+          }
+        }catch(e){
+          const msg=String(e.message||e).slice(0,4000);
+          await q('update seo_state set last_error=?,updated_at=now() where site_id=?',[msg,site.id]);
+          if(!previous?.last_error)await sendAlert(`SEO AUDIT FAILED: ${site.domain}`,msg);
+          console.error('seo worker',site.domain,e);
+        }
+      }
+    }finally{seoWorkerRunning=false;}
+  },cfg.seoWorkerInterval).unref();
+}
+
+
+const SEO_STOPWORDS=new Set('aber alle allem allen aller alles als also am an ander andere anderem anderen anderer anderes and auch auf aus bei bin bis bist da damit dann das dass dein deine dem den denn der des die dies diese diesem diesen dieser dieses doch dort du durch ein eine einem einen einer eines er es etwas für gegen gewesen hat hatte haben hier hin hinter ich im in ist ja jede jedem jeden jeder jedes jener jenes kann kein keine mit muss nach nicht nichts noch nun nur ob oder ohne sehr sein seine selbst sich sie sind so über um und uns unser unsere unter vom von vor war waren was weg weil weiter welche welchem welchen welcher welches wenn werde werden wie wieder will wir wo zu zum zur'.split(/\s+/));
+function seoNormalizeUrl(value,base){
+  try{
+    const u=new URL(value,base);u.hash='';
+    for(const k of [...u.searchParams.keys()])if(/^utm_|^(fbclid|gclid)$/i.test(k))u.searchParams.delete(k);
+    if((u.protocol==='https:'&&u.port==='443')||(u.protocol==='http:'&&u.port==='80'))u.port='';
+    if(u.pathname!=='/'&&u.pathname.endsWith('/'))u.pathname=u.pathname.replace(/\/+$/,'');
+    return u.toString();
+  }catch{return null;}
+}
+function seoCrawlableUrl(value,rootHost){
+  try{
+    const u=new URL(value);
+    if(!['http:','https:'].includes(u.protocol)||u.hostname!==rootHost)return false;
+    if(/\.(?:jpg|jpeg|png|gif|webp|avif|svg|ico|pdf|zip|rar|7z|gz|mp4|mp3|mov|avi|wmv|css|js|json|xml|woff2?|ttf|eot)(?:$|\?)/i.test(u.pathname+u.search))return false;
+    return true;
+  }catch{return false;}
+}
+async function seoDiscoverSitemaps(rootUrl,maxUrls){
+  const root=new URL(rootUrl),sitemapUrls=new Set([new URL('/sitemap.xml',root).toString(),new URL('/sitemap_index.xml',root).toString()]),pages=new Set();
+  try{
+    const robots=await fetch(new URL('/robots.txt',root),{signal:AbortSignal.timeout(8000),headers:{'User-Agent':cfg.seoUserAgent}});
+    if(robots.ok){const txt=await robots.text();for(const m of txt.matchAll(/^sitemap:\s*(\S+)/gim))sitemapUrls.add(m[1]);}
+  }catch{}
+  const seenMaps=new Set(),validMaps=new Set(),queue=[...sitemapUrls];
+  while(queue.length&&seenMaps.size<12&&pages.size<maxUrls){
+    const sitemap=queue.shift();if(seenMaps.has(sitemap))continue;seenMaps.add(sitemap);
+    try{
+      const res=await fetch(sitemap,{signal:AbortSignal.timeout(12000),headers:{'User-Agent':cfg.seoUserAgent,accept:'application/xml,text/xml,*/*'}});
+      if(!res.ok)continue;validMaps.add(sitemap);const xml=await res.text(),$=cheerio.load(xml,{xmlMode:true});
+      if($('sitemapindex sitemap loc').length){
+        $('sitemapindex sitemap loc').each((_,e)=>{const loc=$(e).text().trim();if(loc&&!seenMaps.has(loc)&&queue.length<30)queue.push(loc);});
+      }else{
+        $('urlset url loc').each((_,e)=>{const loc=seoNormalizeUrl($(e).text().trim(),rootUrl);if(loc&&new URL(loc).hostname===root.hostname&&seoCrawlableUrl(loc,root.hostname)&&pages.size<maxUrls)pages.add(loc);});
+      }
+    }catch{}
+  }
+  return{pages:[...pages],sitemaps:[...validMaps],attemptedSitemaps:[...seenMaps]};
+}
+function seoTokens(text){
+  return String(text||'').toLocaleLowerCase('de-DE').normalize('NFKC').match(/[\p{L}\p{N}][\p{L}\p{N}-]{2,}/gu)?.filter(x=>!SEO_STOPWORDS.has(x)&&!/^\d+$/.test(x))||[];
+}
+function seoIssues(page){return pageAuditIssues(page);}
+function calcPageRank(urls,links){
+  const n=urls.length;if(!n)return new Map();const set=new Set(urls),out=new Map(urls.map(u=>[u,new Set()]));
+  for(const l of links)if(l.internal&&set.has(l.source)&&set.has(l.target)&&l.source!==l.target)out.get(l.source).add(l.target);
+  let rank=new Map(urls.map(u=>[u,1/n]));const damping=.85;
+  for(let iter=0;iter<35;iter++){
+    const next=new Map(urls.map(u=>[u,(1-damping)/n]));
+    let sink=0;
+    for(const u of urls){const targets=out.get(u),r=rank.get(u)||0;if(!targets.size){sink+=r;continue;}for(const t of targets)next.set(t,next.get(t)+damping*r/targets.size);}
+    if(sink)for(const u of urls)next.set(u,next.get(u)+damping*sink/n);
+    rank=next;
+  }
+  return rank;
+}
+function calcWdfIdf(pages){
+  const docs=pages.map(p=>seoTokens(p.text)),N=Math.max(1,pages.length),df=new Map();
+  for(const tokens of docs)for(const t of new Set(tokens))df.set(t,(df.get(t)||0)+1);
+  return docs.map(tokens=>{
+    const counts=new Map();for(const t of tokens)counts.set(t,(counts.get(t)||0)+1);
+    const max=Math.max(1,...counts.values()),rows=[];
+    for(const [term,freq] of counts){const wdf=(1+Math.log2(freq))/(1+Math.log2(max)),idf=Math.log((N+1)/((df.get(term)||0)+1))+1;rows.push({term,freq,wdf:Number(wdf.toFixed(4)),idf:Number(idf.toFixed(4)),score:Number((wdf*idf).toFixed(4))});}
+    return rows.sort((a,b)=>b.score-a.score).slice(0,40);
+  });
+}
+async function pageSpeedAudit(url,strategy='mobile'){
+  if(!cfg.pageSpeedApiKey)return null;
+  const p=new URLSearchParams({url,strategy,key:cfg.pageSpeedApiKey});
+  for(const category of ['PERFORMANCE','ACCESSIBILITY','BEST_PRACTICES','SEO'])p.append('category',category);
+  const res=await fetch('https://www.googleapis.com/pagespeedonline/v5/runPagespeed?'+p.toString(),{signal:AbortSignal.timeout(120000)});
+  const raw=await res.text();let data;try{data=JSON.parse(raw);}catch{data={error:{message:raw.slice(0,500)}};}
+  if(!res.ok)throw new Error('PageSpeed '+strategy+' '+res.status+': '+(data?.error?.message||'unknown error'));
+  const lhr=data.lighthouseResult||{},cats=lhr.categories||{},audits=lhr.audits||{},score=k=>cats[k]?.score==null?null:Math.round(cats[k].score*100),num=id=>audits[id]?.numericValue??null;
+  return{strategy,fetchTime:lhr.fetchTime,finalUrl:lhr.finalUrl,lighthouseVersion:lhr.lighthouseVersion,
+    scores:{performance:score('performance'),accessibility:score('accessibility'),bestPractices:score('best-practices'),seo:score('seo')},
+    metrics:{fcp:num('first-contentful-paint'),lcp:num('largest-contentful-paint'),tbt:num('total-blocking-time'),cls:num('cumulative-layout-shift'),speedIndex:num('speed-index'),tti:num('interactive')},
+    field:data.loadingExperience?.metrics||null};
+}
+async function crawlSeoPage(url,rootHost,depth){
+  const started=Date.now();let res=null,html='',error=null,current=url,redirectChain=[];
+  try{
+    for(let hop=0;hop<8;hop++){
+      res=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(20000),headers:{'User-Agent':cfg.seoUserAgent,accept:'text/html,application/xhtml+xml'}});
+      if(res.status>=300&&res.status<400&&res.headers.get('location')){
+        const next=seoNormalizeUrl(res.headers.get('location'),current);if(!next)break;
+        redirectChain.push({from:current,status:res.status,to:next});current=next;continue;
+      }
+      html=await res.text();break;
+    }
+  }catch(e){error=String(e.message||e);}
+  const statusCode=res?.status??0,responseMs=Date.now()-started,contentBytes=Buffer.byteLength(html||''),contentType=res?.headers?.get('content-type')||'';
+  const baseSignals={redirected:redirectChain.length>0,redirectChain,finalUrl:current,xRobotsTag:res?.headers?.get('x-robots-tag')||''};
+  if(error||!contentType.includes('text/html'))return{url,path:new URL(url).pathname,statusCode,responseMs,contentBytes,error,title:'',metaDescription:'',canonical:'',robots:'',h1:[],h2:[],wordCount:0,imagesTotal:0,imagesMissingAlt:0,structuredData:[],links:[],text:'',depth,signals:baseSignals,contentHash:null,issues:[{level:'error',code:error?'fetch_error':'not_html',text:error||'Kein HTML-Dokument'}]};
+  const $=cheerio.load(html);
+  const canonicalCount=$('link[rel="canonical"]').length;
+  const title=$('title').first().text().replace(/\s+/g,' ').trim(),metaDescription=$('meta[name="description"]').attr('content')?.trim()||'',canonicalHref=$('link[rel="canonical"]').first().attr('href')||'',canonical=canonicalHref?seoNormalizeUrl(canonicalHref,current):'',robots=$('meta[name="robots"]').attr('content')||'';
+  const h1=$('h1').map((_,e)=>$(e).text().replace(/\s+/g,' ').trim()).get().filter(Boolean),h2=$('h2').map((_,e)=>$(e).text().replace(/\s+/g,' ').trim()).get().filter(Boolean);
+  const headingLevels=$('h1,h2,h3,h4,h5,h6').map((_,e)=>Number(e.tagName.slice(1))).get(),headingOrderIssue=headingLevels.some((level,i)=>i>0&&level-headingLevels[i-1]>1);
+  const structuredData=[];let structuredDataInvalid=0;$('script[type="application/ld+json"]').each((_,e)=>{const raw=$(e).text().trim();if(raw){try{structuredData.push(JSON.parse(raw));}catch{structuredDataInvalid++;structuredData.push({invalid:true,preview:raw.slice(0,300)});}}});
+  const imageNodes=$('img'),images=imageNodes.length,imagesMissingAlt=imageNodes.filter((_,e)=>$(e).attr('alt')===undefined).length;
+  const imagesMissingDimensions=imageNodes.filter((_,e)=>!$(e).attr('width')||!$(e).attr('height')).length;
+  const imagesLazyCandidates=imageNodes.filter((i,e)=>i>1&&!/lazy/i.test($(e).attr('loading')||'')).length;
+  const body=$('main,article').first().length?$('main,article').first().clone():$('body').clone();body.find('script,style,noscript,svg,template').remove();const text=body.text().replace(/\s+/g,' ').trim(),wordCount=seoTokens(text).length,contentHash=hash(text.toLocaleLowerCase('de-DE').replace(/\s+/g,' ').trim());
+  const htmlLang=($('html').attr('lang')||'').trim(),viewport=Boolean($('meta[name="viewport"]').attr('content'));
+  const ogTitle=$('meta[property="og:title"]').attr('content')||'',ogDescription=$('meta[property="og:description"]').attr('content')||'',ogImage=$('meta[property="og:image"]').attr('content')||'',twitterCard=$('meta[name="twitter:card"]').attr('content')||'';
+  const hreflang=[];let hreflangInvalid=0;$('link[rel="alternate"][hreflang]').each((_,e)=>{const lang=($(e).attr('hreflang')||'').trim(),href=seoNormalizeUrl($(e).attr('href')||'',current);if(!href||!/^x-default$|^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(lang))hreflangInvalid++;hreflang.push({lang,href});});
+  const links=[];let emptyAnchors=0,genericAnchors=0,internalNofollow=0;
+  $('a[href]').each((_,e)=>{const href=$(e).attr('href');if(!href||/^(mailto:|tel:|javascript:)/i.test(href))return;const target=seoNormalizeUrl(href,current);if(!target)return;const tu=new URL(target),internal=tu.hostname===rootHost,anchor=$(e).text().replace(/\s+/g,' ').trim().slice(0,250),nofollow=/\bnofollow\b/i.test($(e).attr('rel')||'');const accessible=anchor||$(e).attr('aria-label')||$(e).attr('title')||$(e).find('img').attr('alt')||'';if(!accessible.trim())emptyAnchors++;if(/^(hier|mehr|weiter|details|klick hier|click here|here|more|read more)$/i.test(anchor))genericAnchors++;if(internal&&nofollow)internalNofollow++;links.push({source:url,target,anchor,internal,nofollow});});
+  const mixedContent=new Set();if(new URL(current).protocol==='https:')$('[src],[href],[action]').each((_,e)=>{for(const attr of ['src','href','action']){const v=$(e).attr(attr);if(v&&/^http:\/\//i.test(v))mixedContent.add(v);}});
+  const signals={...baseSignals,canonicalCount,htmlLang,viewport,headingOrderIssue,structuredDataInvalid,imagesMissingDimensions,imagesLazyCandidates,openGraphComplete:Boolean(ogTitle&&ogDescription&&ogImage),og:{title:ogTitle,description:ogDescription,image:ogImage},twitterCard,hreflang,hreflangInvalid,mixedContent:mixedContent.size,emptyAnchors,genericAnchors,internalNofollow};
+  const page={url,path:new URL(url).pathname+(new URL(url).search||''),statusCode,responseMs,contentBytes,title,metaDescription,canonical,robots,h1,h2,wordCount,imagesTotal:images,imagesMissingAlt,structuredData,links,text,depth,signals,contentHash};
+  page.issues=seoIssues(page);return page;
+}
+async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homepage',pageSpeedMaxPages=10}={}){
+  const configured=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!configured)throw new Error('Invalid site URL');
+  const configuredUrl=new URL(configured),root=seoNormalizeUrl(configuredUrl.origin+'/'),rootUrl=new URL(root),rootHost=rootUrl.hostname,queue=[{url:root,depth:0}],queued=new Set([root]),crawled=new Set(),pages=[],links=[];
+  const sitemap=await seoDiscoverSitemaps(root,Math.min(maxPages*3,1500)),sitemapPending=sitemap.pages.filter(url=>url!==root);
+  let robotsText='',blockedByRobots=0;
+  try{const rr=await fetch(root+'robots.txt',{signal:AbortSignal.timeout(12000),headers:{'User-Agent':cfg.seoUserAgent,accept:'text/plain,*/*'}});if(rr.ok)robotsText=await rr.text();}catch{}
+  try{
+    while((queue.length||sitemapPending.length)&&pages.length<maxPages){
+      if(!queue.length){
+        let candidate=null;
+        while(sitemapPending.length&&!candidate){const next=sitemapPending.shift();if(!crawled.has(next)&&!queued.has(next))candidate=next;}
+        if(!candidate)break;queued.add(candidate);queue.push({url:candidate,depth:null});
+      }
+      const item=queue.shift();queued.delete(item.url);if(crawled.has(item.url))continue;crawled.add(item.url);
+      if(robotsText&&!robotsAllows(robotsText,cfg.seoUserAgent,new URL(item.url).pathname||'/')){blockedByRobots++;continue;}
+      const page=await crawlSeoPage(item.url,rootHost,item.depth);pages.push(page);links.push(...page.links);
+      for(const l of page.links){
+        if(!l.internal||!seoCrawlableUrl(l.target,rootHost)||crawled.has(l.target))continue;
+        const linkedDepth=item.depth==null?1:item.depth+1,existing=queue.find(x=>x.url===l.target);
+        if(existing){if(existing.depth==null||linkedDepth<existing.depth)existing.depth=linkedDepth;continue;}
+        if(pages.length+queue.length<maxPages){queued.add(l.target);queue.push({url:l.target,depth:linkedDepth});}
+      }
+    }
+    const urls=pages.map(p=>p.url),rank=calcPageRank(urls,links),incoming=new Map(urls.map(u=>[u,0]));
+    for(const l of links)if(l.internal&&incoming.has(l.target))incoming.set(l.target,incoming.get(l.target)+1);
+    const wdfidf=calcWdfIdf(pages);
+    pages.forEach((p,i)=>{p.pagerank=rank.get(p.url)||0;p.incomingLinks=incoming.get(p.url)||0;p.internalLinks=p.links.filter(x=>x.internal).length;p.externalLinks=p.links.filter(x=>!x.internal).length;p.wdfidf=wdfidf[i];});
+    const psiCandidates=pages.filter(p=>p.statusCode===200).slice(0,pageSpeed==='all'?Math.min(pageSpeedMaxPages,pages.length):pageSpeed==='homepage'?1:0);
+    for(const p of psiCandidates){try{p.lighthouseMobile=await pageSpeedAudit(p.url,'mobile');p.lighthouseDesktop=await pageSpeedAudit(p.url,'desktop');}catch(e){p.issues.push({level:'warn',code:'pagespeed_error',category:'performance',title:'PageSpeed-Audit fehlgeschlagen',text:String(e.message||e),fix:'PageSpeed API-Konfiguration und öffentliche Erreichbarkeit prüfen.'});}}
+    const knownStatuses=new Map(pages.map(p=>[p.url,p.signals?.redirectChain?.[0]?.status||p.statusCode]));
+    const linkAudit=await linkHealthCheck(links,{knownStatuses,limit:cfg.seoLinkCheckLimit,externalLimit:cfg.seoExternalLinkCheckLimit,concurrency:8,userAgent:cfg.seoUserAgent});
+    const auditSummary=summarizeSeoAudit(pages,links,{rootUrl:root,sitemapPages:sitemap.pages});
+    let intelligence=null,intelligenceError=null;
+    const intelligenceId=crypto.randomUUID();
+    await q('insert into site_intelligence_runs(id,site_id,status) values(?,?,?)',[intelligenceId,site.id,'running']);
+    try{
+      intelligence=await siteIntelligenceAudit(root,{userAgent:'Lorzen-SiteOps-Intelligence/0.9'});
+      await q('update site_intelligence_runs set status=?,overall_score=?,result=?,finished_at=now() where id=?',['completed',intelligence.scores?.overall??null,JSON.stringify(intelligence),intelligenceId]);
+    }catch(e){
+      intelligenceError=String(e.message||e);await q('update site_intelligence_runs set status=?,error=?,finished_at=now() where id=?',['failed',intelligenceError.slice(0,10000),intelligenceId]);
+    }
+    for(const p of pages){
+      await q('insert into seo_pages(run_id,site_id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,structured_data,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop,signals,content_hash) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        [runId,site.id,p.url,p.path,p.statusCode,p.responseMs,p.contentBytes,p.title,p.metaDescription,p.canonical,p.robots,JSON.stringify(p.h1),JSON.stringify(p.h2),p.wordCount,p.internalLinks,p.externalLinks,p.incomingLinks,p.depth,p.pagerank,JSON.stringify(p.issues),JSON.stringify(p.wdfidf),JSON.stringify(p.structuredData),p.imagesTotal,p.imagesMissingAlt,p.lighthouseMobile?JSON.stringify(p.lighthouseMobile):null,p.lighthouseDesktop?JSON.stringify(p.lighthouseDesktop):null,JSON.stringify(p.signals||{}),p.contentHash||null]);
+    }
+    for(const l of links)await q('insert into seo_links(run_id,site_id,source_url,target_url,anchor_text,internal_link,nofollow,target_status,target_response_ms,target_error,target_location) values(?,?,?,?,?,?,?,?,?,?,?)',[runId,site.id,l.source,l.target,l.anchor,l.internal,l.nofollow,l.targetStatus??null,l.targetResponseMs??null,l.targetError??null,l.targetLocation??null]);
+    const summary={...auditSummary,pages:pages.length,okPages:pages.filter(p=>p.statusCode===200).length,errorPages:pages.filter(p=>p.statusCode>=400||p.error).length,avgResponseMs:pages.length?Math.round(pages.reduce((n,p)=>n+p.responseMs,0)/pages.length):0,avgWordCount:pages.length?Math.round(pages.reduce((n,p)=>n+p.wordCount,0)/pages.length):0,strongestPages:[...pages].sort((a,b)=>b.pagerank-a.pagerank).slice(0,10).map(p=>({url:p.url,title:p.title,pagerank:Number(p.pagerank.toFixed(6)),incomingLinks:p.incomingLinks})),pageSpeedEnabled:Boolean(cfg.pageSpeedApiKey),pageSpeedPages:psiCandidates.length,sitemapUrls:sitemap.sitemaps.length,sitemapPages:sitemap.pages.length,blockedByRobots,linkHealth:{checked:linkAudit.checked,externalChecked:linkAudit.externalChecked,brokenInternal:links.filter(l=>l.internal&&(l.targetStatus>=400||l.targetError)).length,brokenExternal:links.filter(l=>!l.internal&&(l.targetStatus>=400||l.targetError)).length},siteIntelligence:intelligence?{scores:intelligence.scores,issues:intelligence.issues.length,technology:intelligence.technology}:null,siteIntelligenceError:intelligenceError};
+    await q('update seo_runs set status=?,pages_crawled=?,summary=?,finished_at=now() where id=?',['completed',pages.length,JSON.stringify(summary),runId]);
+  }catch(e){await q('update seo_runs set status=?,error=?,finished_at=now() where id=?',['failed',String(e.message||e).slice(0,10000),runId]);throw e;}
+}
+async function startSeoAudit(siteId,options={}){
+  const site=await getSite(siteId),runId=crypto.randomUUID(),maxPages=Math.max(1,Math.min(500,Number(options.maxPages||cfg.seoMaxPages||100)));
+  await q('insert into seo_runs(id,site_id,status,max_pages) values(?,?,?,?)',[runId,site.id,'running',maxPages]);
+  setImmediate(()=>runSeoAudit(runId,site,{...options,maxPages}).catch(e=>console.error('seo audit',site.domain,e)));
+  return{id:runId,status:'running',site:site.slug,maxPages,pageSpeed:options.pageSpeed||'homepage',pageSpeedConfigured:Boolean(cfg.pageSpeedApiKey)};
+}
+async function seoRunGet(runId){const run=(await q('select * from seo_runs where id=?',[runId])).rows[0];if(!run)throw new Error('SEO run not found');return run;}
+async function seoLatest(siteId){const site=await getSite(siteId),run=(await q('select * from seo_runs where site_id=? order by started_at desc limit 1',[site.id])).rows[0]||null;if(!run)return{site:site.slug,run:null,pages:[]};const pages=(await q('select id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop,signals,content_hash from seo_pages where run_id=? order by pagerank desc',[run.id])).rows;return{site:site.slug,run,pages};}
+async function seoPageGet(pageId){const page=(await q('select * from seo_pages where id=?',[pageId])).rows[0];if(!page)throw new Error('SEO page not found');const links=(await q('select source_url,target_url,anchor_text,internal_link,nofollow,target_status,target_response_ms,target_error,target_location from seo_links where run_id=? and source_url=?',[page.run_id,page.url])).rows;return{...page,links};}
+async function seoGraph(siteId,limit=30){
+  const site=await getSite(siteId),run=(await q("select * from seo_runs where site_id=? and status='completed' order by started_at desc limit 1",[site.id])).rows[0];
+  if(!run)return{run:null,nodes:[],edges:[]};
+  const nodes=(await q('select id,url,path,title,depth,pagerank,incoming_links,internal_links,status_code from seo_pages where run_id=? order by pagerank desc limit ?',[run.id,limit])).rows;
+  const set=new Set(nodes.map(n=>n.url));
+  const links=(await q('select source_url,target_url,anchor_text,nofollow from seo_links where run_id=? and internal_link=1',[run.id])).rows;
+  const edges=links.filter(l=>set.has(l.source_url)&&set.has(l.target_url)).slice(0,300);
+  return{run:{id:run.id,started_at:run.started_at,finished_at:run.finished_at},nodes,edges};
+}
+async function seoIssuesList(siteId,{level,limit=200}={}){
+  const latest=await seoLatest(siteId);if(!latest.run)return{run:null,issues:[]};
+  const issues=[];
+  for(const p of latest.pages)for(const issue of (Array.isArray(p.issues)?p.issues:[]))if(!level||issue.level===level)issues.push({pageId:p.id,url:p.url,path:p.path,title:p.title,...issue});
+  return{run:latest.run,issues:issues.slice(0,limit)};
+}
+
+
+async function seoRunSnapshot(run){
+  if(!run)return null;
+  const pages=(await q('select id,url,path,status_code,response_ms,title,meta_description,canonical,robots,issues,content_hash,signals from seo_pages where run_id=?',[run.id])).rows;
+  return{run,pages};
+}
+async function seoCompare(siteId){
+  const site=await getSite(siteId),runs=(await q("select * from seo_runs where site_id=? and status='completed' order by started_at desc limit 2",[site.id])).rows;
+  if(!runs.length)return{available:false,current:null,previous:null};
+  return compareSeoRuns(await seoRunSnapshot(runs[0]),runs[1]?await seoRunSnapshot(runs[1]):null);
+}
+async function seoRecommendations(siteId){
+  const latest=await seoLatest(siteId),summary=latest.run?.summary||{};
+  return{run:latest.run?{id:latest.run.id,status:latest.run.status,started_at:latest.run.started_at,finished_at:latest.run.finished_at}:null,healthScore:summary.healthScore??null,categoryScores:summary.categoryScores||{},recommendations:summary.recommendations||[]};
+}
+async function seoLinkHealth(siteId,{limit=300}={}){
+  const site=await getSite(siteId),run=(await q("select * from seo_runs where site_id=? and status='completed' order by started_at desc limit 1",[site.id])).rows[0];
+  if(!run)return{run:null,summary:null,links:[]};
+  const links=(await q('select source_url,target_url,anchor_text,internal_link,nofollow,target_status,target_response_ms,target_error,target_location from seo_links where run_id=? and (target_status>=300 or target_error is not null) order by internal_link desc,target_status desc limit ?',[run.id,Math.min(1000,Math.max(1,limit))])).rows;
+  return{run:{id:run.id,started_at:run.started_at},summary:run.summary?.linkHealth||null,links};
+}
+async function persistIntelligence(site,result,error=null){
+  const id=crypto.randomUUID();
+  if(error)await q('insert into site_intelligence_runs(id,site_id,status,error,finished_at) values(?,?,?,?,now())',[id,site.id,'failed',String(error).slice(0,10000)]);
+  else await q('insert into site_intelligence_runs(id,site_id,status,overall_score,result,finished_at) values(?,?,?,?,?,now())',[id,site.id,'completed',result.scores?.overall??null,JSON.stringify(result)]);
+  return id;
+}
+async function runSiteIntelligence(siteId){
+  const site=await getSite(siteId),base=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!base)throw new Error('Invalid site URL');
+  try{const result=await siteIntelligenceAudit(new URL(base).origin+'/',{userAgent:'Lorzen-SiteOps-Intelligence/0.9'});const id=await persistIntelligence(site,result);return{id,site:site.slug,...result};}
+  catch(e){await persistIntelligence(site,null,String(e.message||e));throw e;}
+}
+async function siteIntelligenceLatest(siteId){
+  const site=await getSite(siteId),run=(await q('select * from site_intelligence_runs where site_id=? order by started_at desc limit 1',[site.id])).rows[0]||null;
+  return{site:site.slug,run};
+}
+async function clientReportData(siteId){
+  const site=await getSite(siteId),overview=await siteOverview(site.id),seo=await seoLatest(site.id),intelligence=await siteIntelligenceLatest(site.id);
+  const checks=await listMonitorChecks(site.id,200),incidents=await listIncidents(site.id,100),backups=await listBackups(site,100),history=await listHistory(site.id,100);
+  const uptime=checks.length?Math.round(checks.filter(x=>x.ok).length/checks.length*10000)/100:null;
+  return{
+    generatedAt:new Date().toISOString(),site:publicSite(site),
+    operations:{uptime,lastCheck:checks[0]||null,checks:checks.length,openIncidents:incidents.filter(x=>x.status==='open').length,incidents:incidents.length,lastBackup:backups[0]||null,backups:backups.length,changes:history.length},
+    seo:seo.run?{run:{id:seo.run.id,status:seo.run.status,started_at:seo.run.started_at,finished_at:seo.run.finished_at},summary:seo.run.summary||{}}:null,
+    intelligence:intelligence.run?.status==='completed'?{score:intelligence.run.overall_score,result:intelligence.run.result,finished_at:intelligence.run.finished_at}:null,
+    overview
+  };
+}
+
+async function fleetOverview(){
+  const sites=await listSites();
+  const checks=(await q('select mc.site_id,mc.ok,mc.http_status,mc.response_ms,mc.ssl_days,mc.created_at from monitor_checks mc join (select site_id,max(created_at) created_at from monitor_checks group by site_id) latest on latest.site_id=mc.site_id and latest.created_at=mc.created_at')).rows,checkMap=new Map(checks.map(x=>[x.site_id,x]));
+  const backups=(await q('select b.site_id,b.git_commit,b.file_count,b.created_at from backups b join (select site_id,max(created_at) created_at from backups group by site_id) latest on latest.site_id=b.site_id and latest.created_at=b.created_at')).rows,backupMap=new Map(backups.map(x=>[x.site_id,x]));
+  const seoRuns=(await q("select sr.site_id,sr.summary,sr.finished_at from seo_runs sr join (select site_id,max(finished_at) finished_at from seo_runs where status='completed' group by site_id) latest on latest.site_id=sr.site_id and latest.finished_at=sr.finished_at where sr.status='completed'")).rows,seoMap=new Map(seoRuns.map(x=>[x.site_id,x]));
+  const intelRuns=(await q("select si.site_id,si.overall_score,si.result,si.finished_at from site_intelligence_runs si join (select site_id,max(finished_at) finished_at from site_intelligence_runs where status='completed' group by site_id) latest on latest.site_id=si.site_id and latest.finished_at=si.finished_at where si.status='completed'")).rows,intelMap=new Map(intelRuns.map(x=>[x.site_id,x]));
+  const incidentRows=(await q("select site_id,count(*) open_count from incidents where status='open' group by site_id")).rows,incidentMap=new Map(incidentRows.map(x=>[x.site_id,Number(x.open_count||0)]));
+  const rows=sites.map(site=>{
+    const monitor=checkMap.get(site.id)||null,backup=backupMap.get(site.id)||null,seo=seoMap.get(site.id)||null,intelligence=intelMap.get(site.id)||null;
+    return{
+      id:site.id,slug:site.slug,name:site.name,domain:site.domain,enabled:Boolean(site.enabled),deploymentMode:site.deployment_mode,
+      monitor:monitor?{ok:Boolean(monitor.ok),httpStatus:monitor.http_status,responseMs:monitor.response_ms,sslDays:monitor.ssl_days,checkedAt:monitor.created_at}:null,
+      backup:backup?{createdAt:backup.created_at,commit:backup.git_commit,fileCount:backup.file_count}:null,
+      seo:seo?{healthScore:seo.summary?.healthScore??null,errors:seo.summary?.issues?.error??0,warnings:seo.summary?.issues?.warn??0,brokenLinks:(seo.summary?.linkHealth?.brokenInternal??0)+(seo.summary?.linkHealth?.brokenExternal??0),finishedAt:seo.finished_at}:null,
+      intelligence:intelligence?{overallScore:intelligence.overall_score,security:intelligence.result?.scores?.security??null,aiSearch:intelligence.result?.scores?.aiSearch??null,domain:intelligence.result?.scores?.domain??null,finishedAt:intelligence.finished_at}:null,
+      openIncidents:incidentMap.get(site.id)||0
+    };
+  });
+  const avg=values=>{const n=values.filter(v=>Number.isFinite(Number(v))).map(Number);return n.length?Math.round(n.reduce((a,b)=>a+b,0)/n.length):null;};
+  return{
+    generatedAt:new Date().toISOString(),
+    summary:{sites:rows.length,online:rows.filter(x=>x.monitor?.ok).length,monitorAlerts:rows.filter(x=>x.monitor&&!x.monitor.ok).length,openIncidents:rows.reduce((n,x)=>n+x.openIncidents,0),averageSeoHealth:avg(rows.map(x=>x.seo?.healthScore)),averageIntelligence:avg(rows.map(x=>x.intelligence?.overallScore))},
+    sites:rows
+  };
+}
+
+
+const toolText=value=>({content:[{type:'text',text:typeof value==='string'?value:JSON.stringify(value,null,2)}]});
+function mcpServer(){
+  const s=new McpServer({name:'lorzen-siteops',version:'0.9.0'});
+  s.registerTool('sites_list',{description:'List managed websites with deployment and monitor mode. Never returns credentials.',inputSchema:z.object({})},async()=>toolText((await listSites()).map(x=>({id:x.id,slug:x.slug,name:x.name,domain:x.domain,site_type:x.site_type,deployment_mode:x.deployment_mode,protocol:x.deployment_mode==='hostinger_git'?null:x.protocol,monitor_enabled:Boolean(x.monitor_enabled),backup_enabled:Boolean(x.backup_enabled)}))));
+  s.registerTool('site_get',{description:'Get redacted SiteOps configuration for one website. Secrets are represented only as configured/not configured.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(publicSite(await getSite(site))));
+  s.registerTool('site_overview',{description:'Get the main operational picture for a website in one call: redacted config, deployment, latest monitor state, open incidents and backup state.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await siteOverview(site)));
+  s.registerTool('fleet_overview',{description:'Get the cross-customer fleet view with latest uptime, incidents, backups, SEO health, broken links and Site Intelligence scores.',inputSchema:z.object({})},async()=>toolText(await fleetOverview()));
+  s.registerTool('site_status',{description:'Run an immediate detailed health check including HTTP, redirects, DNS, SSL, title/content and optional WordPress REST check.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await checkSiteNow(await getSite(site))));
+  s.registerTool('site_update',{description:'Update non-secret site operations settings. Does not alter connection credentials.',inputSchema:z.object({
+    site:z.string(),name:z.string().min(1).optional(),domain:z.string().min(1).optional(),enabled:z.boolean().optional(),
+    backup_enabled:z.boolean().optional(),backup_interval_seconds:z.number().int().min(900).max(2592000).optional(),backup_max_files:z.number().int().min(100).max(200000).optional(),
+    seo_enabled:z.boolean().optional(),seo_interval_seconds:z.number().int().min(3600).max(7776000).optional(),seo_max_pages:z.number().int().min(1).max(500).optional(),seo_pagespeed_mode:z.enum(['none','homepage','all']).optional(),seo_regression_alerts:z.boolean().optional(),
+    monitor_enabled:z.boolean().optional(),monitor_url:z.string().url().optional(),monitor_interval_seconds:z.number().int().min(30).max(86400).optional(),
+    monitor_expected_status:z.number().int().min(100).max(599).optional(),monitor_content:z.string().nullable().optional(),monitor_expected_title:z.string().nullable().optional(),
+    monitor_check_dns:z.boolean().optional(),monitor_check_wordpress:z.boolean().optional(),monitor_timeout_ms:z.number().int().min(1000).max(60000).optional(),
+    monitor_failure_threshold:z.number().int().min(1).max(20).optional(),alert_repeat_minutes:z.number().int().min(1).max(1440).optional(),
+    response_warn_ms:z.number().int().min(1).max(60000).nullable().optional(),ssl_warn_days:z.number().int().min(1).max(365).optional(),exclude_patterns:z.array(z.string()).optional()
+  })},async args=>{const {site,...changes}=args;return toolText(publicSite(await updateSite(site,changes)));});
+  s.registerTool('site_connection_test',{description:'Test the currently stored webspace or Git deployment connection without changing configuration.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await testStoredConnection(await getSite(site))));
+  s.registerTool('site_connection_update',{description:'Test and then save connection/deployment settings. Blank secret fields preserve existing secrets. Secrets are never returned.',inputSchema:z.object({
+    site:z.string(),deploymentMode:z.enum(['webspace','hostinger_git']),
+    protocol:z.enum(['sftp','ftps','ftp']).optional(),host:z.string().optional(),port:z.number().int().min(1).max(65535).optional(),username:z.string().optional(),password:z.string().optional(),privateKey:z.string().optional(),passphrase:z.string().optional(),remoteRoot:z.string().optional(),
+    sourceRepository:z.string().optional(),sourceBranch:z.string().optional(),sourceRoot:z.string().optional(),gitToken:z.string().optional(),hostingerTargetDirectory:z.string().optional()
+  })},async args=>{const {site,...changes}=args;return toolText(publicSite(await updateSiteConnection(site,changes)));});
+  s.registerTool('deployment_info',{description:'Show current deployment mode and source state, including Git branch HEAD when available.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await deploymentInfo(site)));
+  s.registerTool('monitor_history',{description:'List recent monitoring checks with detailed check results.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(1).max(200).default(50)})},async({site,limit})=>toolText(await listMonitorChecks(site,limit)));
+  s.registerTool('incidents_list',{description:'List recent incidents for a website.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(1).max(100).default(30)})},async({site,limit})=>toolText(await listIncidents(site,limit)));
+  s.registerTool('incident_get',{description:'Get an incident and its full event/alert/recovery timeline.',inputSchema:z.object({incident_id:z.string().uuid()})},async({incident_id})=>toolText(await getIncident(incident_id)));
+  s.registerTool('files_list',{description:'List files/directories in the current source of truth. For Hostinger Git sites this is the source repository; otherwise the live webspace.',inputSchema:z.object({site:z.string(),path:z.string().default('')})},async({site,path})=>toolText(await listRemote(site,path)));
+  s.registerTool('files_find',{description:'Recursively find files/directories by path/name substring, bounded by a result limit.',inputSchema:z.object({site:z.string(),query:z.string().min(1),limit:z.number().int().min(1).max(200).default(100)})},async({site,query,limit})=>toolText(await findFiles(site,query,limit)));
+  s.registerTool('text_search',{description:'Search bounded text file contents in the current source of truth. Binary and large files are skipped.',inputSchema:z.object({site:z.string(),query:z.string().min(1),max_files:z.number().int().min(1).max(200).default(50),max_bytes:z.number().int().min(1024).max(2097152).default(524288)})},async({site,query,max_files,max_bytes})=>toolText(await searchText(site,query,{maxFiles:max_files,maxBytes:max_bytes})));
+  s.registerTool('file_read',{description:'Read a text file from the current source of truth.',inputSchema:z.object({site:z.string(),path:z.string()})},async({site,path})=>toolText(await readRemoteText(site,path)));
+  s.registerTool('change_preview',{description:'Prepare safe file changes. content=null deletes. No production/source write yet.',inputSchema:z.object({site:z.string(),description:z.string().min(3),files:z.array(z.object({path:z.string(),content:z.string().nullable()})).min(1)})},async({site,description,files})=>toolText(await createPreview(site,files,description)));
+  s.registerTool('change_apply',{description:'Apply an approved preview with pre/post snapshots and health check. Git-deployed sites commit to their deployment branch.',inputSchema:z.object({preview_id:z.string().uuid()})},async({preview_id})=>toolText(await applyPreview(preview_id)));
+  s.registerTool('history_list',{description:'List recent recorded changes.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(1).max(100).default(30)})},async({site,limit})=>toolText(await listHistory(site,limit)));
+  s.registerTool('history_diff',{description:'Get Git diff for a recorded SiteOps change.',inputSchema:z.object({change_id:z.string().uuid()})},async({change_id})=>toolText(await changeDiff(change_id)));
+  s.registerTool('rollback_preview',{description:'Prepare rollback of a recorded change; does not write until change_apply.',inputSchema:z.object({change_id:z.string().uuid()})},async({change_id})=>toolText(await rollbackPreview(change_id)));
+  s.registerTool('site_backup',{description:'Create a full Git-backed SiteOps snapshot from the current source of truth.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await fullBackup(await getSite(site))));
+  s.registerTool('backup_status',{description:'Get scheduled backup state and the latest backup.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await backupStatus(site)));
+  s.registerTool('backups_list',{description:'List full backups.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(1).max(100).default(30)})},async({site,limit})=>toolText(await listBackups(await getSite(site),limit)));
+  s.registerTool('backup_restore_preview',{description:'Create a safe restore preview from a full backup. A fresh safety backup is created first.',inputSchema:z.object({backup_id:z.string().uuid()})},async({backup_id})=>toolText(await backupRestorePreview(backup_id)));
+  s.registerTool('seo_start',{description:'Start an asynchronous SEO crawl. Includes on-page checks, internal link graph, PageRank-style link strength and site-corpus WDF-IDF. Optional PageSpeed/Lighthouse requires a configured API key.',inputSchema:z.object({site:z.string(),max_pages:z.number().int().min(1).max(500).optional(),page_speed:z.enum(['none','homepage','all']).default('homepage'),page_speed_max_pages:z.number().int().min(1).max(50).default(10)})},async({site,max_pages,page_speed,page_speed_max_pages})=>toolText(await startSeoAudit(site,{maxPages:max_pages,pageSpeed:page_speed,pageSpeedMaxPages:page_speed_max_pages})));
+  s.registerTool('seo_run_status',{description:'Get status and summary of an SEO audit run.',inputSchema:z.object({run_id:z.string().uuid()})},async({run_id})=>toolText(await seoRunGet(run_id)));
+  s.registerTool('seo_latest',{description:'Get the latest SEO audit and page-level metrics for a website.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await seoLatest(site)));
+  s.registerTool('seo_page',{description:'Get full SEO details, WDF-IDF terms, Lighthouse values and outgoing links for one crawled page.',inputSchema:z.object({page_id:z.number().int().positive()})},async({page_id})=>toolText(await seoPageGet(page_id)));
+  s.registerTool('seo_graph',{description:'Get strongest pages and internal links from the latest completed crawl for graphing/site-structure analysis.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(5).max(100).default(30)})},async({site,limit})=>toolText(await seoGraph(site,limit)));
+  s.registerTool('seo_issues',{description:'List SEO issues from the latest crawl, optionally filtered by severity.',inputSchema:z.object({site:z.string(),level:z.enum(['error','warn','info']).optional(),limit:z.number().int().min(1).max(500).default(200)})},async({site,level,limit})=>toolText(await seoIssuesList(site,{level,limit})));
+  s.registerTool('seo_recommendations',{description:'Return prioritized SEO recommendations with affected URLs, categories and concrete remediation guidance from the latest audit.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await seoRecommendations(site)));
+  s.registerTool('seo_compare',{description:'Compare the two latest completed SEO audits and show score, issue, URL and metadata/content changes.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await seoCompare(site)));
+  s.registerTool('link_health',{description:'List broken or redirected internal/external links from the latest completed crawl with target status and response information.',inputSchema:z.object({site:z.string(),limit:z.number().int().min(1).max(1000).default(300)})},async({site,limit})=>toolText(await seoLinkHealth(site,{limit})));
+  s.registerTool('site_intelligence',{description:'Run a live infrastructure intelligence audit: security headers, DNS/mail hygiene, domain expiry, technology fingerprint and AI-search crawler accessibility.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await runSiteIntelligence(site)));
+  s.registerTool('site_intelligence_latest',{description:'Get the latest stored Site Intelligence result without running a new scan.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await siteIntelligenceLatest(site)));
+  s.registerTool('wordpress_inventory',{description:'Scan a managed WordPress source for core, plugin, theme and MU-plugin versions plus safe wp-config flags, with WordPress.org update availability where identifiable.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await wordpressInventory(site)));
+  s.registerTool('wordpress_update_plan',{description:'Return a read-only WordPress update plan for core, WordPress.org plugins and themes. Does not apply updates.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await wordpressUpdatePlan(site)));
+  s.registerTool('client_report_data',{description:'Return a client-ready operational report dataset combining uptime, incidents, backups, changes, SEO health and Site Intelligence.',inputSchema:z.object({site:z.string()})},async({site})=>toolText(await clientReportData(site)));
+  s.registerTool('settings_get',{description:'Get redacted global SiteOps settings. Secrets are never returned.',inputSchema:z.object({})},async()=>toolText(publicSettings()));
+  return s;
+}
+
+function dashboardAuth(req,reply){if(!cfg.dashboardUser||!cfg.dashboardPassword){reply.code(503).send('SiteOps dashboard authentication is not configured');return false;}const h=req.headers.authorization||'';if(!h.startsWith('Basic ')){reply.header('WWW-Authenticate','Basic realm="SiteOps"');reply.code(401).send('Authentication required');return false;}const decoded=Buffer.from(h.slice(6),'base64').toString(),i=decoded.indexOf(':'),u=i>=0?decoded.slice(0,i):'',p=i>=0?decoded.slice(i+1):'';if(!safeEqual(u,cfg.dashboardUser)||!safeEqual(p,cfg.dashboardPassword)){reply.header('WWW-Authenticate','Basic realm="SiteOps"');reply.code(401).send('Authentication required');return false;}return true;}
+function mcpAuth(req,reply){if(!cfg.mcpToken){reply.code(503).send({error:'MCP_API_TOKEN is not configured'});return false;}const h=req.headers.authorization||'',t=h.startsWith('Bearer ')?h.slice(7):'';if(!safeEqual(t,cfg.mcpToken)){reply.code(401).send({error:'unauthorized'});return false;}return true;}
+function page(title,body){return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=0.9.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main></body></html>`;}
+
+function mcpInfoPage(){
+  const base=String(cfg.publicBaseUrl||'https://siteops.lorzen.cloud').replace(/\/$/,'');
+  const endpoint=base+'/mcp',health=base+'/health';
+  const groups=[
+    ['Kontext','sites_list, site_get, site_overview, deployment_info, settings_get'],
+    ['Monitoring','site_status, monitor_history, incidents_list, incident_get'],
+    ['SEO & Intelligence','seo_start, seo_run_status, seo_latest, seo_page, seo_graph, seo_issues, seo_recommendations, seo_compare, link_health, site_intelligence, site_intelligence_latest'],
+    ['Konfiguration','site_update, site_connection_test, site_connection_update'],
+    ['Dateien','files_list, files_find, text_search, file_read'],
+    ['Änderungen','change_preview, change_apply, history_list, history_diff, rollback_preview'],
+    ['Backups & Reports','site_backup, backup_status, backups_list, backup_restore_preview, client_report_data']
+  ];
+  let tools='';for(const g of groups)tools+='<div class="tool-card"><strong>'+esc(g[0])+'</strong><p>'+g[1].split(', ').map(t=>'<code>'+esc(t)+'</code>').join(' ')+'</p></div>';
+  const ps='$bytes = New-Object byte[] 32\n$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()\n$rng.GetBytes($bytes)\n($bytes | ForEach-Object { $_.ToString("x2") }) -join ""';
+  const claude='mcp_servers: [{\n  type: "url",\n  url: "'+endpoint+'",\n  name: "siteops",\n  authorization_token: "DEIN_MCP_API_TOKEN"\n}]';
+  let html='<header><div><span class="eyebrow">AI / AUTOMATION</span><h1>MCP einrichten</h1><p>SiteOps als Remote-MCP für Website-Betrieb, Backups, SEO, Monitoring und freigegebene Änderungen.</p></div><span class="pill '+(cfg.mcpToken?'ok':'bad')+'">'+(cfg.mcpToken?'AUTH KONFIGURIERT':'TOKEN FEHLT')+'</span></header>';
+  html+='<div class="metrics big mcp-metrics"><span>Streamable HTTP<em>Transport</em></span><span>'+(cfg.mcpToken?'aktiv':'fehlt')+'<em>Bearer Auth</em></span><span>'+groups.reduce((n,g)=>n+g[1].split(', ').length,0)+'<em>Tools</em></span><span>0.9.0<em>SiteOps MCP</em></span></div>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">1 · SiteOps</span><h2>Server vorbereiten</h2></div></div><ol class="setup-steps"><li><strong>MCP_API_TOKEN in Hostinger setzen.</strong><span>Environment Variable der Node.js-App. Der Wert sollte lang und zufällig sein.</span></li><li><strong>PUBLIC_BASE_URL prüfen.</strong><span>Bei dir: <code>'+esc(base)+'</code></span></li><li><strong>Neu deployen.</strong><span>Danach muss <code>'+esc(health)+'</code> bei <code>missingConfig</code> keinen MCP_API_TOKEN mehr melden.</span></li><li><strong>MCP-Endpunkt verwenden.</strong><span><code>'+esc(endpoint)+'</code></span></li></ol><h3>Token unter Windows erzeugen</h3><pre class="codeblock"><code>'+esc(ps)+'</code></pre><div class="notice"><strong>Token nicht in Git speichern.</strong><span>Der MCP_API_TOKEN bleibt als Hostinger-Environment-Variable. SiteOps zeigt ihn absichtlich nirgendwo wieder an.</span></div></section>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">2 · Test</span><h2>MCP Inspector</h2></div></div><ol class="setup-steps"><li><strong>Inspector starten:</strong><span><code>npx @modelcontextprotocol/inspector</code></span></li><li><strong>Transport wählen:</strong><span>Streamable HTTP</span></li><li><strong>URL:</strong><span><code>'+esc(endpoint)+'</code></span></li><li><strong>Authorization Header:</strong><span><code>Bearer DEIN_MCP_API_TOKEN</code></span></li><li><strong>Verbinden und Tools prüfen.</strong><span>Mindestens <code>sites_list</code>, <code>site_overview</code>, <code>change_preview</code>, <code>seo_start</code> und <code>site_backup</code> sollten sichtbar sein.</span></li></ol></section>';
+  html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">3 · ChatGPT</span><h2>Custom MCP App</h2></div></div><ol class="setup-steps"><li>Entwicklermodus für Custom Apps/MCP aktivieren.</li><li>Unter <strong>Apps → Create</strong> eine neue App anlegen.</li><li>Remote-Endpunkt <code>'+esc(endpoint)+'</code> eintragen.</li><li>Authentifizierung auswählen und anschließend <strong>Scan Tools</strong> ausführen.</li><li>Die App als Draft testen und bei Schreibaktionen die Freigabe kontrollieren.</li></ol><div class="callout"><strong>Aktueller ChatGPT-Stand:</strong> Vollständige MCP-Schreib-/Änderungsaktionen werden derzeit für Business, Enterprise und Edu bereitgestellt; Pro kann Custom MCP im Entwicklermodus für Read/Fetch nutzen. Die genaue UI kann sich ändern.</div><div class="notice"><strong>Bearer-Hinweis</strong><span>SiteOps nutzt derzeit statischen Bearer-Token. Falls die ChatGPT-App-Erstellung in deinem Workspace dafür keine passende Auth-Option anbietet, ist für die native Verbindung ein OAuth-Flow die nächste SiteOps-Ausbaustufe.</span></div></section>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">4 · Claude</span><h2>Remote MCP</h2></div></div><p class="lead">Claude unterstützt Remote-MCP-Konnektoren. In Claude Web/Desktop werden Custom Connectors unter <strong>Customize → Connectors → Add custom connector</strong> angelegt. Für API-Nutzung kann der SiteOps-Bearer-Token direkt als <code>authorization_token</code> übergeben werden.</p><pre class="codeblock"><code>'+esc(claude)+'</code></pre><div class="notice"><strong>Claude Web/Auth</strong><span>Die native Connector-Oberfläche ist auf OAuth-orientierte Authentifizierung ausgelegt. Für den aktuellen statischen SiteOps-Bearer ist die Claude-API-Konfiguration eindeutig unterstützt; für die Web-Verbindung ist OAuth die sauberste nächste Ausbaustufe.</span></div></section></div>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">5 · Workflow</span><h2>So soll ein Agent mit SiteOps arbeiten</h2></div></div><ol class="workflow"><li><code>site_overview</code> für Status und Kontext</li><li><code>files_find</code> / <code>text_search</code> zur Orientierung</li><li><code>file_read</code> für relevante Dateien</li><li><code>change_preview</code> für den Änderungsvorschlag</li><li>Freigabe durch den Nutzer</li><li><code>change_apply</code> für die Ausführung</li><li><code>site_status</code> für die Nachkontrolle</li><li>Bei SEO: <code>seo_start</code> → <code>seo_latest</code> → <code>seo_page</code></li></ol></section>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">Tools</span><h2>Verfügbare Bereiche</h2></div></div><div class="tool-grid">'+tools+'</div></section>';
+  html+='<div class="notice"><strong>Sicherheitsmodell</strong><span>Secrets werden nie über MCP zurückgegeben. Dateiänderungen bleiben zweistufig: Preview zuerst, Apply erst nach Freigabe. Verbindungsänderungen werden vor dem Speichern getestet. Backups und Rollbacks bleiben nachvollziehbar versioniert.</span></div>';
+  return page('MCP einrichten',html);
+}
+function settingsPage(){
+  const s=publicSettings(),backupMiB=Math.round(s.backupMaxFileBytes/1024/1024),backupHours=Math.round(s.defaultBackupIntervalSeconds/360)/10;
+  return page('Einstellungen',`
+    <header><div><span class="eyebrow">System</span><h1>Einstellungen</h1><p>Zentrale Konfiguration für Backups, Standardwerte neuer Websites und Benachrichtigungen.</p></div><span class="pill ok">MySQL verbunden</span></header>
+    <form id="configForm" class="config-form">
+      <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Backup-Ziel</span><h2>GitHub</h2></div><span class="pill ${s.githubBackupTokenConfigured&&s.githubBackupRepo?'ok':''}">${s.githubBackupTokenConfigured&&s.githubBackupRepo?'KONFIGURIERT':'OFFEN'}</span></div>
+        <p class="lead">SiteOps legt Versionsstände aller verwalteten Websites in einem separaten privaten GitHub-Repository ab. Der Token wird verschlüsselt in MySQL gespeichert.</p>
+        <div class="formgrid">
+          <label>Backup-Repository <small>Format: Besitzer/Repository, z. B. derlorzen/lorzen-site-backups</small><input name="githubBackupRepo" value="${esc(s.githubBackupRepo)}" placeholder="derlorzen/lorzen-site-backups"></label>
+          <label>Branch <small>Normalerweise <code>main</code>.</small><input name="backupBranch" value="${esc(s.backupBranch)}"></label>
+          <label class="span2">GitHub Fine-grained PAT <small>${s.githubBackupTokenConfigured?'Ein Token ist gespeichert. Leer lassen, um ihn unverändert zu behalten.':'Benötigt Contents: Read and write sowie Metadata: Read für genau das Backup-Repository.'}</small><input name="githubBackupToken" type="password" autocomplete="new-password" placeholder="${s.githubBackupTokenConfigured?'Token bereits gespeichert':'github_pat_…'}"></label>
+          <label>Max. Dateigröße <small>Einzeldateien oberhalb dieses Limits werden nicht gesichert.</small><div class="inputsuffix"><input name="backupMaxFileMiB" type="number" min="1" max="90" value="${backupMiB}"><span>MiB</span></div></label>
+          <label>SiteOps Basis-URL <small>Für Links und externe Integrationen.</small><input name="publicBaseUrl" type="url" value="${esc(s.publicBaseUrl)}"></label>
+        </div>
+        <div class="buttonrow"><button type="button" class="ghost" id="testGitHub">GitHub-Verbindung testen</button><span class="inline-status" id="githubStatus"></span></div>
+      </section>
+
+      <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Neue Websites</span><h2>Standardwerte</h2></div></div>
+        <p class="lead">Diese Werte werden beim Anlegen einer neuen Website vorgeschlagen. Pro Website kannst du sie danach separat ändern.</p>
+        <div class="formgrid">
+          <label>Backup-Intervall <small>Empfehlung für normale Websites: 24 Stunden.</small><div class="inputsuffix"><input name="defaultBackupHours" type="number" min="0.25" max="720" step="0.25" value="${backupHours}"><span>Std.</span></div></label>
+          <label>Max. Dateien pro Backup <small>Schutz vor versehentlich zu großen Verzeichnissen.</small><input name="defaultBackupMaxFiles" type="number" min="100" max="200000" value="${s.defaultBackupMaxFiles}"></label>
+          <label>Monitoring-Intervall <small>Wie oft die Website geprüft wird.</small><div class="inputsuffix"><input name="defaultMonitorIntervalSeconds" type="number" min="30" max="86400" value="${s.defaultMonitorIntervalSeconds}"><span>Sek.</span></div></label>
+          <label>Fehler bis Alarm <small>Verhindert Alarm bei einem einzelnen kurzen Aussetzer.</small><input name="defaultMonitorFailureThreshold" type="number" min="1" max="20" value="${s.defaultMonitorFailureThreshold}"></label>
+          <label>SSL-Warnung <small>Alarm, wenn das Zertifikat in weniger als X Tagen abläuft.</small><div class="inputsuffix"><input name="defaultSslWarnDays" type="number" min="1" max="365" value="${s.defaultSslWarnDays}"><span>Tage</span></div></label>
+        </div>
+      </section>
+
+      <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Alarme</span><h2>Benachrichtigungen</h2></div></div>
+        <p class="lead">E-Mail und Webhook können parallel genutzt werden. Das SMTP-Passwort wird wie der GitHub-Token verschlüsselt gespeichert.</p>
+        <div class="formgrid">
+          <label>Alarm-E-Mail <small>Empfänger für DOWN-, RECOVERED- und Backup-Fehler.</small><input name="alertEmail" type="email" value="${esc(s.alertEmail)}" placeholder="kai@example.de"></label>
+          <label>Webhook-URL <small>Optional, z. B. für eigene Automationen.</small><input name="webhook" type="url" value="${esc(s.webhook)}" placeholder="https://…"></label>
+          <label>SMTP-Host<input name="smtpHost" value="${esc(s.smtpHost)}" placeholder="smtp.example.de"></label>
+          <label>SMTP-Port<input name="smtpPort" type="number" min="1" max="65535" value="${s.smtpPort}"></label>
+          <label>SMTP-Benutzer<input name="smtpUser" value="${esc(s.smtpUser)}"></label>
+          <label>SMTP-Passwort <small>${s.smtpPasswordConfigured?'Passwort gespeichert – leer lassen für unverändert.':'Noch kein Passwort gespeichert.'}</small><input name="smtpPassword" type="password" autocomplete="new-password" placeholder="${s.smtpPasswordConfigured?'Passwort bereits gespeichert':'Passwort'}"></label>
+          <label>Absender<input name="smtpFrom" value="${esc(s.smtpFrom)}" placeholder="SiteOps <siteops@lorzen.cloud>"></label>
+          <label class="check standalone"><input name="smtpSecure" type="checkbox" ${s.smtpSecure?'checked':''}> SMTP direkt mit TLS verbinden</label>
+        </div>
+        <div class="buttonrow"><button type="button" class="ghost" id="testAlert">Testbenachrichtigung senden</button><span class="inline-status" id="alertStatus"></span></div>
+      </section>
+
+      <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">SEO / Lighthouse</span><h2>SEO-Audits</h2></div><span class="pill ${s.pageSpeedApiKeyConfigured?'ok':''}">${s.pageSpeedApiKeyConfigured?'PAGESPEED AKTIV':'OHNE PAGESPEED'}</span></div>
+        <p class="lead">Der normale SEO-Crawl funktioniert ohne externe API. Für echte Lighthouse-/PageSpeed-Werte kann optional ein Google PageSpeed Insights API-Key hinterlegt werden.</p>
+        <div class="formgrid">
+          <label>Standard: maximale Seiten pro Crawl <small>Schützt große Websites vor sehr langen Crawls. Pro Lauf kann der Wert angepasst werden.</small><input name="seoMaxPages" type="number" min="1" max="500" value="${s.seoMaxPages||100}"></label>
+          <label class="span2">Google PageSpeed Insights API-Key <small>${s.pageSpeedApiKeyConfigured?'API-Key gespeichert – leer lassen für unverändert.':'Optional. Benötigt für Lighthouse Performance, Accessibility, Best Practices und SEO.'}</small><input name="pageSpeedApiKey" type="password" autocomplete="new-password" placeholder="${s.pageSpeedApiKeyConfigured?'API-Key bereits gespeichert':'AIza…'}"></label>
+          <label class="span2">Öffentliche Test-URL <small>Muss ohne Login öffentlich als HTML erreichbar sein. SiteOps selbst ist wegen Basic Auth kein geeignetes Testziel.</small><input name="pageSpeedTestUrl" type="url" value="https://example.com/" placeholder="https://deine-website.de/"></label>
+        </div>
+        <div class="buttonrow"><button type="button" class="ghost" id="testPageSpeed">PageSpeed API testen</button><span class="inline-status" id="pageSpeedStatus"></span></div>
+      </section>
+
+      <div class="sticky-save"><button type="submit">Einstellungen speichern</button><span id="configStatus"></span></div>
+    </form>
+    <script>
+    const form=document.getElementById('configForm');
+    function payload(){
+      const fd=new FormData(form);
+      return {
+        publicBaseUrl:fd.get('publicBaseUrl'),githubBackupRepo:fd.get('githubBackupRepo').trim(),githubBackupToken:fd.get('githubBackupToken'),
+        backupBranch:fd.get('backupBranch').trim(),backupMaxFileBytes:Number(fd.get('backupMaxFileMiB'))*1024*1024,
+        defaultBackupIntervalSeconds:Math.round(Number(fd.get('defaultBackupHours'))*3600),defaultBackupMaxFiles:Number(fd.get('defaultBackupMaxFiles')),
+        defaultMonitorIntervalSeconds:Number(fd.get('defaultMonitorIntervalSeconds')),defaultMonitorFailureThreshold:Number(fd.get('defaultMonitorFailureThreshold')),
+        defaultSslWarnDays:Number(fd.get('defaultSslWarnDays')),alertEmail:fd.get('alertEmail').trim(),webhook:fd.get('webhook').trim(),
+        smtpHost:fd.get('smtpHost').trim(),smtpPort:Number(fd.get('smtpPort')),smtpSecure:form.smtpSecure.checked,smtpUser:fd.get('smtpUser').trim(),
+        smtpPassword:fd.get('smtpPassword'),smtpFrom:fd.get('smtpFrom').trim(),
+        seoMaxPages:Number(fd.get('seoMaxPages')),pageSpeedApiKey:fd.get('pageSpeedApiKey')
+      };
+    }
+    form.onsubmit=async e=>{e.preventDefault();configStatus.textContent='Speichere…';const r=await fetch('/api/settings',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(payload())});const x=await r.json();configStatus.textContent=r.ok?'Gespeichert.':'Fehler: '+(x.message||x.error||JSON.stringify(x));if(r.ok)setTimeout(()=>location.reload(),500);};
+    testGitHub.onclick=async()=>{githubStatus.textContent='Prüfe…';const p=payload();const r=await fetch('/api/settings/github-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({githubBackupRepo:p.githubBackupRepo,githubBackupToken:p.githubBackupToken,backupBranch:p.backupBranch})}),x=await r.json();githubStatus.textContent=r.ok?'✓ '+x.repository+' erreichbar und privat':'✗ '+(x.message||x.error||JSON.stringify(x));};
+    testAlert.onclick=async()=>{alertStatus.textContent='Sende…';const r=await fetch('/api/settings/alert-test',{method:'POST'}),x=await r.json();alertStatus.textContent=r.ok?'✓ Test ausgelöst':'✗ '+(x.message||x.error||JSON.stringify(x));};
+    testPageSpeed.onclick=async()=>{pageSpeedStatus.textContent='Prüfe…';const p=payload(),url=String(form.elements.namedItem('pageSpeedTestUrl')?.value||'').trim();const r=await fetch('/api/settings/pagespeed-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pageSpeedApiKey:p.pageSpeedApiKey,url})}),x=await r.json();pageSpeedStatus.textContent=r.ok?'✓ '+x.url+' · Performance '+(x.result?.scores?.performance??'–')+' · SEO '+(x.result?.scores?.seo??'–'):'✗ '+(x.message||x.error||JSON.stringify(x));};
+    </script>`);
+}
+function setupPage(){
+  return page('Website hinzufügen',`
+    <header><div><span class="eyebrow">Neue Website</span><h1>Website hinzufügen</h1><p>Lege zuerst fest, was für eine Website es ist und wie sie deployed wird. SiteOps behandelt einen Hostinger-Git-Deploy anders als einen klassischen FTP-/SFTP-Webspace.</p></div></header>
+    <form id="siteForm" class="config-form">
+      <section class="form-card">
+        <div class="sectionhead"><div><span class="eyebrow">1 · Zuordnung</span><h2>Website & Deployment</h2></div></div>
+        <div class="formgrid">
+          <label>Anzeigename <small>Nur für SiteOps, z. B. „Dagos Shop“ oder „HSG Angeln“.</small><input name="name" required placeholder="Dagos Shop"></label>
+          <label>Domain <small>Ohne https:// und ohne Pfad.</small><input name="domain" required placeholder="dagos.shop"></label>
+          <label>Slug <small>Interne kurze Kennung. Wird aus der Domain vorgeschlagen.</small><input name="slug" required pattern="[a-z0-9-]+" placeholder="dagos-shop"></label>
+          <label>Website-Typ <small>Bestimmt spätere Prüfungen und typische Ausschlüsse.</small><select name="siteType"><option value="wordpress">WordPress</option><option value="php" selected>PHP / HTML</option><option value="static">Statische Website</option><option value="node">Node.js Web App</option></select></label>
+          <label class="span2">Deployment-Methode <small>Bei Hostinger Git ist das GitHub-Repository die Source of Truth. SiteOps schreibt dann nicht direkt auf den Live-Webspace.</small><select name="deploymentMode"><option value="webspace" selected>Direkter Webspace – SFTP / FTPS / FTP</option><option value="hostinger_git">Hostinger Git Deploy – GitHub</option></select></label>
+        </div>
+      </section>
+
+      <section class="form-card" id="webspaceSection">
+        <div class="sectionhead"><div><span class="eyebrow">2 · Webspace</span><h2>Direkter Dateizugriff</h2></div></div>
+        <div class="notice"><strong>SFTP ist die erste Wahl.</strong><span>Nutze FTPS oder unverschlüsseltes FTP nur, wenn der Hoster kein SFTP anbietet. Zugangsdaten werden verschlüsselt gespeichert.</span></div>
+        <div class="formgrid">
+          <label>Verbindungsart <small>SFTP verschlüsselt die komplette Verbindung.</small><select name="protocol"><option value="sftp" selected>SFTP – empfohlen</option><option value="ftps">FTPS</option><option value="ftp">FTP – unverschlüsselt</option></select></label>
+          <label>Port <small>SFTP meist 22, FTP/FTPS meist 21.</small><input name="port" type="number" value="22"></label>
+          <label class="span2">Host / Server <small>Der Servername des Hosters, nicht zwingend die Website-Domain.</small><input name="host" placeholder="ssh.example-host.de"></label>
+          <label>Benutzername <small>FTP-/SFTP-Benutzer des Webspaces.</small><input name="username" autocomplete="username"></label>
+          <label>Passwort <small>Wird mit dem SiteOps-Master-Key verschlüsselt gespeichert.</small><input name="password" type="password" autocomplete="new-password"></label>
+          <label class="span2">Webroot / Remote Root <small>Der Ordner, in dem die Website tatsächlich liegt. Wenn der Login direkt dort startet, ist <code>/</code> richtig.</small><input name="remoteRoot" value="/" placeholder="/"></label>
+        </div>
+      </section>
+
+      <section class="form-card" id="gitSection" hidden>
+        <div class="sectionhead"><div><span class="eyebrow">2 · Hostinger Git</span><h2>GitHub als Source of Truth</h2></div><span class="pill">AUTO-DEPLOY</span></div>
+        <div class="notice"><strong>Kein SFTP-Schreiben bei Git-Deploy.</strong><span>SiteOps committed Änderungen gesammelt in genau einem Commit auf den Deployment-Branch. Hostinger übernimmt danach den automatischen Build/Deploy. In hPanel muss das Repository bereits mit der Website verbunden und Auto-Deployment aktiviert sein.</span></div>
+        <div class="formgrid">
+          <label class="span2">GitHub-Repository <small>Format Besitzer/Repository, z. B. <code>derlorzen/lorzen.de</code>.</small><input name="sourceRepository" placeholder="derlorzen/projekt"></label>
+          <label>Deployment-Branch <small>Der Branch, den Hostinger deployed. Normalerweise <code>main</code>.</small><input name="sourceBranch" value="main"></label>
+          <label>Repository-Unterordner <small>Optional. Leer lassen, wenn die Website im Repository-Root liegt.</small><input name="sourceRoot" placeholder="z. B. website"></label>
+          <label class="span2">GitHub Fine-grained PAT für dieses Quell-Repo <small>Benötigt <strong>Contents: Read and write</strong>. Dieser Token ist getrennt vom Backup-Token und wird verschlüsselt gespeichert.</small><input name="gitToken" type="password" autocomplete="new-password" placeholder="github_pat_…"></label>
+          <label>Hostinger Zielverzeichnis <small>Bei klassischem PHP/HTML-Git-Deploy meist <code>public_html</code>. Dient SiteOps zur Dokumentation.</small><input name="hostingerTargetDirectory" value="public_html"></label>
+          <label>Live-Domain <small>SiteOps überwacht weiterhin die echte Website nach dem Deploy.</small><input value="wird aus der Domain oben übernommen" disabled></label>
+        </div>
+        <div class="callout"><strong>Ablauf:</strong> SiteOps prüft und ändert GitHub → ein Commit landet auf dem Deployment-Branch → Hostinger erkennt den Push und deployed → Monitoring prüft die Live-Domain.</div>
+      </section>
+
+      <section class="form-card">
+        <div class="sectionhead"><div><span class="eyebrow">3 · Verbindung</span><h2>Zugriff prüfen</h2></div></div>
+        <p class="lead" id="connectionHelp">Teste den Webspace, bevor du die Website speicherst.</p>
+        <div class="buttonrow"><button type="button" class="ghost" id="testConnection">Webspace-Verbindung testen</button><span class="inline-status" id="connectionStatus"></span></div>
+        <div id="connectionFiles" class="file-preview"></div>
+      </section>
+
+      <section class="form-card">
+        <div class="sectionhead"><div><span class="eyebrow">4 · Betrieb</span><h2>Backup & Monitoring</h2></div></div>
+        <p class="lead">Auch Git-deployte Websites erhalten SiteOps-Snapshots im separaten Backup-Repository. Monitoring prüft immer die öffentliche Live-Domain.</p>
+        <div class="formgrid">
+          <label class="check standalone"><input name="backupEnabled" type="checkbox" checked> Automatische Backups aktivieren</label>
+          <label>Backup-Intervall <div class="inputsuffix"><input name="backupHours" type="number" min="0.25" max="720" step="0.25" value="${Math.round(cfg.defaultBackupIntervalSeconds/360)/10}"><span>Std.</span></div></label>
+          <label>Max. Dateien pro Backup<input name="backupMaxFiles" type="number" min="100" max="200000" value="${cfg.defaultBackupMaxFiles}"></label>
+          <label class="check standalone"><input name="monitorEnabled" type="checkbox" checked> Erreichbarkeit überwachen</label>
+          <label>Prüfintervall <div class="inputsuffix"><input name="monitorIntervalSeconds" type="number" min="30" max="86400" value="${cfg.defaultMonitorIntervalSeconds}"><span>Sek.</span></div></label>
+          <label>Fehler bis Alarm<input name="monitorFailureThreshold" type="number" min="1" max="20" value="${cfg.defaultMonitorFailureThreshold}"></label>
+          <label>SSL-Warnung <div class="inputsuffix"><input name="sslWarnDays" type="number" min="1" max="365" value="${cfg.defaultSslWarnDays}"><span>Tage</span></div></label>
+        </div>
+      </section>
+
+      <div class="sticky-save"><button type="submit">Website anlegen</button><span id="saveSiteStatus"></span></div>
+    </form>
+    <script>
+    const form=document.getElementById('siteForm');
+    const field=name=>form.elements.namedItem(name);
+    const protocol=field('protocol');
+    const port=field('port');
+    const domain=field('domain');
+    const slug=field('slug');
+    const deployment=field('deploymentMode');
+    const webspaceSection=document.getElementById('webspaceSection');
+    const gitSection=document.getElementById('gitSection');
+    const connectionHelp=document.getElementById('connectionHelp');
+    const testConnectionButton=document.getElementById('testConnection');
+    const connectionStatusEl=document.getElementById('connectionStatus');
+    const connectionFilesEl=document.getElementById('connectionFiles');
+    const saveSiteStatusEl=document.getElementById('saveSiteStatus');
+
+    let slugTouched=false;
+    slug.addEventListener('input',()=>slugTouched=true);
+
+    function stripProtocol(value){
+      let v=String(value||'').trim();
+      if(v.toLowerCase().startsWith('https://'))v=v.slice(8);
+      else if(v.toLowerCase().startsWith('http://'))v=v.slice(7);
+      if(v.toLowerCase().startsWith('www.'))v=v.slice(4);
+      while(v.endsWith('/'))v=v.slice(0,-1);
+      return v;
+    }
+    function trimSlashes(value){
+      let v=String(value||'').trim();
+      while(v.startsWith('/'))v=v.slice(1);
+      while(v.endsWith('/'))v=v.slice(0,-1);
+      return v;
+    }
+    function slugify(value){
+      return stripProtocol(value).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    }
+
+    domain.addEventListener('input',()=>{if(!slugTouched)slug.value=slugify(domain.value);});
+    protocol.addEventListener('change',()=>{port.value=protocol.value==='sftp'?22:21;});
+
+    function syncDeployment(){
+      const git=deployment.value==='hostinger_git';
+      webspaceSection.hidden=git;
+      gitSection.hidden=!git;
+      webspaceSection.style.display=git?'none':'';
+      gitSection.style.display=git?'':'none';
+      webspaceSection.dataset.visible=git?'false':'true';
+      gitSection.dataset.visible=git?'true':'false';
+      testConnectionButton.textContent=git?'GitHub-Quelle testen':'Webspace-Verbindung testen';
+      connectionHelp.textContent=git
+        ?'Prüft Repository, Branch und Schreibzugriff auf das GitHub-Quell-Repository.'
+        :'Teste den Webspace, bevor du die Website speicherst.';
+      connectionStatusEl.textContent='';
+      connectionFilesEl.innerHTML='';
+    }
+
+    deployment.addEventListener('change',syncDeployment);
+    syncDeployment();
+
+    function data(){
+      const fd=new FormData(form);
+      return {
+        name:String(fd.get('name')||'').trim(),
+        domain:stripProtocol(fd.get('domain')),
+        slug:String(fd.get('slug')||'').trim(),
+        siteType:fd.get('siteType'),
+        deploymentMode:fd.get('deploymentMode'),
+        protocol:fd.get('protocol'),
+        host:String(fd.get('host')||'').trim(),
+        port:Number(fd.get('port')),
+        username:String(fd.get('username')||'').trim(),
+        password:String(fd.get('password')||''),
+        remoteRoot:String(fd.get('remoteRoot')||'/').trim()||'/',
+        sourceRepository:trimSlashes(fd.get('sourceRepository')),
+        sourceBranch:String(fd.get('sourceBranch')||'main').trim()||'main',
+        sourceRoot:trimSlashes(fd.get('sourceRoot')),
+        gitToken:String(fd.get('gitToken')||''),
+        hostingerTargetDirectory:String(fd.get('hostingerTargetDirectory')||'public_html').trim()||'public_html',
+        backupEnabled:field('backupEnabled').checked,
+        backupIntervalSeconds:Math.round(Number(fd.get('backupHours'))*3600),
+        backupMaxFiles:Number(fd.get('backupMaxFiles')),
+        monitorEnabled:field('monitorEnabled').checked,
+        monitorIntervalSeconds:Number(fd.get('monitorIntervalSeconds')),
+        monitorFailureThreshold:Number(fd.get('monitorFailureThreshold')),
+        sslWarnDays:Number(fd.get('sslWarnDays'))
+      };
+    }
+
+    testConnectionButton.addEventListener('click',async()=>{
+      connectionStatusEl.textContent='Prüfe…';
+      connectionFilesEl.innerHTML='';
+      try{
+        const r=await fetch('/api/site-connection-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data())});
+        const x=await r.json();
+        if(!r.ok){
+          connectionStatusEl.textContent='✗ '+(x.message||x.error||JSON.stringify(x));
+          return;
+        }
+        connectionStatusEl.textContent='✓ '+(x.mode==='hostinger_git'?'GitHub-Quelle erreichbar':'Verbindung erfolgreich');
+        const prefix=x.repository?'<strong>'+x.repository+' · '+x.branch+'</strong><br>':'';
+        connectionFilesEl.innerHTML=prefix+(x.entries.length
+          ?'Gefundene Einträge: '+x.entries.map(e=>(e.type==='directory'?'Ordner: ':'Datei: ')+e.name).join(' · ')
+          :'Verbindung erfolgreich, Ordner ist leer.');
+      }catch(error){
+        connectionStatusEl.textContent='✗ '+String(error?.message||error);
+      }
+    });
+
+    form.addEventListener('submit',async e=>{
+      e.preventDefault();
+      saveSiteStatusEl.textContent='Lege Website an…';
+      try{
+        const r=await fetch('/api/sites',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data())});
+        const x=await r.json();
+        if(!r.ok){
+          saveSiteStatusEl.textContent='Fehler: '+(x.message||x.error||JSON.stringify(x));
+          return;
+        }
+        location.href='/sites/'+encodeURIComponent(x.slug);
+      }catch(error){
+        saveSiteStatusEl.textContent='Fehler: '+String(error?.message||error);
+      }
+    });
+    </script>`);
+}
+
+function seoScoreValue(value){return value==null?'–':Math.round(Number(value));}
+function seoMetricMs(value){return value==null?'–':Math.round(Number(value))+' ms';}
+function seoGraphSvg(graph){
+  const nodes=(graph.nodes||[]).slice(0,24);
+  if(!nodes.length)return '<div class="empty-state">Noch keine Linkdaten.</div>';
+  const nodeSet=new Set(nodes.map(n=>n.url));
+  const depths=[...new Set(nodes.map(n=>n.depth==null?'Sitemap':String(Math.min(5,n.depth))))];
+  depths.sort((a,b)=>a==='Sitemap'?1:b==='Sitemap'?-1:Number(a)-Number(b));
+  const width=1120,height=520,padX=80,padY=52,colGap=depths.length>1?(width-padX*2)/(depths.length-1):0,pos=new Map();
+  for(let di=0;di<depths.length;di++){
+    const d=depths[di],group=nodes.filter(n=>(n.depth==null?'Sitemap':String(Math.min(5,n.depth)))===d),gap=(height-padY*2)/(group.length+1);
+    group.forEach((n,i)=>pos.set(n.url,{x:padX+di*colGap,y:padY+(i+1)*gap}));
+  }
+  const maxRank=Math.max(...nodes.map(n=>Number(n.pagerank||0)),0.000001);
+  let svg='<div class="seo-graph-wrap"><svg class="seo-graph" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Interne Seitenstruktur">';
+  depths.forEach((d,i)=>svg+='<text class="seo-depth-label" x="'+(padX+i*colGap)+'" y="24" text-anchor="middle">'+esc(d==='Sitemap'?'Sitemap / nicht erreicht':'Tiefe '+d)+'</text>');
+  for(const e of (graph.edges||[]).filter(e=>nodeSet.has(e.source_url)&&nodeSet.has(e.target_url)).slice(0,220)){
+    const a=pos.get(e.source_url),b=pos.get(e.target_url);if(a&&b)svg+='<line x1="'+a.x+'" y1="'+a.y+'" x2="'+b.x+'" y2="'+b.y+'" class="seo-edge"/>';
+  }
+  for(const n of nodes){
+    const p=pos.get(n.url),strength=Math.max(0,Number(n.pagerank||0)/maxRank),r=8+Math.sqrt(strength)*15,label=String(n.title||n.path||n.url).replace(/\s+/g,' ').slice(0,28);
+    svg+='<g class="seo-node"><a href="/seo/pages/'+n.id+'"><circle cx="'+p.x+'" cy="'+p.y+'" r="'+r.toFixed(1)+'"/><text x="'+p.x+'" y="'+(p.y+r+15)+'" text-anchor="middle">'+esc(label)+'</text><title>'+esc(n.url)+' · Stärke '+(strength*100).toFixed(1)+'%</title></a></g>';
+  }
+  return svg+'</svg></div>';
+}
+async function seoDashboardPage(slug){
+  const site=await getSite(slug),latest=await seoLatest(site.id),graph=await seoGraph(site.id,24),comparison=await seoCompare(site.id),run=latest.run,summary=run?.summary||{},pages=latest.pages||[];
+  const statusClass=run?.status==='completed'?'ok':run?.status==='failed'?'bad':'',statusLabel=run?String(run.status).toUpperCase():'NO DATA';
+  const top=pages.slice().sort((a,b)=>Number(b.pagerank||0)-Number(a.pagerank||0)).slice(0,10),maxRank=Math.max(...top.map(p=>Number(p.pagerank||0)),0.000001);
+  let strength='';
+  top.forEach((p,i)=>{strength+='<a class="strength-row" href="/seo/pages/'+p.id+'"><span class="strength-rank">'+(i+1)+'</span><span class="strength-label"><strong>'+esc(p.title||p.path)+'</strong><small>'+esc(p.path)+'</small></span><span class="strength-bar"><i style="width:'+Math.max(3,Number(p.pagerank||0)/maxRank*100).toFixed(1)+'%"></i></span><span class="strength-num">'+(p.incoming_links||0)+' in</span></a>';});
+  if(!strength)strength='<div class="empty-state">Noch keine Daten.</div>';
+  let rows='';
+  for(const p of pages){
+    const issues=Array.isArray(p.issues)?p.issues:[],err=issues.filter(x=>x.level==='error').length,warn=issues.filter(x=>x.level==='warn').length,mob=p.lighthouse_mobile||{},sig=p.signals||{};
+    rows+='<tr><td><a href="/seo/pages/'+p.id+'"><strong>'+esc(p.title||'(ohne Title)')+'</strong><small class="table-sub">'+esc(p.path)+'</small></a></td><td><span class="pill '+(p.status_code===200?'ok':'bad')+'">'+(p.status_code??'–')+'</span>'+(sig.redirected?' <small>↪</small>':'')+'</td><td>'+(p.depth??'Sitemap')+'</td><td>'+p.incoming_links+'</td><td>'+p.internal_links+'</td><td>'+p.word_count+'</td><td>'+p.response_ms+' ms</td><td>'+(err?'<span class="issue-count error">'+err+'</span>':'')+(warn?' <span class="issue-count warn">'+warn+'</span>':'')+(!err&&!warn?'–':'')+'</td><td>'+(mob.scores?.performance??'–')+'</td><td>'+(mob.scores?.seo??'–')+'</td></tr>';
+  }
+  if(!rows)rows='<tr><td colspan="10">Noch kein abgeschlossener Crawl.</td></tr>';
+  let categories='';
+  for(const [key,c] of Object.entries(summary.categoryScores||{}))categories+='<div class="category-card"><strong>'+c.score+'</strong><span>'+esc(c.label||key)+'</span><small>'+c.issues+' Issues</small></div>';
+  if(!categories)categories='<div class="empty-state">Nach dem ersten 0.9-Crawl erscheinen hier die Kategorien.</div>';
+  let recs='';
+  for(const r of summary.recommendations||[])recs+='<div class="recommendation"><span class="rec-meta">'+esc(r.level)+' · '+esc(r.category)+'</span><div><strong>'+esc(r.title||r.code)+'</strong><p>'+esc(r.fix||'')+'</p></div><span class="rec-count">'+r.count+'×</span></div>';
+  if(!recs)recs='<div class="empty-state">Keine priorisierten Empfehlungen vorhanden.</div>';
+  let trend='';
+  if(comparison.available){
+    const d=comparison.delta||{},cls=n=>n>0?'delta-up':n<0?'delta-down':'delta-neutral',sign=n=>n>0?'+':'';
+    trend='<div class="notice"><strong>Seit dem letzten Audit</strong><span>Health <b class="'+cls(d.healthScore)+'">'+sign(d.healthScore)+d.healthScore+'</b> · Fehler <b class="'+cls(-d.errors)+'">'+sign(d.errors)+d.errors+'</b> · Warnungen <b class="'+cls(-d.warnings)+'">'+sign(d.warnings)+d.warnings+'</b> · Seiten '+sign(d.pages)+d.pages+' · '+comparison.added.length+' neu · '+comparison.removed.length+' entfernt · '+comparison.changed.length+' verändert</span></div>';
+  }
+  let html='<a class="backlink" href="/sites/'+esc(site.slug)+'">← '+esc(site.name)+'</a>';
+  html+='<header><div><span class="eyebrow">SEO SUITE 0.9</span><h1>SEO · '+esc(site.name)+'</h1><p>Technisches SEO, Indexierbarkeit, Duplikate, Link Health, Seitenarchitektur, WDF×IDF, Lighthouse und AI-/GEO-Signale in einem Audit.</p></div><div class="actions"><a class="button ghost" href="/sites/'+esc(site.slug)+'/intelligence">Site Intelligence</a><span class="pill '+statusClass+'">'+statusLabel+'</span></div></header>';
+  html+='<section class="seo-run-panel"><form id="seoRunForm" class="seo-run-form"><label>Max. Seiten<input name="maxPages" type="number" min="1" max="500" value="'+(run?.max_pages||cfg.seoMaxPages||100)+'"></label><label>PageSpeed / Lighthouse<select name="pageSpeed"><option value="homepage">Startseite</option><option value="all">Mehrere Seiten</option><option value="none">Nicht abrufen</option></select></label><label>Max. Lighthouse-Seiten<input name="pageSpeedMaxPages" type="number" min="1" max="50" value="10"></label><button type="submit">Komplett-Audit starten</button><span id="seoRunState"></span></form><p class="lead">Der Crawl respektiert robots.txt, nutzt Sitemaps, prüft interne und externe Links und erzeugt zusätzlich einen Site-Intelligence-Scan.</p></section>';
+  if(run?.status==='running')html+='<div class="notice"><strong>Crawl läuft</strong><span>Gestartet '+new Date(run.started_at).toLocaleString('de-DE')+'. Die Seite aktualisiert sich automatisch.</span></div>';
+  if(run?.status==='failed')html+='<div class="notice bad"><strong>SEO-Crawl fehlgeschlagen</strong><span>'+esc(run.error||'Unbekannter Fehler')+'</span></div>';
+  if(run?.status==='completed'){
+    html+='<div class="metrics big seo-metrics"><span>'+(summary.healthScore??'–')+'<em>SEO Health</em></span><span>'+(summary.pages??pages.length)+'<em>Seiten</em></span><span>'+(summary.issues?.error??0)+'<em>Fehler</em></span><span>'+(summary.issues?.warn??0)+'<em>Warnungen</em></span><span>'+((summary.linkHealth?.brokenInternal??0)+(summary.linkHealth?.brokenExternal??0))+'<em>Defekte Links</em></span><span>'+(summary.siteIntelligence?.scores?.overall??'–')+'<em>Intelligence</em></span></div>';
+    html+=trend;
+    html+='<section><div class="sectionhead"><div><span class="eyebrow">Health</span><h2>Audit-Kategorien</h2></div><small>Score pro Themenbereich aus Schwere und Häufigkeit der gefundenen Issues.</small></div><div class="category-grid">'+categories+'</div></section>';
+    html+='<section><div class="sectionhead"><div><span class="eyebrow">Prioritäten</span><h2>Was zuerst verbessert werden sollte</h2></div><small>Nach Schwere und Anzahl betroffener URLs sortiert.</small></div><div class="recommendation-list">'+recs+'</div></section>';
+    html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">Linkgraph</span><h2>Seitenstruktur</h2></div><small>Kreisgröße = relative interne Linkstärke.</small></div>'+seoGraphSvg(graph)+'</section><section><div class="sectionhead"><div><span class="eyebrow">Interne Autorität</span><h2>Stärkste Seiten</h2></div><small>PageRank-artige Berechnung aus internen Links.</small></div><div class="strength-list">'+strength+'</div></section></div>';
+    html+='<section><div class="sectionhead"><div><span class="eyebrow">Onpage</span><h2>Alle gecrawlten Seiten</h2></div><small>'+pages.length+' URLs · Detailansicht mit Metadaten, Signalen, WDF×IDF, Linkstatus und Lighthouse.</small></div><div class="tablewrap"><table><thead><tr><th>Seite</th><th>HTTP</th><th>Tiefe</th><th>In</th><th>Out</th><th>Wörter</th><th>Response</th><th>Issues</th><th>Perf. M</th><th>SEO M</th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
+  }else if(!run)html+='<section><div class="empty-state"><strong>Noch kein SEO-Audit vorhanden.</strong><p>Starte oben den ersten Komplett-Crawl.</p></div></section>';
+  html+='<script>const seoForm=document.getElementById("seoRunForm"),seoState=document.getElementById("seoRunState");seoForm.addEventListener("submit",async e=>{e.preventDefault();const fd=new FormData(seoForm),data={maxPages:Number(fd.get("maxPages")),pageSpeed:fd.get("pageSpeed"),pageSpeedMaxPages:Number(fd.get("pageSpeedMaxPages"))};seoState.textContent="Starte…";const r=await fetch("/api/sites/'+encodeURIComponent(site.slug)+'/seo-runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(data)}),x=await r.json();seoState.textContent=r.ok?"✓ Audit gestartet":"✗ "+(x.message||x.error||JSON.stringify(x));if(r.ok)setTimeout(()=>location.reload(),800);});'+(run?.status==='running'?'setTimeout(()=>location.reload(),4000);':'')+'</script>';
+  return page('SEO · '+site.name,html);
+}
+async function seoPageDetailPage(id){
+  const p=await seoPageGet(Number(id)),site=await getSite(p.site_id),issues=Array.isArray(p.issues)?p.issues:[],terms=Array.isArray(p.wdfidf)?p.wdfidf:[],h1=Array.isArray(p.h1)?p.h1:[],h2=Array.isArray(p.h2)?p.h2:[],links=p.links||[],mobile=p.lighthouse_mobile||null,desktop=p.lighthouse_desktop||null,signals=p.signals||{};
+  let issueRows='';issues.forEach(i=>issueRows+='<li class="seo-issue '+esc(i.level)+'"><strong>'+esc(i.title||i.code)+'</strong><span>'+esc(i.text)+(i.fix?'<small class="table-sub">Fix: '+esc(i.fix)+'</small>':'')+'</span></li>');if(!issueRows)issueRows='<li class="seo-issue ok"><span>Keine Standardprobleme erkannt.</span></li>';
+  let termRows='';terms.forEach(t=>termRows+='<tr><td><strong>'+esc(t.term)+'</strong></td><td>'+t.freq+'</td><td>'+t.wdf+'</td><td>'+t.idf+'</td><td>'+t.score+'</td></tr>');if(!termRows)termRows='<tr><td colspan="5">Keine ausreichenden Textdaten.</td></tr>';
+  let linkRows='';links.slice(0,150).forEach(l=>linkRows+='<tr><td>'+(l.internal_link?'intern':'extern')+'</td><td><a href="'+esc(l.target_url)+'" target="_blank" rel="noopener">'+esc(l.target_url)+'</a>'+(l.target_location?'<small class="table-sub">→ '+esc(l.target_location)+'</small>':'')+'</td><td>'+esc(l.anchor_text||'–')+'</td><td>'+(l.nofollow?'nofollow':'follow')+'</td><td><span class="pill '+((l.target_status>=200&&l.target_status<400&&!l.target_error)?'ok':'bad')+'">'+(l.target_error?'ERR':(l.target_status??'–'))+'</span></td><td>'+(l.target_response_ms??'–')+' ms</td></tr>');if(!linkRows)linkRows='<tr><td colspan="6">Keine Links.</td></tr>';
+  function lh(data,label){if(!data)return '<div class="lh-card muted"><strong>'+label+'</strong><p>Keine Lighthouse-Daten für diese URL.</p></div>';return '<div class="lh-card"><strong>'+label+'</strong><div class="lh-scores"><span>'+seoScoreValue(data.scores?.performance)+'<em>Performance</em></span><span>'+seoScoreValue(data.scores?.accessibility)+'<em>Accessibility</em></span><span>'+seoScoreValue(data.scores?.bestPractices)+'<em>Best Practices</em></span><span>'+seoScoreValue(data.scores?.seo)+'<em>SEO</em></span></div><dl class="facts compact-facts"><div><dt>FCP</dt><dd>'+seoMetricMs(data.metrics?.fcp)+'</dd></div><div><dt>LCP</dt><dd>'+seoMetricMs(data.metrics?.lcp)+'</dd></div><div><dt>TBT</dt><dd>'+seoMetricMs(data.metrics?.tbt)+'</dd></div><div><dt>CLS</dt><dd>'+(data.metrics?.cls==null?'–':Number(data.metrics.cls).toFixed(3))+'</dd></div><div><dt>Speed Index</dt><dd>'+seoMetricMs(data.metrics?.speedIndex)+'</dd></div></dl></div>';}
+  let html='<a class="backlink" href="/sites/'+esc(site.slug)+'/seo">← SEO · '+esc(site.name)+'</a><header><div><span class="eyebrow">SEO PAGE</span><h1>'+esc(p.title||p.path)+'</h1><p><a href="'+esc(p.url)+'" target="_blank" rel="noopener">'+esc(p.url)+'</a></p></div><span class="pill '+(p.status_code===200?'ok':'bad')+'">HTTP '+p.status_code+'</span></header>';
+  html+='<div class="metrics big seo-metrics"><span>'+p.word_count+'<em>Wörter</em></span><span>'+p.incoming_links+'<em>Interne Links rein</em></span><span>'+p.internal_links+'<em>Interne Links raus</em></span><span>'+p.response_ms+' ms<em>Response</em></span><span>'+p.images_missing_alt+'/'+p.images_total+'<em>Bilder ohne Alt</em></span></div>';
+  html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">Meta</span><h2>Onpage-Daten</h2></div></div><dl class="facts"><div><dt>Title</dt><dd>'+esc(p.title||'–')+'</dd></div><div><dt>Meta Description</dt><dd>'+esc(p.meta_description||'–')+'</dd></div><div><dt>Canonical</dt><dd>'+esc(p.canonical||'–')+'</dd></div><div><dt>Robots</dt><dd>'+esc(((p.robots||'')+' '+(signals.xRobotsTag||'')).trim()||'–')+'</dd></div><div><dt>H1</dt><dd>'+esc(h1.join(' · ')||'–')+'</dd></div><div><dt>H2</dt><dd>'+esc(h2.slice(0,12).join(' · ')||'–')+'</dd></div><div><dt>Crawl-Tiefe</dt><dd>'+(p.depth??'Sitemap / nicht über Links erreicht')+'</dd></div><div><dt>Interne Stärke</dt><dd>'+Number(p.pagerank||0).toFixed(6)+'</dd></div></dl><div class="sectionhead subhead"><div><span class="eyebrow">Signals</span><h2>SEO-/GEO-Signale</h2></div></div><dl class="facts"><div><dt>HTML lang</dt><dd>'+esc(signals.htmlLang||'–')+'</dd></div><div><dt>Viewport</dt><dd>'+(signals.viewport?'ja':'nein')+'</dd></div><div><dt>Open Graph</dt><dd>'+(signals.openGraphComplete?'vollständig':'unvollständig')+'</dd></div><div><dt>Twitter/X Card</dt><dd>'+esc(signals.twitterCard||'–')+'</dd></div><div><dt>hreflang</dt><dd>'+(signals.hreflang?.length||0)+' Einträge</dd></div><div><dt>Mixed Content</dt><dd>'+(signals.mixedContent||0)+'</dd></div><div><dt>Structured Data</dt><dd>'+(Array.isArray(p.structured_data)?p.structured_data.length:0)+' Blöcke</dd></div><div><dt>Final URL</dt><dd>'+esc(signals.finalUrl||p.url)+'</dd></div></dl></section><section><div class="sectionhead"><div><span class="eyebrow">Issues</span><h2>Hinweise & konkrete Fixes</h2></div></div><ul class="seo-issues">'+issueRows+'</ul></section></div>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">Lighthouse / PSI</span><h2>Performance & Qualität</h2></div></div><div class="lh-grid">'+lh(mobile,'Mobile')+lh(desktop,'Desktop')+'</div></section>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">Content</span><h2>Siteinterne WDF×IDF</h2></div><small>Gewichtung relativ zum Korpus der gecrawlten Website – keine Wettbewerberanalyse.</small></div><div class="tablewrap"><table><thead><tr><th>Term</th><th>Häufigkeit</th><th>WDF</th><th>IDF</th><th>WDF×IDF</th></tr></thead><tbody>'+termRows+'</tbody></table></div></section>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">Link Health</span><h2>Ausgehende Links</h2></div><small>Maximal 150 Links · Status aus dem letzten Audit.</small></div><div class="tablewrap"><table><thead><tr><th>Typ</th><th>Ziel</th><th>Ankertext</th><th>Rel</th><th>HTTP</th><th>Response</th></tr></thead><tbody>'+linkRows+'</tbody></table></div></section>';
+  return page('SEO · '+(p.title||p.path),html);
+}
+
+async function wordpressInventoryPage(slug){
+  const site=await getSite(slug),inventory=await wordpressInventory(site.id);
+  const updateClass=x=>x?'bad':'ok';
+  let plugins='',themes='';
+  for(const p of inventory.plugins)plugins+='<tr><td><strong>'+esc(p.name)+'</strong><small class="table-sub">'+esc(p.slug)+'</small></td><td>'+esc(p.version||'–')+'</td><td>'+esc(p.latestVersion||'nicht bei WordPress.org')+'</td><td><span class="pill '+updateClass(p.updateAvailable)+'">'+(p.updateAvailable?'UPDATE':'OK')+'</span></td><td>'+esc(p.requiresPhp||p.wordpressOrg?.requiresPhp||'–')+'</td></tr>';
+  for(const t of inventory.themes)themes+='<tr><td><strong>'+esc(t.name)+'</strong><small class="table-sub">'+esc(t.slug)+(t.template?' · Child von '+esc(t.template):'')+'</small></td><td>'+esc(t.version||'–')+'</td><td>'+esc(t.latestVersion||'nicht bei WordPress.org')+'</td><td><span class="pill '+updateClass(t.updateAvailable)+'">'+(t.updateAvailable?'UPDATE':'OK')+'</span></td></tr>';
+  if(!plugins)plugins='<tr><td colspan="5">Keine Plugins erkannt.</td></tr>';
+  if(!themes)themes='<tr><td colspan="4">Keine Themes erkannt.</td></tr>';
+  const flags=Object.entries(inventory.configFlags||{}).map(([k,v])=>'<div><dt>'+esc(k)+'</dt><dd>'+esc(String(v))+'</dd></div>').join('')||'<div><dt>wp-config</dt><dd>Keine relevanten Flags erkannt</dd></div>';
+  let html='<a class="backlink" href="/sites/'+esc(site.slug)+'">← '+esc(site.name)+'</a><header><div><span class="eyebrow">WORDPRESS FLEET</span><h1>WordPress · '+esc(site.name)+'</h1><p>Read-only Inventar aus dem aktuellen Source-of-Truth plus Update-Abgleich mit WordPress.org. Keine Zugangsdaten oder wp-config-Secrets werden ausgegeben.</p></div><div class="actions"><button onclick="location.reload()">Neu scannen</button></div></header>';
+  html+='<div class="metrics big seo-metrics"><span>'+esc(inventory.core.version||'–')+'<em>WordPress Core</em></span><span>'+inventory.summary.plugins+'<em>Plugins</em></span><span>'+inventory.summary.themes+'<em>Themes</em></span><span>'+inventory.summary.muPlugins+'<em>MU-Plugins</em></span><span class="'+(inventory.summary.updates?'metric-bad':'')+'">'+inventory.summary.updates+'<em>Updates erkannt</em></span><span>'+inventory.summary.wordpressOrgMatchedPlugins+'<em>WP.org Matches</em></span></div>';
+  if(inventory.core.updateAvailable)html+='<div class="notice bad"><strong>WordPress Core Update verfügbar</strong><span>'+esc(inventory.core.version)+' → '+esc(inventory.core.latestVersion)+'</span></div>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">Plugins</span><h2>Plugin-Inventar</h2></div><small>Versionsvergleich nur, wenn das Plugin eindeutig bei WordPress.org gefunden wird.</small></div><div class="tablewrap"><table><thead><tr><th>Plugin</th><th>Installiert</th><th>Aktuell</th><th>Status</th><th>Requires PHP</th></tr></thead><tbody>'+plugins+'</tbody></table></div></section>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">Themes</span><h2>Theme-Inventar</h2></div></div><div class="tablewrap"><table><thead><tr><th>Theme</th><th>Installiert</th><th>Aktuell</th><th>Status</th></tr></thead><tbody>'+themes+'</tbody></table></div></section>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">Hardening</span><h2>Relevante wp-config-Flags</h2></div><small>Nur bekannte Boolean-/Update-Flags; keine Secrets.</small></div><dl class="facts">'+flags+'</dl></section>';
+  html+='<div class="notice"><strong>Updates sind in 0.9 bewusst read-only.</strong><span>Die Inventarisierung liefert einen Update-Plan. Automatisches Update mit Safety-Backup, Health-Check und Rollback wird als eigene Safe-Update-Pipeline umgesetzt.</span></div>';
+  return page('WordPress · '+site.name,html);
+}
+
+async function siteIntelligencePage(slug){
+  const site=await getSite(slug),latest=await siteIntelligenceLatest(site.id),run=latest.run,result=run?.result||null;
+  const score=n=>n==null?'–':Math.round(Number(n)),scoreClass=n=>n==null?'':Number(n)>=90?'score-good':Number(n)>=70?'score-mid':'score-bad';
+  let botRows='',securityRows='',domainRows='',issueRows='',tech='';
+  if(result){
+    for(const b of result.ai?.bots||[])botRows+='<tr><td><strong>'+esc(b.agent)+'</strong><small class="table-sub">'+esc(b.vendor)+' · '+esc(b.purpose)+'</small></td><td><span class="pill '+(b.allowed?'ok':'bad')+'">'+(b.allowed?'ERLAUBT':'BLOCKIERT')+'</span></td><td>'+(b.explicit?'explizite robots.txt-Regel':'Wildcard/Standard')+'</td></tr>';
+    for(const c of result.security?.checks||[])securityRows+='<tr><td>'+esc(c.label)+'</td><td><span class="pill '+(c.ok?'ok':'bad')+'">'+(c.ok?'OK':'PRÜFEN')+'</span></td><td>'+c.weight+'</td></tr>';
+    for(const c of result.domain?.checks||[])domainRows+='<tr><td>'+esc(c.label)+'</td><td><span class="pill '+(c.ok?'ok':'bad')+'">'+(c.ok?'OK':'FEHLT')+'</span></td></tr>';
+    for(const x of result.issues||[])issueRows+='<li class="seo-issue '+esc(x.level||'info')+'"><strong>'+esc(x.code||'issue')+'</strong><span>'+esc(x.text||'')+'</span></li>';
+    tech=(result.technology||[]).map(x=>'<span class="tech-chip">'+esc(x)+'</span>').join('');
+  }
+  if(!botRows)botRows='<tr><td colspan="3">Noch kein Scan vorhanden.</td></tr>';
+  if(!securityRows)securityRows='<tr><td colspan="3">Noch kein Scan vorhanden.</td></tr>';
+  if(!domainRows)domainRows='<tr><td colspan="2">Noch kein Scan vorhanden.</td></tr>';
+  if(!issueRows)issueRows='<li class="seo-issue ok"><span>'+(result?'Keine kritischen Infrastruktur-Hinweise erkannt.':'Noch kein Scan vorhanden.')+'</span></li>';
+  const rdap=result?.domain?.rdap||{},ai=result?.ai||{};
+  let html='<a class="backlink" href="/sites/'+esc(site.slug)+'">← '+esc(site.name)+'</a>';
+  html+='<header><div><span class="eyebrow">SITE INTELLIGENCE</span><h1>Security, Domain & AI Search</h1><p>Agentloser Infrastruktur-Check für Security Header, DNS/Mail-Hygiene, Domain-Ablauf, Technologie-Erkennung und Sichtbarkeit für KI-Suchcrawler.</p></div><div class="actions"><button id="runIntel">Neu scannen</button><a class="button ghost" href="/sites/'+esc(site.slug)+'/report">Kundenreport</a></div></header>';
+  if(run?.status==='failed')html+='<div class="notice bad"><strong>Letzter Scan fehlgeschlagen</strong><span>'+esc(run.error||'Unbekannter Fehler')+'</span></div>';
+  html+='<div class="score-grid"><div class="score-card '+scoreClass(result?.scores?.overall)+'"><strong>'+score(result?.scores?.overall)+'</strong><span>Overall</span></div><div class="score-card '+scoreClass(result?.scores?.security)+'"><strong>'+score(result?.scores?.security)+'</strong><span>Security</span></div><div class="score-card '+scoreClass(result?.scores?.aiSearch)+'"><strong>'+score(result?.scores?.aiSearch)+'</strong><span>AI Search</span></div><div class="score-card '+scoreClass(result?.scores?.domain)+'"><strong>'+score(result?.scores?.domain)+'</strong><span>Domain / DNS</span></div></div>';
+  html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">AI / GEO</span><h2>Crawler-Zugriff</h2></div><small>Search-Crawler und Trainings-/Grounding-Kontrollen getrennt bewertet.</small></div><div class="tablewrap"><table><thead><tr><th>Bot</th><th>Status</th><th>Regel</th></tr></thead><tbody>'+botRows+'</tbody></table></div><div class="facts compact-facts"><div><dt>robots.txt</dt><dd>HTTP '+(ai.robotsStatus??'–')+'</dd></div><div><dt>llms.txt</dt><dd>'+(ai.llmsTxt?.present?'vorhanden':'nicht gefunden')+'</dd></div></div></section><section><div class="sectionhead"><div><span class="eyebrow">Security</span><h2>HTTP-Schutz</h2></div><small>Header-basierter Baseline-Check.</small></div><div class="tablewrap"><table><thead><tr><th>Prüfung</th><th>Status</th><th>Gewicht</th></tr></thead><tbody>'+securityRows+'</tbody></table></div></section></div>';
+  html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">Domain</span><h2>DNS & Mail-Hygiene</h2></div></div><div class="tablewrap"><table><thead><tr><th>Signal</th><th>Status</th></tr></thead><tbody>'+domainRows+'</tbody></table></div><dl class="facts compact-facts"><div><dt>Domain</dt><dd>'+esc(rdap.domain||result?.domain?.host||site.domain)+'</dd></div><div><dt>Ablauf</dt><dd>'+(rdap.expiresAt?new Date(rdap.expiresAt).toLocaleDateString('de-DE')+' · '+(rdap.daysRemaining??'–')+' Tage':'nicht ermittelbar')+'</dd></div><div><dt>SPF</dt><dd>'+esc(result?.domain?.spf||'–')+'</dd></div><div><dt>DMARC</dt><dd>'+esc(result?.domain?.dmarc||'–')+'</dd></div></dl></section><section><div class="sectionhead"><div><span class="eyebrow">Fingerprint</span><h2>Erkannte Technik</h2></div></div><div class="tech-list">'+(tech||'<span class="muted">Keine eindeutigen Technologien erkannt.</span>')+'</div><div class="sectionhead subhead"><div><span class="eyebrow">Hinweise</span><h2>Handlungsbedarf</h2></div></div><ul class="seo-issues">'+issueRows+'</ul></section></div>';
+  html+='<script>document.getElementById("runIntel").addEventListener("click",async e=>{const b=e.currentTarget;b.disabled=true;b.textContent="Scanne…";const r=await fetch("/api/sites/'+encodeURIComponent(site.slug)+'/intelligence",{method:"POST"});const x=await r.json();if(!r.ok){alert(x.message||x.error||JSON.stringify(x));b.disabled=false;b.textContent="Neu scannen";return;}location.reload();});</script>';
+  return page('Site Intelligence · '+site.name,html);
+}
+
+async function clientReportPage(slug){
+  const data=await clientReportData(slug),site=data.site,ops=data.operations,seo=data.seo?.summary||{},intel=data.intelligence?.result||null;
+  const recs=(seo.recommendations||[]).slice(0,8).map(r=>'<li><strong>'+esc(r.title||r.code)+'</strong><span>'+r.count+' Treffer · '+esc(r.fix||'')+'</span></li>').join('')||'<li><span>Keine priorisierten SEO-Hinweise vorhanden.</span></li>';
+  let html='<div class="report-toolbar"><a class="backlink" href="/sites/'+esc(site.slug)+'">← '+esc(site.name)+'</a><button onclick="window.print()">Drucken / PDF</button></div>';
+  html+='<header class="report-head"><div><span class="eyebrow">SITEOPS KUNDENREPORT</span><h1>'+esc(site.name)+'</h1><p>'+esc(site.domain)+' · erstellt '+new Date(data.generatedAt).toLocaleString('de-DE')+'</p></div><strong class="report-brand">Lorzen SiteOps</strong></header>';
+  html+='<div class="metrics big report-metrics"><span>'+(ops.uptime==null?'–':ops.uptime+'%')+'<em>Uptime</em></span><span>'+(ops.lastCheck?.response_ms??'–')+' ms<em>Response</em></span><span>'+(ops.openIncidents??0)+'<em>Offene Incidents</em></span><span>'+(seo.healthScore??'–')+'<em>SEO Health</em></span><span>'+(intel?.scores?.overall??'–')+'<em>Site Intelligence</em></span></div>';
+  html+='<div class="twocol ops-grid"><section><div class="sectionhead"><div><span class="eyebrow">Betrieb</span><h2>Wartung & Stabilität</h2></div></div><dl class="facts"><div><dt>Monitoring-Checks</dt><dd>'+ops.checks+'</dd></div><div><dt>Incidents gesamt</dt><dd>'+ops.incidents+'</dd></div><div><dt>Backups</dt><dd>'+ops.backups+'</dd></div><div><dt>Letztes Backup</dt><dd>'+(ops.lastBackup?.created_at?new Date(ops.lastBackup.created_at).toLocaleString('de-DE'):'–')+'</dd></div><div><dt>Dokumentierte Änderungen</dt><dd>'+ops.changes+'</dd></div></dl></section><section><div class="sectionhead"><div><span class="eyebrow">SEO</span><h2>Technische Gesundheit</h2></div></div><dl class="facts"><div><dt>Gecrawlte Seiten</dt><dd>'+(seo.pages??'–')+'</dd></div><div><dt>Fehler</dt><dd>'+(seo.issues?.error??'–')+'</dd></div><div><dt>Warnungen</dt><dd>'+(seo.issues?.warn??'–')+'</dd></div><div><dt>Defekte interne Links</dt><dd>'+(seo.linkHealth?.brokenInternal??'–')+'</dd></div><div><dt>Defekte externe Links</dt><dd>'+(seo.linkHealth?.brokenExternal??'–')+'</dd></div></dl></section></div>';
+  html+='<section><div class="sectionhead"><div><span class="eyebrow">Prioritäten</span><h2>Empfohlene nächste Schritte</h2></div></div><ul class="report-recs">'+recs+'</ul></section>';
+  if(intel)html+='<section><div class="sectionhead"><div><span class="eyebrow">Infrastruktur</span><h2>Security, AI Search & Domain</h2></div></div><div class="score-grid report-score-grid"><div class="score-card"><strong>'+intel.scores.security+'</strong><span>Security</span></div><div class="score-card"><strong>'+intel.scores.aiSearch+'</strong><span>AI Search</span></div><div class="score-card"><strong>'+intel.scores.domain+'</strong><span>Domain / DNS</span></div></div></section>';
+  html+='<footer class="report-footer">Automatisch erstellt mit Lorzen SiteOps · technische Werte sind Momentaufnahmen bzw. Auswertungen des letzten verfügbaren Audits.</footer>';
+  return page('Report · '+site.name,html);
+}
+
+async function siteOperationsPage(slug){
+  const site=await getSite(slug),hist=await listHistory(site.id,30),backups=await listBackups(site,30),checks=await listMonitorChecks(site.id,50),incidents=await listIncidents(site.id,30),backupState=(await q('select * from backup_state where site_id=?',[site.id])).rows[0]||null,monitorState=(await q('select * from monitor_state where site_id=?',[site.id])).rows[0]||null,seoState=(await q('select * from seo_state where site_id=?',[site.id])).rows[0]||null;
+  const latest=checks[0]||null,latestDetails=latest?.details||{},uptime=checks.length?Math.round(checks.filter(x=>x.ok).length/checks.length*10000)/100:'–';
+  const mode=site.deployment_mode||'webspace',isGit=mode==='hostinger_git',openIncidents=incidents.filter(x=>x.status==='open');
+  const checkRows=checks.slice(0,20).map(x=>{const d=x.details||{};return `<tr><td>${new Date(x.created_at).toLocaleString('de-DE')}</td><td><span class="pill ${x.ok?'ok':'bad'}">${x.ok?'OK':'FEHLER'}</span></td><td>${x.http_status??'–'}</td><td>${x.response_ms??'–'} ms</td><td>${x.ssl_days??'–'} d</td><td>${esc(d.finalUrl||'–')}</td><td>${Array.isArray(d.redirects)?d.redirects.length:0}</td></tr>`}).join('')||'<tr><td colspan="7">Noch keine Prüfungen.</td></tr>';
+  const incidentRows=incidents.map(i=>{const ended=i.resolved_at?new Date(i.resolved_at):null,started=new Date(i.created_at),duration=ended?Math.max(0,Math.round((ended-started)/60000))+' min':'laufend';return `<tr><td><a href="/incidents/${i.id}">${esc(i.title)}</a></td><td><span class="pill ${i.status==='open'?'bad':'ok'}">${esc(i.status.toUpperCase())}</span></td><td>${started.toLocaleString('de-DE')}</td><td>${ended?ended.toLocaleString('de-DE'):'–'}</td><td>${duration}</td></tr>`}).join('')||'<tr><td colspan="5">Keine Incidents.</td></tr>';
+  const backupRows=backups.map(b=>`<tr><td>${new Date(b.created_at).toLocaleString('de-DE')}</td><td><code>${esc(String(b.git_commit).slice(0,8))}</code></td><td>${b.file_count??'–'}</td><td>${b.changed?'geändert':'identisch'}</td><td><button class="ghost" onclick="restoreBackup('${b.id}')">Restore</button></td></tr>`).join('')||'<tr><td colspan="5">Noch keine Backups.</td></tr>';
+  const historyRows=hist.map(h=>`<tr><td>${new Date(h.created_at).toLocaleString('de-DE')}</td><td>${esc(h.description)}</td><td>${esc(h.actor)}</td><td><span class="pill">${esc(h.status)}</span></td><td><button class="ghost" onclick="rollback('${h.id}')">Rollback</button></td></tr>`).join('')||'<tr><td colspan="5">Noch keine Änderungen.</td></tr>';
+  return page(site.name,`
+    <a class="backlink" href="/">← Übersicht</a>
+    <header><div><span class="eyebrow">${isGit?'HOSTINGER GIT':esc(site.protocol.toUpperCase())} · ${site.enabled?'AKTIV':'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit?esc(site.source_repository+' @ '+(site.source_branch||'main')):esc(site.remote_root)}</p></div><div class="actions"><a class="button ghost" href="/sites/${esc(site.slug)}/seo">SEO Suite</a><a class="button ghost" href="/sites/${esc(site.slug)}/intelligence">Intelligence</a><a class="button ghost" href="/sites/${esc(site.slug)}/report">Report</a><button class="ghost" id="checkNow">Jetzt prüfen</button><button id="backupNow">Backup jetzt</button></div></header>
+    ${openIncidents.length?`<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span>${esc(openIncidents[0].title)} · seit ${new Date(openIncidents[0].created_at).toLocaleString('de-DE')}</span></div>`:''}
+    ${backupState?.last_error?`<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span></div>`:''}
+    <div class="metrics big ops-metrics"><span>${uptime}%<em>Uptime letzte ${checks.length} Checks</em></span><span>${latest?.response_ms??'–'} ms<em>Response</em></span><span>${latest?.ssl_days??'–'} d<em>SSL</em></span><span>${latest?.http_status??'–'}<em>HTTP</em></span><span>${backups[0]?.created_at?new Date(backups[0].created_at).toLocaleString('de-DE'):'–'}<em>Letztes Backup</em></span></div>
+
+    <div class="twocol ops-grid">
+      <section>
+        <div class="sectionhead"><div><span class="eyebrow">Zugriff</span><h2>Verbindung & Deployment</h2></div><span class="pill ${isGit?'ok':''}">${isGit?'GIT SOURCE':'WEBSPACE'}</span></div>
+        <p class="lead">Änderungen an Zugangsdaten werden vor dem Speichern getestet. Leere Secret-Felder behalten das bisher gespeicherte Secret.</p>
+        <form id="connectionForm" class="inner-form">
+          <label>Deployment-Methode<select name="deploymentMode"><option value="webspace" ${!isGit?'selected':''}>Direkter Webspace</option><option value="hostinger_git" ${isGit?'selected':''}>Hostinger Git Deploy</option></select></label>
+          <div id="connWeb" ${isGit?'hidden':''}>
+            <div class="formgrid">
+              <label>Protokoll<select name="protocol"><option value="sftp" ${site.protocol==='sftp'?'selected':''}>SFTP</option><option value="ftps" ${site.protocol==='ftps'?'selected':''}>FTPS</option><option value="ftp" ${site.protocol==='ftp'?'selected':''}>FTP</option></select></label>
+              <label>Port<input name="port" type="number" value="${site.port||22}"></label>
+              <label class="span2">Host<input name="host" value="${esc(isGit?'':site.host||'')}"></label>
+              <label>Benutzer<input name="username" value="${esc(isGit?'':site.username||'')}"></label>
+              <label>Neues Passwort <small>${site.encrypted_credentials?'Zugangsdaten gespeichert. Leer lassen = unverändert.':'Noch keine Zugangsdaten.'}</small><input name="password" type="password" autocomplete="new-password"></label>
+              <label class="span2">Remote Root<input name="remoteRoot" value="${esc(isGit?'/':site.remote_root||'/')}"></label>
+            </div>
+          </div>
+          <div id="connGit" ${!isGit?'hidden':''}>
+            <div class="formgrid">
+              <label class="span2">Repository<input name="sourceRepository" value="${esc(site.source_repository||'')}" placeholder="owner/repository"></label>
+              <label>Branch<input name="sourceBranch" value="${esc(site.source_branch||'main')}"></label>
+              <label>Repository-Unterordner<input name="sourceRoot" value="${esc(site.source_root||'')}"></label>
+              <label class="span2">Neuer GitHub PAT <small>${site.git_credentials?'Token gespeichert. Leer lassen = unverändert.':'Noch kein Token gespeichert.'}</small><input name="gitToken" type="password" autocomplete="new-password"></label>
+              <label class="span2">Hostinger Zielverzeichnis<input name="hostingerTargetDirectory" value="${esc(site.hostinger_target_directory||'public_html')}"></label>
+            </div>
+          </div>
+          <div class="buttonrow"><button type="button" class="ghost" id="testStoredConnection">Aktuelle Verbindung testen</button><button type="submit">Testen & speichern</button><span id="connectionState" class="inline-status"></span></div>
+        </form>
+      </section>
+
+      <section>
+        <div class="sectionhead"><div><span class="eyebrow">Betrieb</span><h2>Monitoring & Alarmierung</h2></div><span class="pill ${latest?.ok?'ok':latest?'bad':''}">${latest?latest.ok?'HEALTHY':'UNHEALTHY':'NO DATA'}</span></div>
+        <form id="monitorForm" class="inner-form">
+          <label class="check"><input type="checkbox" name="enabled" ${site.enabled?'checked':''}> Website aktiv verwalten</label>
+          <label class="check"><input type="checkbox" name="monitor_enabled" ${site.monitor_enabled?'checked':''}> Monitoring aktiv</label>
+          <label>Monitor-URL<input name="monitor_url" value="${esc(site.monitor_url||'https://'+site.domain)}"></label>
+          <div class="formgrid">
+            <label>Erwarteter HTTP-Status<input name="monitor_expected_status" type="number" value="${site.monitor_expected_status}"></label>
+            <label>Prüfintervall (Sek.)<input name="monitor_interval_seconds" type="number" min="30" value="${site.monitor_interval_seconds}"></label>
+            <label>Erwarteter Seitentitel <small>Leer = nicht prüfen.</small><input name="monitor_expected_title" value="${esc(site.monitor_expected_title||'')}"></label>
+            <label>Erwarteter Text <small>Leer = nicht prüfen.</small><input name="monitor_content" value="${esc(site.monitor_content||'')}"></label>
+            <label>Timeout (ms)<input name="monitor_timeout_ms" type="number" min="1000" value="${site.monitor_timeout_ms}"></label>
+            <label>Response-Warnung (ms)<input name="response_warn_ms" type="number" min="1" value="${site.response_warn_ms??''}" placeholder="optional"></label>
+            <label>Fehler bis Alarm<input name="monitor_failure_threshold" type="number" min="1" value="${site.monitor_failure_threshold}"></label>
+            <label>Alarm wiederholen (Min.)<input name="alert_repeat_minutes" type="number" min="1" value="${site.alert_repeat_minutes||60}"></label>
+            <label>SSL-Warnung (Tage)<input name="ssl_warn_days" type="number" min="1" value="${site.ssl_warn_days}"></label>
+          </div>
+          <label class="check"><input type="checkbox" name="monitor_check_dns" ${site.monitor_check_dns?'checked':''}> DNS-Auflösung prüfen</label>
+          <label class="check"><input type="checkbox" name="monitor_check_wordpress" ${site.monitor_check_wordpress?'checked':''}> WordPress REST API unter <code>/wp-json/</code> prüfen</label>
+          <button>Monitoring speichern</button><span id="monitorState" class="inline-status"></span>
+        </form>
+      </section>
+    </div>
+
+    <div class="twocol ops-grid">
+      <section>
+        <div class="sectionhead"><div><span class="eyebrow">Sicherung</span><h2>Backup</h2></div></div>
+        <form id="backupForm" class="inner-form">
+          <label class="check"><input type="checkbox" name="backup_enabled" ${site.backup_enabled?'checked':''}> Automatische Backups</label>
+          <label>Backup-Intervall (Sek.)<input name="backup_interval_seconds" type="number" min="900" value="${site.backup_interval_seconds}"></label>
+          <label>Max. Dateien<input name="backup_max_files" type="number" min="100" value="${site.backup_max_files}"></label>
+          <label>Ausschlüsse <small>Eine Zeile pro Muster. Standardmäßig u. a. Cache und Uploads.</small><textarea name="exclude_patterns" rows="6">${esc((Array.isArray(site.exclude_patterns)?site.exclude_patterns:[]).join('\n'))}</textarea></label>
+          <button>Backup-Einstellungen speichern</button><span id="backupState" class="inline-status"></span>
+        </form>
+        <dl class="facts compact-facts"><div><dt>Letzter Versuch</dt><dd>${backupState?.last_attempt_at?new Date(backupState.last_attempt_at).toLocaleString('de-DE'):'–'}</dd></div><div><dt>Letzter Erfolg</dt><dd>${backupState?.last_success_at?new Date(backupState.last_success_at).toLocaleString('de-DE'):'–'}</dd></div><div><dt>Backup-Pfad</dt><dd><code>sites/${esc(site.slug)}/public</code></dd></div></dl>
+      </section>
+      <section>
+        <div class="sectionhead"><div><span class="eyebrow">Letzter Check</span><h2>Diagnose</h2></div></div>
+        <dl class="facts compact-facts">
+          <div><dt>Finale URL</dt><dd>${esc(latestDetails.finalUrl||'–')}</dd></div>
+          <div><dt>Titel</dt><dd>${esc(latestDetails.title||'–')}</dd></div>
+          <div><dt>DNS</dt><dd>${Array.isArray(latestDetails.dns)?esc(latestDetails.dns.join(', ')):'–'}</dd></div>
+          <div><dt>Redirects</dt><dd>${Array.isArray(latestDetails.redirects)?latestDetails.redirects.length:0}</dd></div>
+          <div><dt>WordPress</dt><dd>${latestDetails.wordpress?latestDetails.wordpress.ok?'OK':'Fehler':'nicht geprüft'}</dd></div>
+          <div><dt>Fehler in Folge</dt><dd>${monitorState?.consecutive_failures||0}</dd></div>
+          <div><dt>Alerts im Incident</dt><dd>${monitorState?.alert_count||0}</dd></div>
+        </dl>
+      </section>
+    </div>
+
+    <section>
+      <div class="sectionhead"><div><span class="eyebrow">Automation</span><h2>SEO-Audits & Regressionen</h2></div><span class="pill ${site.seo_enabled?'ok':''}">${site.seo_enabled?'AUTO':'MANUELL'}</span></div>
+      <p class="lead">SiteOps kann technische Komplett-Audits regelmäßig wiederholen und bei neuen Fehlern oder deutlichen Score-Einbrüchen über die vorhandenen Alert-Kanäle melden.</p>
+      <form id="seoScheduleForm" class="inner-form">
+        <label class="check"><input type="checkbox" name="seo_enabled" ${site.seo_enabled?'checked':''}> Regelmäßige SEO-Audits aktiv</label>
+        <div class="formgrid">
+          <label>Intervall (Stunden)<input name="seo_interval_hours" type="number" min="1" max="2160" value="${Math.max(1,Math.round((site.seo_interval_seconds||604800)/3600))}"></label>
+          <label>Max. Seiten<input name="seo_max_pages" type="number" min="1" max="500" value="${site.seo_max_pages||cfg.seoMaxPages||100}"></label>
+          <label>PageSpeed<select name="seo_pagespeed_mode"><option value="none" ${site.seo_pagespeed_mode==='none'?'selected':''}>Nicht abrufen</option><option value="homepage" ${(site.seo_pagespeed_mode||'homepage')==='homepage'?'selected':''}>Startseite</option><option value="all" ${site.seo_pagespeed_mode==='all'?'selected':''}>Mehrere Seiten</option></select></label>
+        </div>
+        <label class="check"><input type="checkbox" name="seo_regression_alerts" ${site.seo_regression_alerts?'checked':''}> Bei neuen Fehlern oder deutlicher Verschlechterung alarmieren</label>
+        <button>SEO-Automation speichern</button><span id="seoScheduleState" class="inline-status"></span>
+      </form>
+      <dl class="facts compact-facts"><div><dt>Letzter automatischer Versuch</dt><dd>${seoState?.last_attempt_at?new Date(seoState.last_attempt_at).toLocaleString('de-DE'):'–'}</dd></div><div><dt>Letzter Erfolg</dt><dd>${seoState?.last_success_at?new Date(seoState.last_success_at).toLocaleString('de-DE'):'–'}</dd></div><div><dt>Letzter Health Score</dt><dd>${seoState?.last_health_score??'–'}</dd></div><div><dt>Letzte Fehlerzahl</dt><dd>${seoState?.last_error_count??'–'}</dd></div></dl>
+      ${seoState?.last_error?`<div class="notice bad"><strong>Letzter SEO-Audit fehlgeschlagen</strong><span>${esc(seoState.last_error)}</span></div>`:''}
+    </section>
+
+    <section><div class="sectionhead"><div><span class="eyebrow">Verfügbarkeit</span><h2>Monitoring-Verlauf</h2></div><small>Letzte 20 von ${checks.length} geladenen Prüfungen.</small></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Status</th><th>HTTP</th><th>Response</th><th>SSL</th><th>Finale URL</th><th>Redirects</th></tr></thead><tbody>${checkRows}</tbody></table></div></section>
+    <section><div class="sectionhead"><div><span class="eyebrow">Alarmierung</span><h2>Incidents</h2></div><small>Öffnen für vollständige Ereignis- und Alert-Timeline.</small></div><div class="tablewrap"><table><thead><tr><th>Incident</th><th>Status</th><th>Start</th><th>Ende</th><th>Dauer</th></tr></thead><tbody>${incidentRows}</tbody></table></div></section>
+    <section><div class="sectionhead"><div><span class="eyebrow">Versionen</span><h2>Backups</h2></div><small>Restore erstellt zuerst automatisch einen Safety-Snapshot.</small></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Commit</th><th>Dateien</th><th>Stand</th><th></th></tr></thead><tbody>${backupRows}</tbody></table></div></section>
+    <section><div class="sectionhead"><div><span class="eyebrow">Audit</span><h2>Änderungen</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Änderung</th><th>Quelle</th><th>Status</th><th></th></tr></thead><tbody>${historyRows}</tbody></table></div></section>
+
+    <script>
+    const slug=${JSON.stringify(site.slug)};
+    const byId=id=>document.getElementById(id);
+    const connectionForm=byId('connectionForm'),monitorForm=byId('monitorForm'),backupForm=byId('backupForm'),seoScheduleForm=byId('seoScheduleForm');
+    const cfield=name=>connectionForm.elements.namedItem(name);
+    function syncConnectionMode(){const git=cfield('deploymentMode').value==='hostinger_git';byId('connWeb').hidden=git;byId('connGit').hidden=!git;}
+    cfield('deploymentMode').addEventListener('change',syncConnectionMode);syncConnectionMode();
+    byId('testStoredConnection').addEventListener('click',async()=>{byId('connectionState').textContent='Prüfe…';const r=await fetch('/api/sites/'+encodeURIComponent(slug)+'/connection-test',{method:'POST'}),x=await r.json();byId('connectionState').textContent=r.ok?'✓ Verbindung OK':'✗ '+(x.message||x.error||JSON.stringify(x));});
+    connectionForm.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(connectionForm),git=fd.get('deploymentMode')==='hostinger_git',data={deploymentMode:fd.get('deploymentMode')};if(git){data.sourceRepository=String(fd.get('sourceRepository')||'').trim();data.sourceBranch=String(fd.get('sourceBranch')||'main').trim();data.sourceRoot=String(fd.get('sourceRoot')||'').trim();data.gitToken=String(fd.get('gitToken')||'');data.hostingerTargetDirectory=String(fd.get('hostingerTargetDirectory')||'public_html').trim();}else{data.protocol=fd.get('protocol');data.host=String(fd.get('host')||'').trim();data.port=Number(fd.get('port'));data.username=String(fd.get('username')||'').trim();data.password=String(fd.get('password')||'');data.remoteRoot=String(fd.get('remoteRoot')||'/').trim();}byId('connectionState').textContent='Teste & speichere…';const r=await fetch('/api/sites/'+encodeURIComponent(slug)+'/connection',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(data)}),x=await r.json();byId('connectionState').textContent=r.ok?'✓ Verbindung geprüft und gespeichert':'✗ '+(x.message||x.error||JSON.stringify(x));if(r.ok)setTimeout(()=>location.reload(),500);});
+    monitorForm.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(monitorForm),warn=String(fd.get('response_warn_ms')||'').trim();const data={enabled:cbox(monitorForm,'enabled'),monitor_enabled:cbox(monitorForm,'monitor_enabled'),monitor_url:String(fd.get('monitor_url')||''),monitor_expected_status:Number(fd.get('monitor_expected_status')),monitor_interval_seconds:Number(fd.get('monitor_interval_seconds')),monitor_expected_title:String(fd.get('monitor_expected_title')||'').trim()||null,monitor_content:String(fd.get('monitor_content')||'').trim()||null,monitor_check_dns:cbox(monitorForm,'monitor_check_dns'),monitor_check_wordpress:cbox(monitorForm,'monitor_check_wordpress'),monitor_timeout_ms:Number(fd.get('monitor_timeout_ms')),response_warn_ms:warn?Number(warn):null,monitor_failure_threshold:Number(fd.get('monitor_failure_threshold')),alert_repeat_minutes:Number(fd.get('alert_repeat_minutes')),ssl_warn_days:Number(fd.get('ssl_warn_days'))};byId('monitorState').textContent='Speichere…';const r=await fetch('/api/sites/'+encodeURIComponent(slug),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(data)}),x=await r.json();byId('monitorState').textContent=r.ok?'✓ Gespeichert':'✗ '+(x.message||x.error||JSON.stringify(x));});
+    backupForm.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(backupForm),patterns=String(fd.get('exclude_patterns')||'').split('\\n').map(x=>x.trim()).filter(Boolean),data={backup_enabled:cbox(backupForm,'backup_enabled'),backup_interval_seconds:Number(fd.get('backup_interval_seconds')),backup_max_files:Number(fd.get('backup_max_files')),exclude_patterns:patterns};byId('backupState').textContent='Speichere…';const r=await fetch('/api/sites/'+encodeURIComponent(slug),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(data)}),x=await r.json();byId('backupState').textContent=r.ok?'✓ Gespeichert':'✗ '+(x.message||x.error||JSON.stringify(x));});
+    seoScheduleForm.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(seoScheduleForm),data={seo_enabled:cbox(seoScheduleForm,'seo_enabled'),seo_interval_seconds:Math.round(Number(fd.get('seo_interval_hours'))*3600),seo_max_pages:Number(fd.get('seo_max_pages')),seo_pagespeed_mode:String(fd.get('seo_pagespeed_mode')||'homepage'),seo_regression_alerts:cbox(seoScheduleForm,'seo_regression_alerts')};byId('seoScheduleState').textContent='Speichere…';const r=await fetch('/api/sites/'+encodeURIComponent(slug),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(data)}),x=await r.json();byId('seoScheduleState').textContent=r.ok?'✓ Gespeichert':'✗ '+(x.message||x.error||JSON.stringify(x));});
+    function cbox(form,name){return Boolean(form.elements.namedItem(name)?.checked);}
+    byId('backupNow').addEventListener('click',async()=>{const r=await fetch('/api/sites/'+encodeURIComponent(slug)+'/backup',{method:'POST'}),x=await r.json();alert(r.ok?'Backup erstellt: '+String(x.commit||'').slice(0,8):JSON.stringify(x));if(r.ok)location.reload();});
+    byId('checkNow').addEventListener('click',async()=>{const r=await fetch('/api/sites/'+encodeURIComponent(slug)+'/check',{method:'POST'}),x=await r.json();alert(x.ok?'Website ist erreichbar':'Prüfung fehlgeschlagen: '+JSON.stringify(x));location.reload();});
+    async function rollback(id){const r=await fetch('/api/changes/'+id+'/rollback-preview',{method:'POST'}),p=await r.json();if(!r.ok)return alert(JSON.stringify(p));if(confirm('Rollback-Preview '+p.previewId+' anwenden?')){const a=await fetch('/api/previews/'+p.previewId+'/apply',{method:'POST'});alert(JSON.stringify(await a.json()));location.reload();}}
+    async function restoreBackup(id){if(!confirm('Diesen Backup-Stand vorbereiten? Vorher wird automatisch ein aktueller Safety-Snapshot erstellt.'))return;const r=await fetch('/api/backups/'+id+'/restore-preview',{method:'POST'}),p=await r.json();if(!r.ok)return alert(JSON.stringify(p));if(p.noChanges)return alert(p.message);if(confirm('Restore-Preview '+p.previewId+' jetzt anwenden?')){const a=await fetch('/api/previews/'+p.previewId+'/apply',{method:'POST'});alert(JSON.stringify(await a.json()));location.reload();}}
+    </script>`);
+}
+async function incidentPage(id){
+  const incident=await getIncident(id);
+  const eventRows=incident.events.map(e=>`<tr><td>${new Date(e.created_at).toLocaleString('de-DE')}</td><td><span class="pill">${esc(e.event_type)}</span></td><td><pre class="event-json">${esc(e.details?JSON.stringify(e.details,null,2):'–')}</pre></td></tr>`).join('')||'<tr><td colspan="3">Keine Events.</td></tr>';
+  return page('Incident',`<a class="backlink" href="/sites/${esc(incident.slug)}">← ${esc(incident.domain)}</a><header><div><span class="eyebrow">INCIDENT · ${esc(incident.status.toUpperCase())}</span><h1>${esc(incident.title)}</h1><p>Gestartet ${new Date(incident.created_at).toLocaleString('de-DE')}${incident.resolved_at?' · beendet '+new Date(incident.resolved_at).toLocaleString('de-DE'):''}</p></div></header><section><div class="sectionhead"><div><span class="eyebrow">Timeline</span><h2>Ereignisse & Alerts</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Typ</th><th>Details</th></tr></thead><tbody>${eventRows}</tbody></table></div></section>`);
+}
+async function dashboard(){
+  const sites=await listSites();
+  const checks=(await q('select mc.site_id,mc.ok,mc.http_status,mc.response_ms,mc.ssl_days,mc.created_at from monitor_checks mc join (select site_id,max(created_at) created_at from monitor_checks group by site_id) latest on latest.site_id=mc.site_id and latest.created_at=mc.created_at')).rows,checkMap=new Map(checks.map(x=>[x.site_id,x]));
+  const backups=(await q('select b.site_id,b.git_commit,b.file_count,b.created_at from backups b join (select site_id,max(created_at) created_at from backups group by site_id) latest on latest.site_id=b.site_id and latest.created_at=b.created_at')).rows,backupMap=new Map(backups.map(x=>[x.site_id,x]));
+  const seoRuns=(await q("select sr.site_id,sr.summary,sr.finished_at from seo_runs sr join (select site_id,max(finished_at) finished_at from seo_runs where status='completed' group by site_id) latest on latest.site_id=sr.site_id and latest.finished_at=sr.finished_at where sr.status='completed'")).rows,seoMap=new Map(seoRuns.map(x=>[x.site_id,x]));
+  const intelRuns=(await q("select si.site_id,si.overall_score,si.result,si.finished_at from site_intelligence_runs si join (select site_id,max(finished_at) finished_at from site_intelligence_runs where status='completed' group by site_id) latest on latest.site_id=si.site_id and latest.finished_at=si.finished_at where si.status='completed'")).rows,intelMap=new Map(intelRuns.map(x=>[x.site_id,x]));
+  const incidents=(await q("select i.*,s.domain from incidents i join sites s on s.id=i.site_id where i.status='open' order by i.created_at desc")).rows,changes=(await q('select c.*,s.domain from changes c join sites s on s.id=c.site_id order by c.created_at desc limit 20')).rows;
+  const numericAvg=values=>{const xs=values.filter(x=>Number.isFinite(Number(x))).map(Number);return xs.length?Math.round(xs.reduce((a,b)=>a+b,0)/xs.length):null;};
+  const avgSeo=numericAvg(seoRuns.map(x=>x.summary?.healthScore)),avgIntel=numericAvg(intelRuns.map(x=>x.overall_score)),online=checks.filter(x=>x.ok).length,alarms=checks.filter(x=>!x.ok).length;
+  const fleet='<div class="fleet-metrics"><span>'+sites.length+'<em>Websites</em></span><span>'+online+'<em>Online</em></span><span class="'+(alarms?'fleet-alert':'')+'">'+alarms+'<em>Monitoring-Alarme</em></span><span class="'+(incidents.length?'fleet-alert':'')+'">'+incidents.length+'<em>Offene Incidents</em></span><span>'+(avgSeo??'–')+'<em>Ø SEO Health</em></span><span>'+(avgIntel??'–')+'<em>Ø Intelligence</em></span></div>';
+  const cards=sites.map(site=>{
+    const c=checkMap.get(site.id),backup=backupMap.get(site.id),seo=seoMap.get(site.id),intel=intelMap.get(site.id),deploy=site.deployment_mode==='hostinger_git'?'HOSTINGER GIT':site.protocol.toUpperCase(),seoHealth=seo?.summary?.healthScore??'–',intelScore=intel?.overall_score??'–',seoErr=seo?.summary?.issues?.error??0,broken=(seo?.summary?.linkHealth?.brokenInternal??0)+(seo?.summary?.linkHealth?.brokenExternal??0);
+    return '<a class="card fleet-card" href="/sites/'+esc(site.slug)+'"><div class="row"><strong>'+esc(site.name)+'</strong><span class="pill '+(c?.ok?'ok':c?'bad':'')+'">'+(c?c.ok?'ONLINE':'ALARM':'NO DATA')+'</span></div><small>'+esc(site.domain)+' · '+esc(deploy)+'</small><div class="fleet-card-grid"><span>'+(c?.response_ms??'–')+' ms<em>Response</em></span><span>'+(c?.ssl_days??'–')+' d<em>SSL</em></span><span class="'+(Number(seoErr)>0?'metric-bad':'')+'">'+seoHealth+'<em>SEO Health</em></span><span>'+intelScore+'<em>Intelligence</em></span><span class="'+(broken?'metric-bad':'')+'">'+broken+'<em>Defekte Links</em></span><span>'+(backup?.created_at?new Date(backup.created_at).toLocaleDateString('de-DE'):'–')+'<em>Backup</em></span></div></a>';
+  }).join('');
+  const inc=incidents.length?incidents.map(i=>'<li><b>'+esc(i.domain)+'</b> '+esc(i.title)+'<small>'+new Date(i.created_at).toLocaleString('de-DE')+'</small></li>').join(''):'<li>Keine offenen Incidents.</li>';
+  const hist=changes.map(c=>'<li><b>'+esc(c.domain)+'</b> '+esc(c.description)+' <span class="pill">'+esc(c.status)+'</span><small>'+new Date(c.created_at).toLocaleString('de-DE')+' · '+esc(c.actor)+'</small></li>').join('')||'<li>Noch keine Änderungen.</li>';
+  return page('SiteOps','<header><div><span class="eyebrow">Lorzen</span><h1>SiteOps Fleet</h1><p>Zentrale Sicht auf Betrieb, Backups, technische SEO-Gesundheit, Link Health und Site Intelligence aller Kundenprojekte.</p></div><div class="actions"><a class="ghost btn" href="/settings">Einstellungen</a><a class="btn" href="/setup">+ Website</a></div></header>'+fleet+'<section><div class="sectionhead"><div><span class="eyebrow">Fleet</span><h2>Websites</h2></div><small>Scores stammen aus dem jeweils letzten abgeschlossenen Audit.</small></div><div class="grid">'+cards+'</div></section><div class="twocol"><section><h2>Offene Incidents</h2><ul>'+inc+'</ul></section><section><h2>Letzte Änderungen</h2><ul>'+hist+'</ul></section></div>');
+}
+
+
+async function start(){let databaseReady=false,databaseError=null;try{await migrate();await loadSavedConfig();databaseReady=true;}catch(e){databaseError=String(e?.message||e);console.error('database startup',e);}const app=Fastify({logger:true,bodyLimit:8*1024*1024});const missingConfig=()=>[['SITEOPS_MASTER_KEY',cfg.masterKey],['MCP_API_TOKEN',cfg.mcpToken],['DASHBOARD_USER',cfg.dashboardUser],['DASHBOARD_PASSWORD',cfg.dashboardPassword],['DB_USER',cfg.databaseUrl||cfg.dbUser],['DB_NAME',cfg.databaseUrl||cfg.dbName]].filter(([,v])=>!v).map(([k])=>k);app.get('/health',async(_req,reply)=>{const missing=missingConfig(),ok=databaseReady&&missing.length===0;return reply.code(ok?200:503).send({status:ok?'ok':'degraded',version:'0.9.0',port:cfg.port,database:{engine:'mysql',ready:databaseReady,error:databaseError},backup:{configured:Boolean(cfg.githubBackupRepo&&cfg.githubBackupToken),repository:cfg.githubBackupRepo||null},baseUrl:cfg.publicBaseUrl,missingConfig:missing,worker:databaseReady?'ok':'paused',time:new Date().toISOString()});});app.get('/assets/app.css',async(_r,reply)=>reply.header('Cache-Control','no-store, max-age=0').type('text/css').send(await readFile(new URL('./public/app.css',import.meta.url),'utf8')));app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0];if(path==='/health'||path.startsWith('/assets/'))return;if(path==='/mcp'){if(!mcpAuth(req,reply))return reply;}else if(!dashboardAuth(req,reply))return reply;});const handler=createMcpHandler(()=>mcpServer()),nodeHandler=toNodeHandler(handler);app.all('/mcp',async(req,reply)=>nodeHandler(req.raw,reply.raw,req.body));app.get('/',async(_r,reply)=>reply.type('text/html').send(await dashboard()));app.get('/api/sites',async()=>listSites());
+app.get('/api/fleet',async()=>fleetOverview());
+app.get('/api/sites/:site',async req=>publicSite(await getSite(req.params.site)));
+app.get('/api/sites/:site/overview',async req=>siteOverview(req.params.site));
+app.post('/api/sites/:site/connection-test',async req=>testStoredConnection(await getSite(req.params.site)));
+app.patch('/api/sites/:site/connection',async req=>{
+  const schema=z.object({deploymentMode:z.enum(['webspace','hostinger_git']),protocol:z.enum(['sftp','ftps','ftp']).optional(),host:z.string().optional(),port:z.coerce.number().int().min(1).max(65535).optional(),username:z.string().optional(),password:z.string().optional(),privateKey:z.string().optional(),passphrase:z.string().optional(),remoteRoot:z.string().optional(),sourceRepository:z.string().optional(),sourceBranch:z.string().optional(),sourceRoot:z.string().optional(),gitToken:z.string().optional(),hostingerTargetDirectory:z.string().optional()});
+  return{ok:true,site:publicSite(await updateSiteConnection(req.params.site,schema.parse(req.body)))};
+});
+app.get('/api/sites/:site/monitor-checks',async req=>listMonitorChecks(req.params.site,Math.min(200,Math.max(1,Number(req.query?.limit||50)))));
+app.get('/api/sites/:site/incidents',async req=>listIncidents(req.params.site,Math.min(100,Math.max(1,Number(req.query?.limit||30)))));
+app.get('/api/incidents/:id',async req=>getIncident(req.params.id));
+app.get('/api/sites/:site/deployment',async req=>deploymentInfo(req.params.site));
+app.get('/api/sites/:site/backup-status',async req=>backupStatus(req.params.site));
+app.post('/api/sites/:site/seo-runs',async req=>{const schema=z.object({maxPages:z.coerce.number().int().min(1).max(500).optional(),pageSpeed:z.enum(['none','homepage','all']).default('homepage'),pageSpeedMaxPages:z.coerce.number().int().min(1).max(50).default(10)});return startSeoAudit(req.params.site,schema.parse(req.body||{}));});
+app.get('/api/sites/:site/seo/latest',async req=>seoLatest(req.params.site));
+app.get('/api/sites/:site/seo/graph',async req=>seoGraph(req.params.site,Math.min(100,Math.max(5,Number(req.query?.limit||30)))));
+app.get('/api/sites/:site/seo/issues',async req=>seoIssuesList(req.params.site,{level:req.query?.level||undefined,limit:Math.min(500,Math.max(1,Number(req.query?.limit||200)))}));
+app.get('/api/sites/:site/seo/recommendations',async req=>seoRecommendations(req.params.site));
+app.get('/api/sites/:site/seo/compare',async req=>seoCompare(req.params.site));
+app.get('/api/sites/:site/link-health',async req=>seoLinkHealth(req.params.site,{limit:Math.min(1000,Math.max(1,Number(req.query?.limit||300)))}));
+app.post('/api/sites/:site/intelligence',async req=>runSiteIntelligence(req.params.site));
+app.get('/api/sites/:site/intelligence/latest',async req=>siteIntelligenceLatest(req.params.site));
+app.get('/api/sites/:site/report-data',async req=>clientReportData(req.params.site));
+app.get('/api/sites/:site/wordpress/inventory',async req=>wordpressInventory(req.params.site));
+app.get('/api/sites/:site/wordpress/update-plan',async req=>wordpressUpdatePlan(req.params.site));
+app.get('/api/seo-runs/:id',async req=>seoRunGet(req.params.id));
+app.get('/api/seo-pages/:id',async req=>seoPageGet(Number(req.params.id)));
+const siteCommonSchema=z.object({slug:z.string().regex(/^[a-z0-9-]+$/),name:z.string().min(1),domain:z.string().min(1),siteType:z.enum(['wordpress','php','static','node']).default('php'),monitorUrl:z.string().url().optional(),backupEnabled:z.boolean().optional(),backupIntervalSeconds:z.coerce.number().int().min(900).max(2592000).optional(),backupMaxFiles:z.coerce.number().int().min(100).max(200000).optional(),monitorEnabled:z.boolean().optional(),monitorIntervalSeconds:z.coerce.number().int().min(30).max(86400).optional(),monitorFailureThreshold:z.coerce.number().int().min(1).max(20).optional(),sslWarnDays:z.coerce.number().int().min(1).max(365).optional()});
+const webspaceSiteSchema=siteCommonSchema.extend({deploymentMode:z.literal('webspace'),protocol:z.enum(['sftp','ftps','ftp']),host:z.string().min(1),port:z.coerce.number().int().min(1).max(65535),username:z.string().min(1),password:z.string().optional(),privateKey:z.string().optional(),passphrase:z.string().optional(),remoteRoot:z.string().min(1),sourceRepository:z.string().optional(),sourceBranch:z.string().optional(),sourceRoot:z.string().optional(),gitToken:z.string().optional(),hostingerTargetDirectory:z.string().optional()});
+const hostingerGitSiteSchema=siteCommonSchema.extend({deploymentMode:z.literal('hostinger_git'),sourceRepository:z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),sourceBranch:z.string().min(1),sourceRoot:z.string().optional(),gitToken:z.string().min(1),hostingerTargetDirectory:z.string().optional(),protocol:z.enum(['sftp','ftps','ftp']).optional(),host:z.string().optional(),port:z.coerce.number().optional(),username:z.string().optional(),password:z.string().optional(),remoteRoot:z.string().optional()});
+const siteCreateSchema=z.discriminatedUnion('deploymentMode',[webspaceSiteSchema,hostingerGitSiteSchema]);
+app.post('/api/sites',async(req,reply)=>{const site=await createSite(siteCreateSchema.parse(req.body));return reply.code(201).send({id:site.id,slug:site.slug});});
+app.post('/api/site-connection-test',async req=>testSiteConnection(siteCreateSchema.parse(req.body)));
+app.get('/api/settings',async()=>publicSettings());
+app.patch('/api/settings',async req=>{const schema=z.object({publicBaseUrl:z.string().url(),githubBackupRepo:z.string().max(255),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().min(1).max(191),backupMaxFileBytes:z.coerce.number().int().min(1048576).max(94371840),defaultBackupIntervalSeconds:z.coerce.number().int().min(900).max(2592000),defaultBackupMaxFiles:z.coerce.number().int().min(100).max(200000),defaultMonitorIntervalSeconds:z.coerce.number().int().min(30).max(86400),defaultMonitorFailureThreshold:z.coerce.number().int().min(1).max(20),defaultSslWarnDays:z.coerce.number().int().min(1).max(365),alertEmail:z.string().max(320),webhook:z.string().max(2000),smtpHost:z.string().max(255),smtpPort:z.coerce.number().int().min(1).max(65535),smtpSecure:z.boolean(),smtpUser:z.string().max(255),smtpPassword:z.string().max(1000).optional(),smtpFrom:z.string().max(500),seoMaxPages:z.coerce.number().int().min(1).max(500),pageSpeedApiKey:z.string().max(1000).optional()});return{ok:true,settings:await saveAppSettings(schema.parse(req.body))};});
+app.post('/api/settings/github-test',async req=>{const schema=z.object({githubBackupRepo:z.string().max(255).optional(),githubBackupToken:z.string().max(500).optional(),backupBranch:z.string().max(191).optional()}),x=schema.parse(req.body||{}),previous={repo:cfg.githubBackupRepo,token:cfg.githubBackupToken,branch:cfg.backupBranch};try{if(x.githubBackupRepo!==undefined)cfg.githubBackupRepo=x.githubBackupRepo.trim().replace(/^\/+|\/+$/g,'');if(x.githubBackupToken)cfg.githubBackupToken=x.githubBackupToken;if(x.backupBranch)cfg.backupBranch=x.backupBranch.trim();backupRepoChecked=false;backupRepoMeta=null;await ensureBackupRepository();const r=await gh('');return{ok:true,repository:r.full_name,private:r.private,defaultBranch:r.default_branch,branch:cfg.backupBranch};}finally{cfg.githubBackupRepo=previous.repo;cfg.githubBackupToken=previous.token;cfg.backupBranch=previous.branch;backupRepoChecked=false;backupRepoMeta=null;}});
+app.post('/api/settings/alert-test',async()=>{if(!(cfg.webhook||(cfg.alertEmail&&cfg.smtpHost)))throw new Error('Configure an alert email with SMTP or a webhook first');await sendAlert('TEST','SiteOps test notification from '+cfg.publicBaseUrl);return{ok:true};});app.post('/api/settings/pagespeed-test',async req=>{const schema=z.object({pageSpeedApiKey:z.string().max(1000).optional(),url:z.string().url()}),x=schema.parse(req.body||{}),previous=cfg.pageSpeedApiKey;try{
+  if(x.pageSpeedApiKey)cfg.pageSpeedApiKey=x.pageSpeedApiKey;
+  if(!cfg.pageSpeedApiKey)throw new Error('Kein PageSpeed API-Key konfiguriert');
+  const probe=await fetch(x.url,{redirect:'follow',signal:AbortSignal.timeout(15000),headers:{'User-Agent':cfg.seoUserAgent,accept:'text/html,application/xhtml+xml'}});
+  const type=(probe.headers.get('content-type')||'').toLowerCase();
+  if(!probe.ok)throw new Error('Test-URL ist öffentlich nicht erfolgreich erreichbar: HTTP '+probe.status);
+  if(!type.includes('text/html')&&!type.includes('application/xhtml+xml'))throw new Error('Test-URL liefert kein HTML, sondern '+(type||'unbekannten MIME-Typ')+'. Verwende eine öffentliche Website ohne Login.');
+  return{ok:true,url:probe.url,result:await pageSpeedAudit(probe.url,'mobile')};
+}finally{cfg.pageSpeedApiKey=previous;}});app.post('/api/sites/:site/backup',async req=>{const site=await getSite(req.params.site);return fullBackup(site,site.backup_max_files||10000);});app.post('/api/sites/:site/check',async req=>processMonitor(await getSite(req.params.site)));app.patch('/api/sites/:site',async req=>{const schema=z.object({
+  name:z.string().min(1).optional(),domain:z.string().min(1).optional(),enabled:z.boolean().optional(),
+  backup_enabled:z.boolean().optional(),backup_interval_seconds:z.coerce.number().int().min(900).max(2592000).optional(),backup_max_files:z.coerce.number().int().min(100).max(200000).optional(),
+  seo_enabled:z.boolean().optional(),seo_interval_seconds:z.coerce.number().int().min(3600).max(7776000).optional(),seo_max_pages:z.coerce.number().int().min(1).max(500).optional(),seo_pagespeed_mode:z.enum(['none','homepage','all']).optional(),seo_regression_alerts:z.boolean().optional(),
+  monitor_enabled:z.boolean().optional(),monitor_url:z.string().url().optional(),monitor_interval_seconds:z.coerce.number().int().min(30).max(86400).optional(),
+  monitor_expected_status:z.coerce.number().int().min(100).max(599).optional(),monitor_content:z.string().nullable().optional(),monitor_expected_title:z.string().nullable().optional(),
+  monitor_check_dns:z.boolean().optional(),monitor_check_wordpress:z.boolean().optional(),monitor_timeout_ms:z.coerce.number().int().min(1000).max(60000).optional(),
+  monitor_failure_threshold:z.coerce.number().int().min(1).max(20).optional(),alert_repeat_minutes:z.coerce.number().int().min(1).max(1440).optional(),
+  response_warn_ms:z.coerce.number().int().min(1).max(60000).nullable().optional(),ssl_warn_days:z.coerce.number().int().min(1).max(365).optional(),
+  exclude_patterns:z.array(z.string()).optional()
+});const site=await updateSite(req.params.site,schema.parse(req.body));return{ok:true,site:publicSite(site)};});app.post('/api/backups/:id/restore-preview',async req=>backupRestorePreview(req.params.id,'dashboard'));app.post('/api/changes/:id/rollback-preview',async req=>rollbackPreview(req.params.id,'dashboard'));app.post('/api/previews/:id/apply',async req=>applyPreview(req.params.id));app.get('/mcp-info',async(_r,reply)=>reply.type('text/html').send(mcpInfoPage()));app.get('/settings',async(_r,reply)=>reply.type('text/html').send(settingsPage()));app.get('/setup',async(_r,reply)=>reply.type('text/html').send(setupPage()));app.get('/sites/:slug/seo',async(req,reply)=>reply.type('text/html').send(await seoDashboardPage(req.params.slug)));app.get('/seo/pages/:id',async(req,reply)=>reply.type('text/html').send(await seoPageDetailPage(req.params.id)));app.get('/sites/:slug/intelligence',async(req,reply)=>reply.type('text/html').send(await siteIntelligencePage(req.params.slug)));app.get('/sites/:slug/wordpress',async(req,reply)=>reply.type('text/html').send(await wordpressInventoryPage(req.params.slug)));app.get('/sites/:slug/report',async(req,reply)=>reply.type('text/html').send(await clientReportPage(req.params.slug)));app.get('/sites/:slug',async(req,reply)=>reply.type('text/html').send(await siteOperationsPage(req.params.slug)));app.get('/incidents/:id',async(req,reply)=>reply.type('text/html').send(await incidentPage(req.params.id)));if(databaseReady){startMonitor();startBackupWorker();startSeoWorker();}await app.listen({host:cfg.host,port:cfg.port});app.log.info({port:cfg.port,host:cfg.host,databaseReady},'SiteOps listening');}
+
+if(process.argv.includes('--check-runtime')){phpParser.parseCode('<?php echo 1;','smoke.php');await db.end();console.log('Runtime imports OK.');}else if(process.argv.includes('--migrate')){await migrate();await db.end();console.log('Database schema applied.');}else{start().catch(e=>{console.error(e);process.exit(1);});}
+,'im'));
   return m?m[1].trim().replace(/\*\/\s*$/,'').trim():null;
 }
 async function wpReadMaybe(remote,path,maxBytes=131072){
