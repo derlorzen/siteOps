@@ -67,7 +67,7 @@ The Quality Suite additionally checks duplicate/near-duplicate content, broken i
 
 Synthetic secrets are passed separately and referenced in test steps with `{{secret.NAME}}`. They are encrypted with the SiteOps master key and never returned by MCP.
 
-The generated repair prompt explicitly tells the agent to inspect the source through SiteOps, create a minimal `change_preview`, and wait for human approval before `change_apply`.
+The generated repair prompt explicitly tells the agent to inspect the source through SiteOps, create a minimal `change_preview`, and wait for human approval before `change_apply`. DOWN, backup-failure and scheduled synthetic-failure alerts also include this prompt automatically.
 
 ### Connections and configuration
 
