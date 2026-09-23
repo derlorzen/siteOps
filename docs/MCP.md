@@ -31,6 +31,7 @@ SiteOps never returns stored passwords, private keys, GitHub PATs, PageSpeed API
 - `sites_list`
 - `site_get`
 - `site_overview`
+- `fleet_overview` – cross-customer uptime, incident, backup, SEO and Site Intelligence overview
 - `deployment_info`
 - `settings_get`
 
@@ -55,6 +56,11 @@ SiteOps never returns stored passwords, private keys, GitHub PATs, PageSpeed API
 - `site_intelligence` – live security, DNS/domain, technology and AI-search crawler audit
 - `site_intelligence_latest` – latest stored Site Intelligence result
 - `client_report_data` – client-ready operations/SEO/intelligence dataset
+
+### WordPress fleet
+
+- `wordpress_inventory` – read-only Core/Plugin/Theme/MU-Plugin inventory from the configured source of truth, including safe wp-config flags and WordPress.org version matching
+- `wordpress_update_plan` – read-only list of available Core/Plugin/Theme updates; SiteOps 0.9 does not auto-apply these updates
 
 The WDF×IDF values are calculated against the corpus of the crawled website. They are useful for internal content analysis but are not a competitor SERP corpus.
 
