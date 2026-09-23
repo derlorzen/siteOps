@@ -61,6 +61,13 @@ SiteOps combines website operations, safe changes, monitoring, Git-backed backup
 - llms.txt discovery without treating it as a Google ranking factor
 - AI Search score kept separate from training opt-in/opt-out choices
 
+### WordPress fleet
+
+- read-only Core, Plugin, Theme and MU-Plugin inventory through the existing Git/SFTP/FTP source access
+- safe wp-config hardening flags without returning secrets
+- WordPress.org update matching for identifiable public plugins and themes
+- read-only update plan; automatic updates are intentionally deferred until they can use a dedicated safety-backup, validation and rollback pipeline
+
 ### Reporting & MCP
 
 - printable client report combining uptime, incidents, backups, changes, SEO health and Site Intelligence
