@@ -3,7 +3,7 @@
 Remote endpoint:
 
 ```
-https://siteops.lorzen.cloud/mcp
+https://siteops.example.com/mcp
 ```
 
 ## Authentication
@@ -36,7 +36,7 @@ SiteOps stores only SHA-256 hashes of OAuth access/refresh tokens and authorizat
 ## ChatGPT
 
 1. Open the ChatGPT custom app / MCP creation flow in Developer Mode.
-2. Enter the SiteOps MCP URL: `https://siteops.lorzen.cloud/mcp`.
+2. Enter the SiteOps MCP URL: `https://siteops.example.com/mcp`.
 3. Select OAuth when prompted.
 4. ChatGPT discovers SiteOps through the well-known metadata endpoints.
 5. With CIMD enabled, ChatGPT uses its HTTPS Client ID Metadata Document as `client_id`.
@@ -48,7 +48,7 @@ SiteOps advertises RFC 9207 issuer identification and returns `iss` on authoriza
 ## Claude
 
 1. Open Claude → Settings → Connectors.
-2. Add a custom connector with `https://siteops.lorzen.cloud/mcp`.
+2. Add a custom connector with `https://siteops.example.com/mcp`.
 3. Click Connect.
 4. Claude can dynamically register its OAuth client through SiteOps DCR.
 5. Complete the SiteOps authorization screen.
