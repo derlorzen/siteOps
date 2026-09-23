@@ -27,6 +27,8 @@ jobs:
         run: npm install --ignore-scripts
       - name: Syntax check
         run: npm run check
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
       - name: Runtime import check
         env:
           SITEOPS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
