@@ -14,7 +14,7 @@ Authorization: Bearer <MCP_API_TOKEN>
 
 The interactive setup guide is available in SiteOps at `/mcp-info`.
 
-SiteOps never returns stored passwords, private keys, GitHub PATs, PageSpeed API keys, SMTP passwords or the master key. Secret-bearing update tools accept replacement secrets but responses remain redacted.
+SiteOps never returns stored passwords, private keys, GitHub PATs, PageSpeed API keys, Browser Runner tokens, synthetic test secrets, SMTP passwords or the master key. Secret-bearing update tools accept replacement secrets but responses remain redacted.
 
 ## Initial setup
 
@@ -55,6 +55,19 @@ SiteOps never returns stored passwords, private keys, GitHub PATs, PageSpeed API
 The WDF×IDF values are calculated against the corpus of the crawled website. They are useful for internal content analysis but are not a competitor SERP corpus.
 
 The Quality Suite additionally checks duplicate/near-duplicate content, broken internal links/resources, redirecting links, canonicals, sitemap coverage, hreflang, social metadata, static accessibility signals, security headers and AI crawler access declared in robots.txt. These checks are technical diagnostics; they do not claim search-engine ranking outcomes.
+
+### Synthetic browser tests
+
+- `synthetics_list` – list journeys and their latest state
+- `synthetic_create` – create a scheduled Playwright journey
+- `synthetic_update` – update/pause a journey or rotate encrypted test secrets
+- `synthetic_run` – run now; optionally promote a successful screenshot to visual baseline
+- `synthetic_run_get` – inspect a run without returning screenshot bytes
+- `fix_prompt` – generate a copy-ready ChatGPT/Claude repair prompt from an SEO finding, incident or failed browser run
+
+Synthetic secrets are passed separately and referenced in test steps with `{{secret.NAME}}`. They are encrypted with the SiteOps master key and never returned by MCP.
+
+The generated repair prompt explicitly tells the agent to inspect the source through SiteOps, create a minimal `change_preview`, and wait for human approval before `change_apply`.
 
 ### Connections and configuration
 
@@ -99,6 +112,16 @@ The backup repository is automatically initialized on the first backup even when
 5. obtain human approval
 6. `change_apply`
 7. `site_status`
+
+For a failing browser journey:
+
+1. `synthetic_run_get`
+2. `fix_prompt` with `kind=synthetic`
+3. diagnose with file tools
+4. `change_preview`
+5. obtain human approval
+6. `change_apply`
+7. `synthetic_run` again
 
 For SEO:
 
