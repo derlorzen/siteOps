@@ -4,11 +4,12 @@ import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 import { chromium } from 'playwright';
 
-const app=Fastify({logger:true});
+const app=Fastify({logger:true,bodyLimit:20*1024*1024});
 const port=Number(process.env.PORT||3200),host=process.env.HOST||'0.0.0.0',token=process.env.BROWSER_RUNNER_TOKEN||'';
 const safeEqual=(a,b)=>{const aa=Buffer.from(String(a??'')),bb=Buffer.from(String(b??''));return aa.length===bb.length&&crypto.timingSafeEqual(aa,bb);};
 function auth(req,reply){const h=req.headers.authorization||'',t=h.startsWith('Bearer ')?h.slice(7):'';if(!token){reply.code(503).send({error:'BROWSER_RUNNER_TOKEN is not configured'});return false;}if(!safeEqual(t,token)){reply.code(401).send({error:'unauthorized'});return false;}return true;}
-function sameHost(value,base){const u=new URL(value,base),b=new URL(base);if(!['http:','https:'].includes(u.protocol)||u.hostname!==b.hostname)throw new Error('Navigation outside target hostname rejected: '+u.hostname);return u.toString();}
+const hostKey=value=>String(value||'').toLowerCase().replace(/^www\./,'');
+function sameHost(value,base){const u=new URL(value,base),b=new URL(base);if(!['http:','https:'].includes(u.protocol)||hostKey(u.hostname)!==hostKey(b.hostname))throw new Error('Navigation outside target hostname rejected: '+u.hostname);return u.toString();}
 function resolveSelector(page,selector){if(!selector)throw new Error('selector is required');return page.locator(selector).first();}
 async function executeStep(page,step,baseUrl){
   const started=Date.now(),action=String(step.action||'');
@@ -45,8 +46,8 @@ app.post('/run',async(req,reply)=>{
   try{
     browser=await chromium.launch({headless:true,args:['--disable-dev-shm-usage']});
     const context=await browser.newContext({viewportSize:viewport,ignoreHTTPSErrors:false});
-    page=await context.newPage();page.setDefaultTimeout(timeoutMs);const baseHost=new URL(baseUrl).hostname;
-    await context.route('**/*',async route=>{const req=route.request();if(req.isNavigationRequest()&&req.frame()===page.mainFrame()){try{const h=new URL(req.url()).hostname;if(h!==baseHost)return route.abort('blockedbyclient');}catch{return route.abort('blockedbyclient');}}return route.continue();});
+    page=await context.newPage();page.setDefaultTimeout(timeoutMs);const baseHost=hostKey(new URL(baseUrl).hostname);
+    await context.route('**/*',async route=>{const req=route.request();if(req.isNavigationRequest()&&req.frame()===page.mainFrame()){try{const h=hostKey(new URL(req.url()).hostname);if(h!==baseHost)return route.abort('blockedbyclient');}catch{return route.abort('blockedbyclient');}}return route.continue();});
     page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text().slice(0,1000));});
     page.on('pageerror',e=>pageErrors.push(String(e.message||e).slice(0,1000)));
     page.on('requestfailed',r=>failedRequests.push({url:r.url(),error:r.failure()?.errorText||'failed'}));
