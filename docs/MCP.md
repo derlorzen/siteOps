@@ -63,7 +63,7 @@ The Quality Suite additionally checks duplicate/near-duplicate content, broken i
 - `synthetic_update` – update/pause a journey or rotate encrypted test secrets
 - `synthetic_run` – run now; optionally promote a successful screenshot to visual baseline
 - `synthetic_run_get` – inspect a run without returning screenshot bytes
-- `fix_prompt` – generate a copy-ready ChatGPT/Claude repair prompt from an SEO finding, incident or failed browser run
+- `fix_prompt` – generate a copy-ready ChatGPT/Claude repair prompt from an SEO finding, monitoring failure, backup failure, incident or failed browser run
 
 Synthetic secrets are passed separately and referenced in test steps with `{{secret.NAME}}`. They are encrypted with the SiteOps master key and never returned by MCP.
 
