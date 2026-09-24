@@ -1,0 +1,15 @@
+# Copy to docker-compose.yml, fill in BROWSER_RUNNER_TOKEN (openssl rand -base64 32),
+# then: docker compose up -d
+#
+# Binds to 127.0.0.1 only - put your own reverse proxy (Nginx, Caddy, Traefik, ...)
+# in front for HTTPS, then enter that public URL + token in
+# SiteOps -> Einstellungen -> Synthetic Runner.
+
+services:
+  siteops-browser-runner:
+    build: .
+    restart: unless-stopped
+    environment:
+      BROWSER_RUNNER_TOKEN: 'replace-with-a-long-random-token'
+    ports:
+      - '127.0.0.1:3200:3200'
