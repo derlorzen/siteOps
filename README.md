@@ -11,6 +11,82 @@ SiteOps is intended for people or agencies that manage multiple customer website
 > **Browser automation:** optional separate Playwright/Chromium runner  
 > **MCP:** Streamable HTTP with built-in OAuth 2.1 for ChatGPT and Claude
 
+## Table of contents
+
+- [What SiteOps does](#what-siteops-does)
+  - [Website operations](#website-operations)
+  - [Monitoring and incidents](#monitoring-and-incidents)
+  - [Backups and safe changes](#backups-and-safe-changes)
+  - [SEO and website quality](#seo-and-website-quality)
+  - [MCP and AI integration](#mcp-and-ai-integration)
+  - [Browser / synthetic tests](#browser--synthetic-tests)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+  - [Main application](#main-application)
+  - [Optional Browser Runner](#optional-browser-runner)
+- [Quick start](#quick-start)
+  - [1. Clone the repository](#1-clone-the-repository)
+  - [2. Create a MySQL database](#2-create-a-mysql-database)
+  - [3. Generate the master encryption key](#3-generate-the-master-encryption-key)
+  - [4. Configure environment variables](#4-configure-environment-variables)
+    - [Important: `.env` is not loaded automatically](#important-env-is-not-loaded-automatically)
+  - [5. Start SiteOps](#5-start-siteops)
+- [Environment variables](#environment-variables)
+  - [Core](#core)
+  - [Database](#database)
+  - [Backup repository](#backup-repository)
+  - [Default site settings](#default-site-settings)
+  - [Alerts](#alerts)
+  - [SEO / Lighthouse](#seo--lighthouse)
+    - [Content analysis on client-rendered pages (Next.js and similar)](#content-analysis-on-client-rendered-pages-nextjs-and-similar)
+  - [OAuth](#oauth)
+  - [Browser Runner](#browser-runner)
+- [Deploying the main application](#deploying-the-main-application)
+  - [Hostinger Cloud / Web App example](#hostinger-cloud--web-app-example)
+- [First login](#first-login)
+- [GitHub backup repository](#github-backup-repository)
+- [Adding websites](#adding-websites)
+  - [1. Direct webspace](#1-direct-webspace)
+  - [2. Git deployment](#2-git-deployment)
+- [Monitoring](#monitoring)
+- [SEO / Quality Suite](#seo--quality-suite)
+- [Browser Runner setup](#browser-runner-setup)
+  - [Why separate?](#why-separate)
+  - [Recommended installation: Linux + systemd](#recommended-installation-linux--systemd)
+    - [1. Prepare the VPS](#1-prepare-the-vps)
+    - [2. Clone SiteOps on the VPS](#2-clone-siteops-on-the-vps)
+    - [3. Run the included installer](#3-run-the-included-installer)
+    - [4. Verify the runner locally](#4-verify-the-runner-locally)
+    - [5. Publish it through HTTPS](#5-publish-it-through-https)
+    - [6. Connect the runner to SiteOps](#6-connect-the-runner-to-siteops)
+    - [7. Create the first synthetic journey](#7-create-the-first-synthetic-journey)
+    - [Updating the Browser Runner](#updating-the-browser-runner)
+  - [Docker (alternative to systemd)](#docker-alternative-to-systemd)
+- [MCP setup](#mcp-setup)
+  - [ChatGPT](#chatgpt)
+  - [Claude](#claude)
+- [Safe AI-assisted changes](#safe-ai-assisted-changes)
+- [Security model](#security-model)
+  - [Never commit](#never-commit)
+- [Updating SiteOps](#updating-siteops)
+  - [Main application](#main-application-1)
+  - [Browser Runner](#browser-runner-1)
+- [Validation and CI](#validation-and-ci)
+- [Troubleshooting](#troubleshooting)
+  - [`/health` reports degraded](#health-reports-degraded)
+  - [Database connection fails](#database-connection-fails)
+  - [OAuth connection opens the wrong domain](#oauth-connection-opens-the-wrong-domain)
+  - [ChatGPT or Claude cannot discover OAuth](#chatgpt-or-claude-cannot-discover-oauth)
+  - [Browser Runner test fails](#browser-runner-test-fails)
+  - [GitHub backup test fails](#github-backup-test-fails)
+  - [A website change is rejected because the source changed](#a-website-change-is-rejected-because-the-source-changed)
+- [Repository structure](#repository-structure)
+- [Public repository checklist](#public-repository-checklist)
+- [Additional documentation](#additional-documentation)
+- [License](#license)
+  - [Commercial licensing](#commercial-licensing)
+  - [License history](#license-history)
+
 ## What SiteOps does
 
 ### Website operations
@@ -764,6 +840,38 @@ sudo bash runner/install-systemd.sh
 ```
 
 The installer keeps an existing `/etc/siteops-browser-runner.env`, so the token is preserved unless you intentionally replace it.
+
+## Docker (alternative to systemd)
+
+If you'd rather run the Browser Runner as a container instead of the systemd install above:
+
+```bash
+cd runner
+docker build -t siteops-browser-runner .
+docker run -d --name siteops-browser-runner \
+  -e BROWSER_RUNNER_TOKEN="$(openssl rand -base64 32)" \
+  -p 127.0.0.1:3200:3200 \
+  --restart unless-stopped \
+  siteops-browser-runner
+```
+
+Or with Compose:
+
+```bash
+cd runner
+cp docker-compose.yml.example docker-compose.yml
+# edit BROWSER_RUNNER_TOKEN in docker-compose.yml
+docker compose up -d
+```
+
+The image runs as a non-root user and binds to `127.0.0.1:3200` by default, same as the systemd install — put your own reverse proxy in front for HTTPS (Nginx, Caddy, Traefik, whatever your Docker host already uses; `nginx-siteops-browser-runner.conf.example` still applies for Nginx), then enter the public URL and token in **SiteOps → Einstellungen → Synthetic Runner**.
+
+To update: rebuild the image and recreate the container — this re-runs `npm ci` and picks up both the latest code and a matching Chromium build.
+
+```bash
+docker logs -f siteops-browser-runner
+curl http://127.0.0.1:3200/health
+```
 
 More runner-specific details are in [runner/README.md](runner/README.md).
 
