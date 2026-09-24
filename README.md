@@ -1061,6 +1061,8 @@ SiteOps uses live/source hashes to detect conflicting edits. Create a fresh prev
 ├── runner/
 │   ├── server.mjs
 │   ├── package.json
+│   ├── Dockerfile
+│   ├── docker-compose.yml.example
 │   ├── install-systemd.sh
 │   ├── siteops-browser-runner.service
 │   ├── siteops-browser-runner.env.example

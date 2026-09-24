@@ -69,3 +69,41 @@ jobs:
           curl -fsS             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"url":"http://127.0.0.1:8123/"}'             http://127.0.0.1:3299/render > /tmp/siteops-render.json
 
           node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/siteops-render.json','utf8')); if(!x.ok||!x.html||!x.html.includes('SiteOps Smoke')) { console.error(x); process.exit(1); } console.log({ok:x.ok,statusCode:x.statusCode,finalUrl:x.finalUrl});"
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build runner image
+        run: docker build -t siteops-browser-runner ./runner
+      - name: Run real browser smoke test against the container
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/siteops-smoke
+          cat > /tmp/siteops-smoke/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head><meta charset="utf-8"><title>SiteOps Docker Smoke</title></head>
+          <body>OK</body>
+          </html>
+          HTML
+
+          python3 -m http.server 8123 --bind 0.0.0.0 --directory /tmp/siteops-smoke >/tmp/siteops-smoke-site.log 2>&1 &
+          SITE_PID=$!
+          trap 'kill "$SITE_PID" 2>/dev/null || true; docker rm -f siteops-runner-smoke >/dev/null 2>&1 || true' EXIT
+
+          docker run -d --name siteops-runner-smoke --network host \
+            -e BROWSER_RUNNER_TOKEN=ci-runner-token -e HOST=127.0.0.1 -e PORT=3299 \
+            siteops-browser-runner
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3299/health >/dev/null; then break; fi
+            sleep 1
+          done
+
+          curl -fsS             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"url":"http://127.0.0.1:8123/"}'             http://127.0.0.1:3299/render > /tmp/siteops-docker-render.json
+
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/siteops-docker-render.json','utf8')); if(!x.ok||!x.html||!x.html.includes('SiteOps Docker Smoke')) { console.error(x); process.exit(1); } console.log({ok:x.ok,statusCode:x.statusCode,finalUrl:x.finalUrl});"
+
+          docker logs siteops-runner-smoke
