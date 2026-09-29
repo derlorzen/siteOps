@@ -780,10 +780,12 @@ function seoNormalizeUrl(value,base){
     return u.toString();
   }catch{return null;}
 }
+function seoHostKey(host){return String(host||'').toLowerCase().replace(/\.$/,'').replace(/^www\./,'');}
+function seoSameSiteHost(a,b){return Boolean(a&&b&&seoHostKey(a)===seoHostKey(b));}
 function seoCrawlableUrl(value,rootHost){
   try{
     const u=new URL(value);
-    if(!['http:','https:'].includes(u.protocol)||u.hostname!==rootHost)return false;
+    if(!['http:','https:'].includes(u.protocol)||!seoSameSiteHost(u.hostname,rootHost))return false;
     if(/\.(?:jpg|jpeg|png|gif|webp|avif|svg|ico|pdf|zip|rar|7z|gz|mp4|mp3|mov|avi|wmv|css|js|json|xml|woff2?|ttf|eot)(?:$|\?)/i.test(u.pathname+u.search))return false;
     return true;
   }catch{return false;}
@@ -803,7 +805,7 @@ async function seoDiscoverSitemaps(rootUrl,maxUrls){
       if($('sitemapindex sitemap loc').length){
         $('sitemapindex sitemap loc').each((_,e)=>{const loc=$(e).text().trim();if(loc&&!seenMaps.has(loc)&&queue.length<30)queue.push(loc);});
       }else{
-        $('urlset url loc').each((_,e)=>{const loc=seoNormalizeUrl($(e).text().trim(),rootUrl);if(loc&&new URL(loc).hostname===root.hostname&&seoCrawlableUrl(loc,root.hostname)&&pages.size<maxUrls)pages.add(loc);});
+        $('urlset url loc').each((_,e)=>{const loc=seoNormalizeUrl($(e).text().trim(),rootUrl);if(loc&&seoSameSiteHost(new URL(loc).hostname,root.hostname)&&seoCrawlableUrl(loc,root.hostname)&&pages.size<maxUrls)pages.add(loc);});
       }
     }catch{}
   }
@@ -942,15 +944,15 @@ async function crawlSeoPage(url,rootHost,depth){
   const social=seoSocial($),accessibility=seoAccessibility($),security=seoSecurity(res.headers,finalUrl);
   const images=$('img').length,imagesMissingAlt=$('img').filter((_,e)=>!($(e).attr('alt')||'').trim()).length;
   const body=$('main,article').first().length?$('main,article').first().clone():$('body').clone();body.find('script,style,noscript,svg,template').remove();const text=body.text().replace(/\s+/g,' ').trim(),wordCount=seoTokens(text).length,contentHash=hash(Buffer.from(text.toLowerCase())),contentFingerprint=seoFingerprint(text);
-  const links=[];$('a[href]').each((_,e)=>{const href=$(e).attr('href');if(!href||/^(mailto:|tel:|javascript:)/i.test(href))return;const target=seoNormalizeUrl(href,finalUrl);if(!target)return;const tu=new URL(target),internal=tu.hostname===rootHost,anchor=$(e).text().replace(/\s+/g,' ').trim().slice(0,250),nofollow=/\bnofollow\b/i.test($(e).attr('rel')||'');links.push({source:url,target,anchor,internal,nofollow});});
+  const links=[];$('a[href]').each((_,e)=>{const href=$(e).attr('href');if(!href||/^(mailto:|tel:|javascript:)/i.test(href))return;const target=seoNormalizeUrl(href,finalUrl);if(!target)return;const tu=new URL(target),internal=seoSameSiteHost(tu.hostname,rootHost),anchor=$(e).text().replace(/\s+/g,' ').trim().slice(0,250),nofollow=/\bnofollow\b/i.test($(e).attr('rel')||'');links.push({source:finalUrl,target,anchor,internal,nofollow});});
   const resources=[];$('img[src],script[src],link[rel="stylesheet"][href]').each((_,e)=>{const el=$(e),raw=el.attr('src')||el.attr('href'),target=raw?seoNormalizeUrl(raw,finalUrl):null;if(target)resources.push(target);});
   const indexable=statusCode===200&&!/noindex/i.test(robots||'');
-  const page={url,finalUrl,path:new URL(url).pathname+(new URL(url).search||''),statusCode,responseMs,contentBytes,title,metaDescription,canonical,robots,h1,h2,wordCount,imagesTotal:images,imagesMissingAlt,structuredData,links,resources,text,depth,redirectCount:redirects.length,redirects,lang,hreflang,social,security,accessibility,contentHash,contentFingerprint,indexable};
+  const page={url:finalUrl,requestedUrl:url,finalUrl,path:new URL(finalUrl).pathname+(new URL(finalUrl).search||''),statusCode,responseMs,contentBytes,title,metaDescription,canonical,robots,h1,h2,wordCount,imagesTotal:images,imagesMissingAlt,structuredData,links,resources,text,depth,redirectCount:redirects.length,redirects,lang,hreflang,social,security,accessibility,contentHash,contentFingerprint,indexable};
   page.issues=seoIssues(page);return page;
 }
 async function seoAuditResources(pages,rootHost,limit=250){
   const owners=new Map();
-  for(const p of pages)for(const resource of p.resources||[]){let u;try{u=new URL(resource);}catch{continue;}if(u.hostname!==rootHost)continue;if(!owners.has(resource))owners.set(resource,[]);owners.get(resource).push(p);}
+  for(const p of pages)for(const resource of p.resources||[]){let u;try{u=new URL(resource);}catch{continue;}if(!seoSameSiteHost(u.hostname,rootHost))continue;if(!owners.has(resource))owners.set(resource,[]);owners.get(resource).push(p);}
   const entries=[...owners.entries()].slice(0,limit),results=[];
   for(let i=0;i<entries.length;i+=10){
     const batch=entries.slice(i,i+10);
@@ -967,7 +969,7 @@ async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homep
     while((queue.length||sitemapPending.length)&&pages.length<maxPages){
       if(!queue.length){let candidate=null;while(sitemapPending.length&&!candidate){const next=sitemapPending.shift();if(!crawled.has(next)&&!queued.has(next))candidate=next;}if(!candidate)break;queued.add(candidate);queue.push({url:candidate,depth:null});}
       const item=queue.shift();queued.delete(item.url);if(crawled.has(item.url))continue;crawled.add(item.url);
-      const page=await crawlSeoPage(item.url,rootHost,item.depth);pages.push(page);links.push(...page.links);
+      const page=await crawlSeoPage(item.url,rootHost,item.depth);crawled.add(page.finalUrl);pages.push(page);links.push(...page.links);
       for(const l of page.links){if(!l.internal||!seoCrawlableUrl(l.target,rootHost)||crawled.has(l.target))continue;const linkedDepth=item.depth==null?1:item.depth+1,existing=queue.find(x=>x.url===l.target);if(existing){if(existing.depth==null||linkedDepth<existing.depth)existing.depth=linkedDepth;continue;}if(pages.length+queue.length<maxPages){queued.add(l.target);queue.push({url:l.target,depth:linkedDepth});}}
     }
     const pageMap=new Map(pages.map(p=>[p.url,p])),urls=pages.map(p=>p.url),rank=calcPageRank(urls,links),incoming=new Map(urls.map(u=>[u,0]));
@@ -980,7 +982,7 @@ async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homep
       if(p.metaDescription&&(descMap.get(p.metaDescription)?.length||0)>1)p.issues.push({level:'warn',code:'duplicate_description',text:'Meta Description mehrfach identisch'});
       if(p.h1?.[0]&&(h1Map.get(p.h1[0])?.length||0)>1)p.issues.push({level:'info',code:'duplicate_h1',text:'H1 auf '+h1Map.get(p.h1[0]).length+' Seiten identisch'});
       if(p.contentHash&&(contentMap.get(p.contentHash)?.length||0)>1)p.issues.push({level:'error',code:'duplicate_content',text:'Hauptinhalt auf '+contentMap.get(p.contentHash).length+' Seiten identisch'});
-      if(p.canonical){try{if(new URL(p.canonical).hostname!==rootHost)p.issues.push({level:'warn',code:'canonical_external',text:'Canonical zeigt auf andere Domain'});else if(p.indexable&&p.canonical!==p.url)p.issues.push({level:'info',code:'canonical_to_other',text:'Indexierbare Seite canonicalisiert auf andere URL'});}catch{p.issues.push({level:'warn',code:'canonical_invalid',text:'Canonical ist ungültig'});}}
+      if(p.canonical){try{if(!seoSameSiteHost(new URL(p.canonical).hostname,rootHost))p.issues.push({level:'warn',code:'canonical_external',text:'Canonical zeigt auf andere Domain'});else if(p.indexable&&p.canonical!==p.url)p.issues.push({level:'info',code:'canonical_to_other',text:'Indexierbare Seite canonicalisiert auf andere URL'});}catch{p.issues.push({level:'warn',code:'canonical_invalid',text:'Canonical ist ungültig'});}}
       if(sitemapSet.size&&p.indexable&&!sitemapSet.has(p.url)&&p.url!==root)p.issues.push({level:'info',code:'not_in_sitemap',text:'Indexierbare Seite fehlt in der Sitemap'});
       for(const l of p.links.filter(x=>x.internal)){const target=pageMap.get(l.target);if(!target)continue;if(target.statusCode>=400||target.statusCode===0)p.issues.push({level:'error',code:'broken_internal_link',text:'Interner Link auf HTTP '+target.statusCode+': '+l.target});else if(target.redirectCount>0)p.issues.push({level:'warn',code:'redirecting_internal_link',text:'Interner Link zeigt auf Redirect: '+l.target});}
       for(const h of p.hreflang||[]){if(!h.lang||(!/^x-default$/i.test(h.lang)&&!/^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(h.lang)))p.issues.push({level:'warn',code:'hreflang_invalid',text:'Ungewöhnlicher hreflang-Wert: '+(h.lang||'(leer)')});}
@@ -996,7 +998,7 @@ async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homep
     for(const l of links)await q('insert into seo_links(run_id,site_id,source_url,target_url,anchor_text,internal_link,nofollow) values(?,?,?,?,?,?,?)',[runId,site.id,l.source,l.target,l.anchor,l.internal,l.nofollow]);
     const allIssues=pages.flatMap(p=>(p.issues||[]).map(i=>({...i,url:p.url}))),count=code=>allIssues.filter(i=>i.code===code).length;
     const categories={technical:allIssues.filter(i=>['http_status','redirect_chain','canonical_missing','canonical_external','canonical_invalid','canonical_to_other','noindex','page_nofollow','not_in_sitemap','orphan_page'].includes(i.code)).length,content:allIssues.filter(i=>/title|description|h1|content|word|wdf|duplicate/.test(i.code)).length,links:allIssues.filter(i=>/link|crawl_depth/.test(i.code)).length,media:allIssues.filter(i=>/image|resource|mixed_content/.test(i.code)).length,accessibility:allIssues.filter(i=>/accessibility|html_lang/.test(i.code)).length,security:allIssues.filter(i=>/security|mixed_content/.test(i.code)).length,social:allIssues.filter(i=>/open_graph|twitter/.test(i.code)).length};
-    const summary={healthScore:seoHealthScore(pages),pages:pages.length,indexablePages:pages.filter(p=>p.indexable).length,okPages:pages.filter(p=>p.statusCode===200).length,errorPages:pages.filter(p=>p.statusCode>=400||p.error).length,issues:{error:allIssues.filter(i=>i.level==='error').length,warn:allIssues.filter(i=>i.level==='warn').length,info:allIssues.filter(i=>i.level==='info').length},categories,brokenInternalLinks:count('broken_internal_link'),redirectingInternalLinks:count('redirecting_internal_link'),duplicateContent:count('duplicate_content'),nearDuplicateContent:count('near_duplicate_content'),brokenResources:resourceAudit.broken,resourcesChecked:resourceAudit.checked,avgResponseMs:pages.length?Math.round(pages.reduce((n,p)=>n+p.responseMs,0)/pages.length):0,avgWordCount:pages.length?Math.round(pages.reduce((n,p)=>n+p.wordCount,0)/pages.length):0,strongestPages:[...pages].sort((a,b)=>b.pagerank-a.pagerank).slice(0,10).map(p=>({url:p.url,title:p.title,pagerank:Number(p.pagerank.toFixed(6)),incomingLinks:p.incomingLinks})),pageSpeedEnabled:Boolean(cfg.pageSpeedApiKey),pageSpeedPages:psiCandidates.length,sitemapUrls:sitemap.sitemaps.length,sitemapPages:sitemap.pages.length,aiBots:seoAiBotAccess(sitemap.robotsTxt)};
+    const summary={canonicalHost:pages[0]?.finalUrl?new URL(pages[0].finalUrl).hostname:rootHost,configuredHost:rootHost,wwwRedirectDetected:Boolean(pages[0]?.redirects?.some(r=>{try{return seoSameSiteHost(new URL(r.from).hostname,new URL(r.to).hostname)&&new URL(r.from).hostname!==new URL(r.to).hostname;}catch{return false;}})),healthScore:seoHealthScore(pages),pages:pages.length,indexablePages:pages.filter(p=>p.indexable).length,okPages:pages.filter(p=>p.statusCode===200).length,errorPages:pages.filter(p=>p.statusCode>=400||p.error).length,issues:{error:allIssues.filter(i=>i.level==='error').length,warn:allIssues.filter(i=>i.level==='warn').length,info:allIssues.filter(i=>i.level==='info').length},categories,brokenInternalLinks:count('broken_internal_link'),redirectingInternalLinks:count('redirecting_internal_link'),duplicateContent:count('duplicate_content'),nearDuplicateContent:count('near_duplicate_content'),brokenResources:resourceAudit.broken,resourcesChecked:resourceAudit.checked,avgResponseMs:pages.length?Math.round(pages.reduce((n,p)=>n+p.responseMs,0)/pages.length):0,avgWordCount:pages.length?Math.round(pages.reduce((n,p)=>n+p.wordCount,0)/pages.length):0,strongestPages:[...pages].sort((a,b)=>b.pagerank-a.pagerank).slice(0,10).map(p=>({url:p.url,title:p.title,pagerank:Number(p.pagerank.toFixed(6)),incomingLinks:p.incomingLinks})),pageSpeedEnabled:Boolean(cfg.pageSpeedApiKey),pageSpeedPages:psiCandidates.length,sitemapUrls:sitemap.sitemaps.length,sitemapPages:sitemap.pages.length,aiBots:seoAiBotAccess(sitemap.robotsTxt)};
     await q('update seo_runs set status=?,pages_crawled=?,summary=?,finished_at=now() where id=?',['completed',pages.length,JSON.stringify(summary),runId]);
   }catch(e){await q('update seo_runs set status=?,error=?,finished_at=now() where id=?',['failed',String(e.message||e).slice(0,10000),runId]);throw e;}
 }
