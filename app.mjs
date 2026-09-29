@@ -3020,8 +3020,9 @@ async function runSeoAudit(
     links = [],
     renderBudget = { remaining: cfg.seoRenderMaxPages };
   const sitemap = await seoDiscoverSitemaps(root, Math.min(maxPages * 3, 1500)),
-    sitemapSet = new Set(sitemap.pages),
-    sitemapPending = sitemap.pages.filter(url => url !== root);
+    sitemapKeySet = new Set(sitemap.pages.map(seoSiteUrlKey)),
+    rootKey = seoSiteUrlKey(root),
+    sitemapPending = sitemap.pages.filter(url => seoSiteUrlKey(url) !== rootKey);
   try {
     while ((queue.length || sitemapPending.length) && pages.length < maxPages) {
       if (!queue.length) {
@@ -3059,11 +3060,24 @@ async function runSeoAudit(
         }
       }
     }
-    const pageMap = new Map(pages.map(p => [p.url, p])),
+    const canonicalUrlByKey = new Map(pages.map(p => [seoSiteUrlKey(p.url), p.url])),
+      graphLinks = links.map(l =>
+        l.internal
+          ? {
+              ...l,
+              source: canonicalUrlByKey.get(seoSiteUrlKey(l.source)) || l.source,
+              target: canonicalUrlByKey.get(seoSiteUrlKey(l.target)) || l.target
+            }
+          : l
+      ),
+      pageMap = new Map(pages.map(p => [seoSiteUrlKey(p.url), p])),
       urls = pages.map(p => p.url),
-      rank = calcPageRank(urls, links),
-      incoming = new Map(urls.map(u => [u, 0]));
-    for (const l of links) if (l.internal && incoming.has(l.target)) incoming.set(l.target, incoming.get(l.target) + 1);
+      rank = calcPageRank(urls, graphLinks),
+      incoming = new Map(urls.map(u => [seoSiteUrlKey(u), 0]));
+    for (const l of graphLinks) {
+      const targetKey = seoSiteUrlKey(l.target);
+      if (l.internal && incoming.has(targetKey)) incoming.set(targetKey, incoming.get(targetKey) + 1);
+    }
     const wdfidf = calcWdfIdf(pages),
       titleMap = new Map(),
       descMap = new Map(),
@@ -3071,7 +3085,7 @@ async function runSeoAudit(
       contentMap = new Map();
     pages.forEach((p, i) => {
       p.pagerank = rank.get(p.url) || 0;
-      p.incomingLinks = incoming.get(p.url) || 0;
+      p.incomingLinks = incoming.get(seoSiteUrlKey(p.url)) || 0;
       p.internalLinks = p.links.filter(x => x.internal).length;
       p.externalLinks = p.links.filter(x => !x.internal).length;
       p.wdfidf = wdfidf[i];
@@ -3117,7 +3131,7 @@ async function runSeoAudit(
         try {
           if (!seoSameSiteHost(new URL(p.canonical).hostname, rootHost))
             p.issues.push({ level: 'warn', code: 'canonical_external', text: 'Canonical zeigt auf andere Domain' });
-          else if (p.indexable && p.canonical !== p.url)
+          else if (p.indexable && seoSiteUrlKey(p.canonical) !== seoSiteUrlKey(p.url))
             p.issues.push({
               level: 'info',
               code: 'canonical_to_other',
@@ -3127,10 +3141,10 @@ async function runSeoAudit(
           p.issues.push({ level: 'warn', code: 'canonical_invalid', text: 'Canonical ist ungültig' });
         }
       }
-      if (sitemapSet.size && p.indexable && !sitemapSet.has(p.url) && p.url !== root)
+      if (sitemapKeySet.size && p.indexable && !sitemapKeySet.has(seoSiteUrlKey(p.url)) && seoSiteUrlKey(p.url) !== rootKey)
         p.issues.push({ level: 'info', code: 'not_in_sitemap', text: 'Indexierbare Seite fehlt in der Sitemap' });
       for (const l of p.links.filter(x => x.internal)) {
-        const target = pageMap.get(l.target);
+        const target = pageMap.get(seoSiteUrlKey(l.target));
         if (!target) continue;
         if (target.statusCode >= 400 || target.statusCode === 0)
           p.issues.push({
@@ -3228,7 +3242,7 @@ async function runSeoAudit(
         ]
       );
     }
-    for (const l of links)
+    for (const l of graphLinks)
       await q(
         'insert into seo_links(run_id,site_id,source_url,target_url,anchor_text,internal_link,nofollow) values(?,?,?,?,?,?,?)',
         [runId, site.id, l.source, l.target, l.anchor, l.internal, l.nofollow]
