@@ -2332,7 +2332,8 @@ function seoNormalizeUrl(value, base) {
     u.hash = '';
     for (const k of [...u.searchParams.keys()]) if (/^utm_|^(fbclid|gclid)$/i.test(k)) u.searchParams.delete(k);
     if ((u.protocol === 'https:' && u.port === '443') || (u.protocol === 'http:' && u.port === '80')) u.port = '';
-    if (u.pathname !== '/' && u.pathname.endsWith('/')) u.pathname = u.pathname.replace(/\/+$/, '');
+    // A trailing slash can be the destination of a canonical redirect (for example WordPress).
+    // Preserve it so the redirect target is not rewritten back to the source URL.
     return u.toString();
   } catch {
     return null;
@@ -6322,7 +6323,7 @@ async function start() {
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');
 }
 
-export { migrate, q, db, seoExtractDocument };
+export { migrate, q, db, seoExtractDocument, seoFetchDocument };
 
 // Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a
 // wrapper/loader where `import.meta.url` never equals the resolved
