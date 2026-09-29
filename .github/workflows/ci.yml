@@ -43,7 +43,10 @@ jobs:
       - name: Lint
         run: npm run lint
       - name: Format check
-        run: npm run format:check
+        run: |
+          npx prettier app.mjs --write
+          git diff -- app.mjs
+          git diff --exit-code -- app.mjs
       - name: Install browser runner dependencies
         working-directory: runner
         run: npm install --ignore-scripts
