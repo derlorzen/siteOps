@@ -3141,7 +3141,12 @@ async function runSeoAudit(
           p.issues.push({ level: 'warn', code: 'canonical_invalid', text: 'Canonical ist ungültig' });
         }
       }
-      if (sitemapKeySet.size && p.indexable && !sitemapKeySet.has(seoSiteUrlKey(p.url)) && seoSiteUrlKey(p.url) !== rootKey)
+      if (
+        sitemapKeySet.size &&
+        p.indexable &&
+        !sitemapKeySet.has(seoSiteUrlKey(p.url)) &&
+        seoSiteUrlKey(p.url) !== rootKey
+      )
         p.issues.push({ level: 'info', code: 'not_in_sitemap', text: 'Indexierbare Seite fehlt in der Sitemap' });
       for (const l of p.links.filter(x => x.internal)) {
         const target = pageMap.get(seoSiteUrlKey(l.target));
