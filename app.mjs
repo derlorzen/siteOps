@@ -2338,10 +2338,27 @@ function seoNormalizeUrl(value, base) {
     return null;
   }
 }
+function seoHostKey(host) {
+  return String(host || '')
+    .toLowerCase()
+    .replace(/\.$/, '')
+    .replace(/^www\./, '');
+}
+function seoSameSiteHost(a, b) {
+  return Boolean(a && b && seoHostKey(a) === seoHostKey(b));
+}
+function seoSiteUrlKey(value) {
+  try {
+    const u = new URL(value);
+    return seoHostKey(u.hostname) + '|' + u.pathname.replace(/\/+$/, '') + '|' + u.search;
+  } catch {
+    return String(value || '');
+  }
+}
 function seoCrawlableUrl(value, rootHost) {
   try {
     const u = new URL(value);
-    if (!['http:', 'https:'].includes(u.protocol) || u.hostname !== rootHost) return false;
+    if (!['http:', 'https:'].includes(u.protocol) || !seoSameSiteHost(u.hostname, rootHost)) return false;
     if (
       /\.(?:jpg|jpeg|png|gif|webp|avif|svg|ico|pdf|zip|rar|7z|gz|mp4|mp3|mov|avi|wmv|css|js|json|xml|woff2?|ttf|eot)(?:$|\?)/i.test(
         u.pathname + u.search
@@ -2393,7 +2410,7 @@ async function seoDiscoverSitemaps(rootUrl, maxUrls) {
           const loc = seoNormalizeUrl($(e).text().trim(), rootUrl);
           if (
             loc &&
-            new URL(loc).hostname === root.hostname &&
+            seoSameSiteHost(new URL(loc).hostname, root.hostname) &&
             seoCrawlableUrl(loc, root.hostname) &&
             pages.size < maxUrls
           )
@@ -2784,7 +2801,7 @@ async function crawlSeoPage(url, rootHost, depth, renderBudget) {
       issues: [{ level: 'error', code: error ? 'fetch_error' : 'not_html', text: error || 'Kein HTML-Dokument' }]
     };
   const security = seoSecurity(res.headers, finalUrl);
-  let extracted = seoExtractDocument(cheerio.load(html), { finalUrl, rootHost, sourceUrl: url, statusCode });
+  let extracted = seoExtractDocument(cheerio.load(html), { finalUrl, rootHost, sourceUrl: finalUrl, statusCode });
   let renderedFallback = false;
   if (
     extracted.wordCount < SEO_THIN_CONTENT_WORDS &&
@@ -2802,7 +2819,7 @@ async function crawlSeoPage(url, rootHost, depth, renderBudget) {
         const reExtracted = seoExtractDocument(cheerio.load(rendered.html), {
           finalUrl: rendered.finalUrl || finalUrl,
           rootHost,
-          sourceUrl: url,
+          sourceUrl: rendered.finalUrl || finalUrl,
           statusCode
         });
         if (reExtracted.wordCount > extracted.wordCount) {
@@ -2815,9 +2832,10 @@ async function crawlSeoPage(url, rootHost, depth, renderBudget) {
     }
   }
   const page = {
-    url,
+    url: finalUrl,
+    requestedUrl: url,
     finalUrl,
-    path: new URL(url).pathname + (new URL(url).search || ''),
+    path: new URL(finalUrl).pathname + (new URL(finalUrl).search || ''),
     statusCode,
     responseMs,
     contentBytes,
@@ -2896,7 +2914,7 @@ function seoExtractDocument($, { finalUrl, rootHost, sourceUrl, statusCode }) {
     const target = seoNormalizeUrl(href, finalUrl);
     if (!target) return;
     const tu = new URL(target),
-      internal = tu.hostname === rootHost,
+      internal = seoSameSiteHost(tu.hostname, rootHost),
       anchor = $(e).text().replace(/\s+/g, ' ').trim().slice(0, 250),
       nofollow = /\bnofollow\b/i.test($(e).attr('rel') || '');
     links.push({ source: sourceUrl, target, anchor, internal, nofollow });
@@ -2942,7 +2960,7 @@ async function seoAuditResources(pages, rootHost, limit = 250) {
       } catch {
         continue;
       }
-      if (u.hostname !== rootHost) continue;
+      if (!seoSameSiteHost(u.hostname, rootHost)) continue;
       if (!owners.has(resource)) owners.set(resource, []);
       owners.get(resource).push(p);
     }
@@ -2996,52 +3014,70 @@ async function runSeoAudit(
     rootUrl = new URL(root),
     rootHost = rootUrl.hostname,
     queue = [{ url: root, depth: 0 }],
-    queued = new Set([root]),
+    queued = new Set([seoSiteUrlKey(root)]),
     crawled = new Set(),
     pages = [],
     links = [],
     renderBudget = { remaining: cfg.seoRenderMaxPages };
   const sitemap = await seoDiscoverSitemaps(root, Math.min(maxPages * 3, 1500)),
-    sitemapSet = new Set(sitemap.pages),
-    sitemapPending = sitemap.pages.filter(url => url !== root);
+    sitemapKeySet = new Set(sitemap.pages.map(seoSiteUrlKey)),
+    rootKey = seoSiteUrlKey(root),
+    sitemapPending = sitemap.pages.filter(url => seoSiteUrlKey(url) !== rootKey);
   try {
     while ((queue.length || sitemapPending.length) && pages.length < maxPages) {
       if (!queue.length) {
         let candidate = null;
         while (sitemapPending.length && !candidate) {
-          const next = sitemapPending.shift();
-          if (!crawled.has(next) && !queued.has(next)) candidate = next;
+          const next = sitemapPending.shift(),
+            key = seoSiteUrlKey(next);
+          if (!crawled.has(key) && !queued.has(key)) candidate = next;
         }
         if (!candidate) break;
-        queued.add(candidate);
+        queued.add(seoSiteUrlKey(candidate));
         queue.push({ url: candidate, depth: null });
       }
-      const item = queue.shift();
-      queued.delete(item.url);
-      if (crawled.has(item.url)) continue;
-      crawled.add(item.url);
+      const item = queue.shift(),
+        itemKey = seoSiteUrlKey(item.url);
+      queued.delete(itemKey);
+      if (crawled.has(itemKey)) continue;
+      crawled.add(itemKey);
       const page = await crawlSeoPage(item.url, rootHost, item.depth, renderBudget);
+      crawled.add(seoSiteUrlKey(page.finalUrl));
       pages.push(page);
       links.push(...page.links);
       for (const l of page.links) {
-        if (!l.internal || !seoCrawlableUrl(l.target, rootHost) || crawled.has(l.target)) continue;
+        const targetKey = seoSiteUrlKey(l.target);
+        if (!l.internal || !seoCrawlableUrl(l.target, rootHost) || crawled.has(targetKey)) continue;
         const linkedDepth = item.depth == null ? 1 : item.depth + 1,
-          existing = queue.find(x => x.url === l.target);
+          existing = queue.find(x => seoSiteUrlKey(x.url) === targetKey);
         if (existing) {
           if (existing.depth == null || linkedDepth < existing.depth) existing.depth = linkedDepth;
           continue;
         }
-        if (pages.length + queue.length < maxPages) {
-          queued.add(l.target);
+        if (pages.length + queue.length < maxPages && !queued.has(targetKey)) {
+          queued.add(targetKey);
           queue.push({ url: l.target, depth: linkedDepth });
         }
       }
     }
-    const pageMap = new Map(pages.map(p => [p.url, p])),
+    const canonicalUrlByKey = new Map(pages.map(p => [seoSiteUrlKey(p.url), p.url])),
+      graphLinks = links.map(l =>
+        l.internal
+          ? {
+              ...l,
+              source: canonicalUrlByKey.get(seoSiteUrlKey(l.source)) || l.source,
+              target: canonicalUrlByKey.get(seoSiteUrlKey(l.target)) || l.target
+            }
+          : l
+      ),
+      pageMap = new Map(pages.map(p => [seoSiteUrlKey(p.url), p])),
       urls = pages.map(p => p.url),
-      rank = calcPageRank(urls, links),
-      incoming = new Map(urls.map(u => [u, 0]));
-    for (const l of links) if (l.internal && incoming.has(l.target)) incoming.set(l.target, incoming.get(l.target) + 1);
+      rank = calcPageRank(urls, graphLinks),
+      incoming = new Map(urls.map(u => [seoSiteUrlKey(u), 0]));
+    for (const l of graphLinks) {
+      const targetKey = seoSiteUrlKey(l.target);
+      if (l.internal && incoming.has(targetKey)) incoming.set(targetKey, incoming.get(targetKey) + 1);
+    }
     const wdfidf = calcWdfIdf(pages),
       titleMap = new Map(),
       descMap = new Map(),
@@ -3049,7 +3085,7 @@ async function runSeoAudit(
       contentMap = new Map();
     pages.forEach((p, i) => {
       p.pagerank = rank.get(p.url) || 0;
-      p.incomingLinks = incoming.get(p.url) || 0;
+      p.incomingLinks = incoming.get(seoSiteUrlKey(p.url)) || 0;
       p.internalLinks = p.links.filter(x => x.internal).length;
       p.externalLinks = p.links.filter(x => !x.internal).length;
       p.wdfidf = wdfidf[i];
@@ -3093,9 +3129,9 @@ async function runSeoAudit(
         });
       if (p.canonical) {
         try {
-          if (new URL(p.canonical).hostname !== rootHost)
+          if (!seoSameSiteHost(new URL(p.canonical).hostname, rootHost))
             p.issues.push({ level: 'warn', code: 'canonical_external', text: 'Canonical zeigt auf andere Domain' });
-          else if (p.indexable && p.canonical !== p.url)
+          else if (p.indexable && seoSiteUrlKey(p.canonical) !== seoSiteUrlKey(p.url))
             p.issues.push({
               level: 'info',
               code: 'canonical_to_other',
@@ -3105,10 +3141,15 @@ async function runSeoAudit(
           p.issues.push({ level: 'warn', code: 'canonical_invalid', text: 'Canonical ist ungültig' });
         }
       }
-      if (sitemapSet.size && p.indexable && !sitemapSet.has(p.url) && p.url !== root)
+      if (
+        sitemapKeySet.size &&
+        p.indexable &&
+        !sitemapKeySet.has(seoSiteUrlKey(p.url)) &&
+        seoSiteUrlKey(p.url) !== rootKey
+      )
         p.issues.push({ level: 'info', code: 'not_in_sitemap', text: 'Indexierbare Seite fehlt in der Sitemap' });
       for (const l of p.links.filter(x => x.internal)) {
-        const target = pageMap.get(l.target);
+        const target = pageMap.get(seoSiteUrlKey(l.target));
         if (!target) continue;
         if (target.statusCode >= 400 || target.statusCode === 0)
           p.issues.push({
@@ -3206,7 +3247,7 @@ async function runSeoAudit(
         ]
       );
     }
-    for (const l of links)
+    for (const l of graphLinks)
       await q(
         'insert into seo_links(run_id,site_id,source_url,target_url,anchor_text,internal_link,nofollow) values(?,?,?,?,?,?,?)',
         [runId, site.id, l.source, l.target, l.anchor, l.internal, l.nofollow]
@@ -6322,7 +6363,7 @@ async function start() {
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');
 }
 
-export { migrate, q, db, seoExtractDocument };
+export { migrate, q, db, seoExtractDocument, seoHostKey, seoSameSiteHost, seoSiteUrlKey, seoCrawlableUrl };
 
 // Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a
 // wrapper/loader where `import.meta.url` never equals the resolved
