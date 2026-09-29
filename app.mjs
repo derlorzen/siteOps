@@ -6363,16 +6363,7 @@ async function start() {
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');
 }
 
-export {
-  migrate,
-  q,
-  db,
-  seoExtractDocument,
-  seoHostKey,
-  seoSameSiteHost,
-  seoSiteUrlKey,
-  seoCrawlableUrl
-};
+export { migrate, q, db, seoExtractDocument, seoHostKey, seoSameSiteHost, seoSiteUrlKey, seoCrawlableUrl };
 
 // Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a
 // wrapper/loader where `import.meta.url` never equals the resolved
