@@ -2332,7 +2332,9 @@ function seoNormalizeUrl(value, base) {
     u.hash = '';
     for (const k of [...u.searchParams.keys()]) if (/^utm_|^(fbclid|gclid)$/i.test(k)) u.searchParams.delete(k);
     if ((u.protocol === 'https:' && u.port === '443') || (u.protocol === 'http:' && u.port === '80')) u.port = '';
-    if (u.pathname !== '/' && u.pathname.endsWith('/')) u.pathname = u.pathname.replace(/\/+$/, '');
+    // A trailing slash can be the destination of a canonical redirect (for example WordPress).
+    // Preserve it so the redirect target is not rewritten back to the source URL. Crawl-queue
+    // deduplication already ignores trailing slashes independently via seoSiteUrlKey().
     return u.toString();
   } catch {
     return null;
@@ -5007,15 +5009,60 @@ async function syntheticTestsPage(slug) {
   if (!cards)
     cards =
       '<section><div class="empty-state"><strong>Noch keine Browser-Journeys.</strong><p>Lege unten den ersten echten User-Flow an.</p></div></section>';
-  const sample = JSON.stringify(
-    [
+  const presets = {
+    check: [
       { action: 'assertTitle', contains: '' },
       { action: 'click', selector: 'a[href="/kontakt"]' },
       { action: 'assertUrl', contains: '/kontakt' }
     ],
-    null,
-    2
-  );
+    homepage: [{ action: 'assertTitle', contains: '' }],
+    nav: [
+      { action: 'click', selector: 'a[href="/kontakt"]' },
+      { action: 'assertUrl', contains: '/kontakt' },
+      { action: 'assertVisible', selector: 'h1' }
+    ],
+    form: [
+      { action: 'click', selector: 'a[href="/kontakt"]' },
+      { action: 'fill', selector: 'input[name="name"]', value: 'Test' },
+      { action: 'fill', selector: 'input[name="email"]', value: 'test@example.com' },
+      { action: 'fill', selector: 'textarea[name="message"]', value: 'Testnachricht' },
+      { action: 'click', selector: 'button[type="submit"]' },
+      { action: 'assertText', selector: '.form-success', text: 'Danke' }
+    ],
+    login: [
+      { action: 'click', selector: 'a[href="/login"]' },
+      { action: 'fill', selector: 'input[name="username"]', value: 'mein-user' },
+      { action: 'fill', selector: 'input[name="password"]', value: '{{secret.PASSWORD}}' },
+      { action: 'click', selector: 'button[type="submit"]' },
+      { action: 'assertUrl', contains: '/dashboard' }
+    ]
+  };
+  const sample = JSON.stringify(presets.check, null, 2);
+  const actionsTable = [
+    ['goto', 'zu URL navigieren (nur gleiche Domain)', 'url'],
+    ['click', 'Element klicken', 'selector'],
+    ['fill', 'Eingabefeld ausfüllen', 'selector, value'],
+    ['press', 'Taste drücken', 'selector, key'],
+    ['select', 'Dropdown wählen', 'selector, value'],
+    ['check / uncheck', 'Checkbox setzen', 'selector'],
+    ['hover', 'über Element hovern', 'selector'],
+    ['reload', 'Seite neu laden', '–'],
+    ['wait', 'feste Wartezeit (ms)', 'ms'],
+    ['waitFor', 'auf Element warten', 'selector, state'],
+    ['waitForLoadState', 'auf Netzwerk-Ruhe warten', 'state'],
+    ['assertTitle', 'Seitentitel prüfen', 'contains'],
+    ['assertUrl', 'URL prüfen', 'contains'],
+    ['assertText', 'Text in Element prüfen', 'selector, text'],
+    ['assertVisible', 'Element sichtbar?', 'selector'],
+    ['assertValue', 'Feldwert prüfen', 'selector, value'],
+    ['assertAttribute', 'Attribut prüfen', 'selector, name, value'],
+    ['assertCount', 'Anzahl Elemente prüfen', 'selector, count']
+  ]
+    .map(
+      ([action, purpose, fields]) =>
+        '<tr><td><code>' + esc(action) + '</code></td><td>' + esc(purpose) + '</td><td>' + esc(fields) + '</td></tr>'
+    )
+    .join('');
   let html =
     '<a class="backlink" href="/sites/' +
     esc(site.slug) +
@@ -5033,13 +5080,24 @@ async function syntheticTestsPage(slug) {
       '<div class="notice bad"><strong>Browser Runner nicht konfiguriert</strong><span>Unter <a href="/settings">Einstellungen</a> Runner-URL und Bearer-Token hinterlegen. Tests können vorbereitet werden, aber noch nicht laufen.</span></div>';
   html += cards;
   html +=
-    '<section><div class="sectionhead"><div><span class="eyebrow">NEUER TEST</span><h2>Journey anlegen</h2></div></div><form id="syntheticForm" class="inner-form"><div class="formgrid"><label>Name<input name="name" required placeholder="Kontaktformular"></label><label>Start-URL<input name="startUrl" type="url" value="' +
+    '<section><div class="sectionhead"><div><span class="eyebrow">NEUER TEST</span><h2>Journey anlegen</h2></div></div>' +
+    '<details class="synthetic-help" open><summary>Anleitung: Wie baue ich eine Journey?</summary>' +
+    '<p>Eine Journey ist eine Liste von Schritten, die Playwright im echten Chromium ausführt. Unten rechts bei „Vorlage laden" eine Startvorlage wählen und anpassen, oder direkt selbst Schritte als JSON-Array schreiben. Jeder Schritt ist ein Objekt mit <code>"action"</code> plus den dazu passenden Feldern:</p>' +
+    '<div class="tablewrap"><table><thead><tr><th>Action</th><th>Zweck</th><th>Felder</th></tr></thead><tbody>' +
+    actionsTable +
+    '</tbody></table></div>' +
+    '<p>Kein beliebiges JavaScript/eval möglich — nur diese sicheren Aktionen. Empfehlung für den ersten Test: Startseite laden → Titel prüfen → auf einen wichtigen Link klicken → erwartete URL/Text prüfen.</p>' +
+    '<p><strong>Sensible Daten</strong> (Passwörter etc.) nicht direkt in die Schritte schreiben, sondern ins Feld „Secrets als JSON" (z. B. <code>{"PASSWORD":"geheim"}</code>) und im Schritt mit <code>{{secret.PASSWORD}}</code> referenzieren. Wird verschlüsselt gespeichert und nie wieder im Klartext angezeigt.</p>' +
+    '</details>' +
+    '<form id="syntheticForm" class="inner-form"><div class="formgrid"><label>Name<input name="name" required placeholder="Kontaktformular"></label><label>Start-URL<input name="startUrl" type="url" value="' +
     esc(site.monitor_url || 'https://' + site.domain) +
-    '"></label><label>Intervall (Min.)<input name="intervalMinutes" type="number" min="5" value="60"></label><label>Timeout (ms)<input name="timeoutMs" type="number" min="3000" max="120000" value="30000"></label><label>Viewport Breite<input name="viewportWidth" type="number" min="320" max="2560" value="1440"></label><label>Viewport Höhe<input name="viewportHeight" type="number" min="320" max="2000" value="1000"></label><label class="check standalone"><input name="visualEnabled" type="checkbox"> Visuelle Regression gegen Baseline prüfen</label><label>Erlaubte Abweichung (%)<input name="visualPercent" type="number" min="0" max="100" step="0.1" value="1"></label><label class="span2">Schritte als JSON <small>Keine beliebigen Scripts: nur sichere Playwright-Aktionen.</small><textarea name="steps" rows="12">' +
+    '"></label><label>Intervall (Min.)<input name="intervalMinutes" type="number" min="5" value="60"></label><label>Timeout (ms)<input name="timeoutMs" type="number" min="3000" max="120000" value="30000"></label><label>Viewport Breite<input name="viewportWidth" type="number" min="320" max="2560" value="1440"></label><label>Viewport Höhe<input name="viewportHeight" type="number" min="320" max="2000" value="1000"></label><label class="check standalone"><input name="visualEnabled" type="checkbox"> Visuelle Regression gegen Baseline prüfen</label><label>Erlaubte Abweichung (%)<input name="visualPercent" type="number" min="0" max="100" step="0.1" value="1"></label><label class="span2">Vorlage laden <small>Ersetzt den Inhalt des Schritte-Felds unten mit einem Startpunkt zum Anpassen.</small><select id="stepsPreset"><option value="">– Vorlage wählen –</option><option value="homepage">Startseite: nur Titel prüfen</option><option value="nav">Navigation: Link klicken + URL prüfen</option><option value="form">Kontaktformular ausfüllen</option><option value="login">Login mit Secret-Passwort</option></select></label><label class="span2">Schritte als JSON <small>Keine beliebigen Scripts: nur sichere Playwright-Aktionen, siehe Anleitung oben.</small><textarea name="steps" rows="12">' +
     esc(sample) +
     '</textarea></label><label class="span2">Secrets als JSON <small>Optional, z. B. {"PASSWORD":"..."}. In Schritten mit <code>{{secret.PASSWORD}}</code> referenzieren. Wird verschlüsselt gespeichert und nie wieder angezeigt.</small><textarea name="secrets" rows="4" placeholder="{&quot;PASSWORD&quot;:&quot;...&quot;}"></textarea></label></div><div class="buttonrow"><button>Journey anlegen</button><span id="syntheticCreateState"></span></div></form></section>';
   html +=
-    '<script>const synForm=document.getElementById("syntheticForm");synForm.addEventListener("submit",async e=>{e.preventDefault();syntheticCreateState.textContent="Speichere…";try{const fd=new FormData(synForm),steps=JSON.parse(fd.get("steps")),secretRaw=String(fd.get("secrets")||"").trim(),secrets=secretRaw?JSON.parse(secretRaw):undefined,data={name:fd.get("name"),startUrl:fd.get("startUrl"),steps,secrets,intervalSeconds:Math.round(Number(fd.get("intervalMinutes"))*60),timeoutMs:Number(fd.get("timeoutMs")),viewportWidth:Number(fd.get("viewportWidth")),viewportHeight:Number(fd.get("viewportHeight")),visualEnabled:synForm.visualEnabled.checked,visualThreshold:Number(fd.get("visualPercent"))/100};const r=await fetch("/api/sites/' +
+    '<script>const synPresets=' +
+    JSON.stringify(presets) +
+    ';const synForm=document.getElementById("syntheticForm");document.getElementById("stepsPreset").addEventListener("change",e=>{const p=synPresets[e.target.value];if(p)synForm.steps.value=JSON.stringify(p,null,2);e.target.value="";});synForm.addEventListener("submit",async e=>{e.preventDefault();syntheticCreateState.textContent="Speichere…";try{const fd=new FormData(synForm),steps=JSON.parse(fd.get("steps")),secretRaw=String(fd.get("secrets")||"").trim(),secrets=secretRaw?JSON.parse(secretRaw):undefined,data={name:fd.get("name"),startUrl:fd.get("startUrl"),steps,secrets,intervalSeconds:Math.round(Number(fd.get("intervalMinutes"))*60),timeoutMs:Number(fd.get("timeoutMs")),viewportWidth:Number(fd.get("viewportWidth")),viewportHeight:Number(fd.get("viewportHeight")),visualEnabled:synForm.visualEnabled.checked,visualThreshold:Number(fd.get("visualPercent"))/100};const r=await fetch("/api/sites/' +
     encodeURIComponent(site.slug) +
     '/synthetics",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(data)}),x=await r.json();if(!r.ok)throw new Error(x.message||x.error||JSON.stringify(x));location.reload();}catch(e){syntheticCreateState.textContent="✗ "+String(e.message||e);}});async function runSynthetic(id,saveBaseline,button){const old=button.textContent;button.textContent=saveBaseline?"Erzeuge Baseline…":"Teste…";try{const r=await fetch("/api/synthetic-tests/"+id+"/run",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({saveBaseline})}),x=await r.json();if(!r.ok)throw new Error(x.message||x.error||JSON.stringify(x));button.textContent=x.status==="passed"?"✓ Bestanden":"✗ Fehlgeschlagen";setTimeout(()=>location.reload(),700);}catch(e){button.textContent="✗ "+String(e.message||e).slice(0,70);setTimeout(()=>button.textContent=old,2200);}}async function toggleSynthetic(id,enabled,button){button.textContent="Speichere…";const r=await fetch("/api/synthetic-tests/"+id,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({enabled})});if(r.ok)location.reload();else{const x=await r.json();button.textContent="✗ "+(x.message||x.error||"Fehler");}}</script>';
   return page('Browser Tests · ' + site.name, html);
@@ -6363,7 +6421,17 @@ async function start() {
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');
 }
 
-export { migrate, q, db, seoExtractDocument, seoHostKey, seoSameSiteHost, seoSiteUrlKey, seoCrawlableUrl };
+export {
+  migrate,
+  q,
+  db,
+  seoExtractDocument,
+  seoHostKey,
+  seoSameSiteHost,
+  seoSiteUrlKey,
+  seoCrawlableUrl,
+  seoFetchDocument
+};
 
 // Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a
 // wrapper/loader where `import.meta.url` never equals the resolved
