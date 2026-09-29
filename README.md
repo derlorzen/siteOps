@@ -14,6 +14,7 @@ Central operations hub for customer websites on SFTP/FTPS/FTP hosts.
 - incident event timeline with repeated alert escalation and recovery delivery
 - expanded MCP toolkit for site overview, configuration, connection testing, file discovery, monitoring, incidents, backups, SEO and safe changes
 - SEO crawler with robots.txt/sitemap discovery, technical on-page checks, internal-link graph and crawl depth
+- www/non-www redirects are treated as one website across crawling, sitemaps, canonicals, assets and URL deduplication
 - PageRank-style internal page-strength analysis and per-page site-corpus WDF×IDF terms
 - optional Google PageSpeed Insights / Lighthouse mobile and desktop audits
 - Website Quality Health Score with crawl-to-crawl regression comparison
