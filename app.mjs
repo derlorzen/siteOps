@@ -782,6 +782,7 @@ function seoNormalizeUrl(value,base){
 }
 function seoHostKey(host){return String(host||'').toLowerCase().replace(/\.$/,'').replace(/^www\./,'');}
 function seoSameSiteHost(a,b){return Boolean(a&&b&&seoHostKey(a)===seoHostKey(b));}
+function seoSiteUrlKey(value){try{const u=new URL(value);return seoHostKey(u.hostname)+'|'+u.pathname.replace(/\/+$/,'')+'|'+u.search;}catch{return String(value||'');}}
 function seoCrawlableUrl(value,rootHost){
   try{
     const u=new URL(value);
@@ -963,14 +964,14 @@ async function seoAuditResources(pages,rootHost,limit=250){
   return{checked:results.length,broken:results.filter(r=>r.status===0||r.status>=400).length};
 }
 async function runSeoAudit(runId,site,{maxPages=cfg.seoMaxPages,pageSpeed='homepage',pageSpeedMaxPages=10}={}){
-  const configured=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!configured)throw new Error('Invalid site URL');const configuredUrl=new URL(configured),root=seoNormalizeUrl(configuredUrl.origin+'/'),rootUrl=new URL(root),rootHost=rootUrl.hostname,queue=[{url:root,depth:0}],queued=new Set([root]),crawled=new Set(),pages=[],links=[];
+  const configured=seoNormalizeUrl(site.monitor_url||('https://'+site.domain));if(!configured)throw new Error('Invalid site URL');const configuredUrl=new URL(configured),root=seoNormalizeUrl(configuredUrl.origin+'/'),rootUrl=new URL(root),rootHost=rootUrl.hostname,queue=[{url:root,depth:0}],queued=new Set([seoSiteUrlKey(root)]),crawled=new Set(),pages=[],links=[];
   const sitemap=await seoDiscoverSitemaps(root,Math.min(maxPages*3,1500)),sitemapSet=new Set(sitemap.pages),sitemapPending=sitemap.pages.filter(url=>url!==root);
   try{
     while((queue.length||sitemapPending.length)&&pages.length<maxPages){
-      if(!queue.length){let candidate=null;while(sitemapPending.length&&!candidate){const next=sitemapPending.shift();if(!crawled.has(next)&&!queued.has(next))candidate=next;}if(!candidate)break;queued.add(candidate);queue.push({url:candidate,depth:null});}
-      const item=queue.shift();queued.delete(item.url);if(crawled.has(item.url))continue;crawled.add(item.url);
-      const page=await crawlSeoPage(item.url,rootHost,item.depth);crawled.add(page.finalUrl);pages.push(page);links.push(...page.links);
-      for(const l of page.links){if(!l.internal||!seoCrawlableUrl(l.target,rootHost)||crawled.has(l.target))continue;const linkedDepth=item.depth==null?1:item.depth+1,existing=queue.find(x=>x.url===l.target);if(existing){if(existing.depth==null||linkedDepth<existing.depth)existing.depth=linkedDepth;continue;}if(pages.length+queue.length<maxPages){queued.add(l.target);queue.push({url:l.target,depth:linkedDepth});}}
+      if(!queue.length){let candidate=null;while(sitemapPending.length&&!candidate){const next=sitemapPending.shift(),key=seoSiteUrlKey(next);if(!crawled.has(key)&&!queued.has(key))candidate=next;}if(!candidate)break;queued.add(seoSiteUrlKey(candidate));queue.push({url:candidate,depth:null});}
+      const item=queue.shift(),itemKey=seoSiteUrlKey(item.url);queued.delete(itemKey);if(crawled.has(itemKey))continue;crawled.add(itemKey);
+      const page=await crawlSeoPage(item.url,rootHost,item.depth);crawled.add(seoSiteUrlKey(page.finalUrl));pages.push(page);links.push(...page.links);
+      for(const l of page.links){const targetKey=seoSiteUrlKey(l.target);if(!l.internal||!seoCrawlableUrl(l.target,rootHost)||crawled.has(targetKey))continue;const linkedDepth=item.depth==null?1:item.depth+1,existing=queue.find(x=>seoSiteUrlKey(x.url)===targetKey);if(existing){if(existing.depth==null||linkedDepth<existing.depth)existing.depth=linkedDepth;continue;}if(pages.length+queue.length<maxPages&&!queued.has(targetKey)){queued.add(targetKey);queue.push({url:l.target,depth:linkedDepth});}}
     }
     const pageMap=new Map(pages.map(p=>[p.url,p])),urls=pages.map(p=>p.url),rank=calcPageRank(urls,links),incoming=new Map(urls.map(u=>[u,0]));
     for(const l of links)if(l.internal&&incoming.has(l.target))incoming.set(l.target,incoming.get(l.target)+1);
