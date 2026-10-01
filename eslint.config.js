@@ -17,6 +17,7 @@ export default [
         clearTimeout: 'readonly',
         clearInterval: 'readonly',
         fetch: 'readonly',
+        Headers: 'readonly',
         AbortController: 'readonly',
         AbortSignal: 'readonly',
         setImmediate: 'readonly',

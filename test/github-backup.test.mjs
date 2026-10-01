@@ -9,9 +9,8 @@ process.env.SITEOPS_MASTER_KEY ||= 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 process.env.DASHBOARD_USER ||= 'test';
 process.env.DASHBOARD_PASSWORD ||= 'test-password';
 process.env.SITEOPS_TEST_NO_AUTOSTART = '1';
-const { isUtf8Text, gitTreeEntryPayload, githubRateLimitMessage, githubRetryDelayMs, gitBlobSha } = await import(
-  '../app.mjs'
-);
+const { isUtf8Text, gitTreeEntryPayload, githubRateLimitMessage, githubRetryDelayMs, gitBlobSha } =
+  await import('../app.mjs');
 
 test('isUtf8Text accepts plain and multi-byte UTF-8 text', () => {
   assert.equal(isUtf8Text(Buffer.from('<?php echo "hello";', 'utf8')), true);
