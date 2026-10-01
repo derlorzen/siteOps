@@ -118,6 +118,13 @@ const esc = value =>
     /[&<>"']/g,
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]
   );
+// The dashboard is rendered server-side, so a bare toLocaleString('de-DE') would use the
+// server process's own timezone (UTC on most hosting) rather than German local time - the
+// locale only controls date/number formatting, not the offset applied. Pin the timezone
+// explicitly so displayed times are correct regardless of what TZ the host happens to run.
+const DASHBOARD_TIME_ZONE = 'Europe/Berlin';
+const fmtDateTime = value => new Date(value).toLocaleString('de-DE', { timeZone: DASHBOARD_TIME_ZONE });
+const fmtDate = (value = new Date()) => new Date(value).toLocaleDateString('de-DE', { timeZone: DASHBOARD_TIME_ZONE });
 function key() {
   const raw = Buffer.from(cfg.masterKey, 'base64');
   if (raw.length !== 32) throw new Error('SITEOPS_MASTER_KEY must decode to 32 bytes');
@@ -3577,7 +3584,7 @@ async function clientReportPage(slug) {
     '</h1><p>' +
     esc(site.domain) +
     ' · Bericht ' +
-    new Date().toLocaleDateString('de-DE') +
+    fmtDate() +
     '</p></div><div class="actions"><button onclick="window.print()">Drucken / PDF</button></div></header>';
   html +=
     '<div class="metrics big seo-metrics"><span>' +
@@ -3617,7 +3624,7 @@ async function clientReportPage(slug) {
     ' Tage</dd></div><div><dt>Domain Restlaufzeit</dt><dd>' +
     esc(ops.lastCheck?.details?.domainExpiryDays ?? '–') +
     ' Tage</dd></div><div><dt>Backup zuletzt</dt><dd>' +
-    esc(ops.backup?.last?.created_at ? new Date(ops.backup.last.created_at).toLocaleString('de-DE') : '–') +
+    esc(ops.backup?.last?.created_at ? fmtDateTime(ops.backup.last.created_at) : '–') +
     '</dd></div></dl></section></div>';
   if (r.available)
     html +=
@@ -5521,7 +5528,7 @@ async function seoDashboardPage(slug) {
   if (run?.status === 'running')
     html +=
       '<div class="notice"><strong>Crawl läuft</strong><span>Gestartet ' +
-      new Date(run.started_at).toLocaleString('de-DE') +
+      fmtDateTime(run.started_at) +
       '. Die Seite aktualisiert sich automatisch.</span></div>';
   if (run?.status === 'failed')
     html +=
@@ -5757,7 +5764,7 @@ async function siteOperationsPage(slug) {
       .map(x => {
         const d = x.details || {},
           search = esc(((d.finalUrl || '') + ' ' + (x.http_status ?? '')).toLowerCase());
-        return `<tr data-row data-search="${search}" data-status="${x.ok ? 'ok' : 'error'}"><td>${new Date(x.created_at).toLocaleString('de-DE')}</td><td><span class="pill ${x.ok ? 'ok' : 'bad'}">${x.ok ? 'OK' : 'FEHLER'}</span></td><td>${x.http_status ?? '–'}</td><td>${x.response_ms ?? '–'} ms</td><td>${x.ssl_days ?? '–'} d</td><td>${esc(d.finalUrl || '–')}</td><td>${Array.isArray(d.redirects) ? d.redirects.length : 0}</td></tr>`;
+        return `<tr data-row data-search="${search}" data-status="${x.ok ? 'ok' : 'error'}"><td>${fmtDateTime(x.created_at)}</td><td><span class="pill ${x.ok ? 'ok' : 'bad'}">${x.ok ? 'OK' : 'FEHLER'}</span></td><td>${x.http_status ?? '–'}</td><td>${x.response_ms ?? '–'} ms</td><td>${x.ssl_days ?? '–'} d</td><td>${esc(d.finalUrl || '–')}</td><td>${Array.isArray(d.redirects) ? d.redirects.length : 0}</td></tr>`;
       })
       .join('') || '<tr><td colspan="7">Noch keine Prüfungen.</td></tr>';
   const incidentRows =
@@ -5766,21 +5773,21 @@ async function siteOperationsPage(slug) {
         const ended = i.resolved_at ? new Date(i.resolved_at) : null,
           started = new Date(i.created_at),
           duration = ended ? Math.max(0, Math.round((ended - started) / 60000)) + ' min' : 'laufend';
-        return `<tr><td><a href="/incidents/${i.id}">${esc(i.title)}</a></td><td><span class="pill ${i.status === 'open' ? 'bad' : 'ok'}">${esc(i.status.toUpperCase())}</span></td><td>${started.toLocaleString('de-DE')}</td><td>${ended ? ended.toLocaleString('de-DE') : '–'}</td><td>${duration}</td></tr>`;
+        return `<tr><td><a href="/incidents/${i.id}">${esc(i.title)}</a></td><td><span class="pill ${i.status === 'open' ? 'bad' : 'ok'}">${esc(i.status.toUpperCase())}</span></td><td>${fmtDateTime(started)}</td><td>${ended ? fmtDateTime(ended) : '–'}</td><td>${duration}</td></tr>`;
       })
       .join('') || '<tr><td colspan="5">Keine Incidents.</td></tr>';
   const backupRows =
     backups
       .map(
         b =>
-          `<tr><td>${new Date(b.created_at).toLocaleString('de-DE')}</td><td><code>${esc(String(b.git_commit).slice(0, 8))}</code></td><td>${b.file_count ?? '–'}</td><td>${b.changed ? 'geändert' : 'identisch'}</td><td><button class="ghost" onclick="restoreBackup('${b.id}')">Restore</button></td></tr>`
+          `<tr><td>${fmtDateTime(b.created_at)}</td><td><code>${esc(String(b.git_commit).slice(0, 8))}</code></td><td>${b.file_count ?? '–'}</td><td>${b.changed ? 'geändert' : 'identisch'}</td><td><button class="ghost" onclick="restoreBackup('${b.id}')">Restore</button></td></tr>`
       )
       .join('') || '<tr><td colspan="5">Noch keine Backups.</td></tr>';
   const historyRows =
     hist
       .map(
         h =>
-          `<tr><td>${new Date(h.created_at).toLocaleString('de-DE')}</td><td>${esc(h.description)}</td><td>${esc(h.actor)}</td><td><span class="pill">${esc(h.status)}</span></td><td><button class="ghost" onclick="rollback('${h.id}')">Rollback</button></td></tr>`
+          `<tr><td>${fmtDateTime(h.created_at)}</td><td>${esc(h.description)}</td><td>${esc(h.actor)}</td><td><span class="pill">${esc(h.status)}</span></td><td><button class="ghost" onclick="rollback('${h.id}')">Rollback</button></td></tr>`
       )
       .join('') || '<tr><td colspan="5">Noch keine Änderungen.</td></tr>';
   return page(
@@ -5789,9 +5796,9 @@ async function siteOperationsPage(slug) {
     <a class="backlink" href="/">← Übersicht</a>
     <header><div><span class="eyebrow">${isGit ? 'HOSTINGER GIT' : esc(site.protocol.toUpperCase())} · ${site.enabled ? 'AKTIV' : 'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit ? esc(site.source_repository + ' @ ' + (site.source_branch || 'main')) : esc(site.remote_root)}</p></div><div class="actions"><a class="button ghost" href="/sites/${esc(site.slug)}/seo">Quality / SEO</a><a class="button ghost" href="/sites/${esc(site.slug)}/tests">Browser Tests</a><a class="button ghost" href="/sites/${esc(site.slug)}/report">Report</a><button class="ghost" id="checkNow">Jetzt prüfen</button><button id="backupNow">Backup jetzt</button></div></header>
     ${latest && !latest.ok ? `<div class="notice bad"><strong>Monitoringfehler</strong><span>${esc(latest.error || latestDetails.error || 'HTTP ' + (latest.http_status ?? 'unbekannt'))}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'monitor',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
-    ${openIncidents.length ? `<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span><a href="/incidents/${openIncidents[0].id}">${esc(openIncidents[0].title)}</a> · seit ${new Date(openIncidents[0].created_at).toLocaleString('de-DE')}</span></div>` : ''}
+    ${openIncidents.length ? `<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span><a href="/incidents/${openIncidents[0].id}">${esc(openIncidents[0].title)}</a> · seit ${fmtDateTime(openIncidents[0].created_at)}</span></div>` : ''}
     ${backupState?.last_error ? `<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'backup',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
-    <div class="metrics big ops-metrics"><span>${uptime}%<em>Uptime letzte ${checks.length} Checks</em></span><span>${latest?.response_ms ?? '–'} ms<em>Response</em></span><span>${latest?.ssl_days ?? '–'} d<em>SSL</em></span><span>${latest?.http_status ?? '–'}<em>HTTP</em></span><span>${backups[0]?.created_at ? new Date(backups[0].created_at).toLocaleString('de-DE') : '–'}<em>Letztes Backup</em></span></div>
+    <div class="metrics big ops-metrics"><span>${uptime}%<em>Uptime letzte ${checks.length} Checks</em></span><span>${latest?.response_ms ?? '–'} ms<em>Response</em></span><span>${latest?.ssl_days ?? '–'} d<em>SSL</em></span><span>${latest?.http_status ?? '–'}<em>HTTP</em></span><span>${backups[0]?.created_at ? fmtDateTime(backups[0].created_at) : '–'}<em>Letztes Backup</em></span></div>
 
     <div class="twocol ops-grid">
       <section>
@@ -5856,7 +5863,7 @@ async function siteOperationsPage(slug) {
           <label>Ausschlüsse <small>Eine Zeile pro Muster. Standardmäßig u. a. Cache und Uploads.</small><textarea name="exclude_patterns" rows="6">${esc((Array.isArray(site.exclude_patterns) ? site.exclude_patterns : []).join('\n'))}</textarea></label>
           <button>Backup-Einstellungen speichern</button><span id="backupState" class="inline-status"></span>
         </form>
-        <dl class="facts compact-facts"><div><dt>Letzter Versuch</dt><dd>${backupState?.last_attempt_at ? new Date(backupState.last_attempt_at).toLocaleString('de-DE') : '–'}</dd></div><div><dt>Letzter Erfolg</dt><dd>${backupState?.last_success_at ? new Date(backupState.last_success_at).toLocaleString('de-DE') : '–'}</dd></div><div><dt>Backup-Pfad</dt><dd><code>sites/${esc(site.slug)}/public</code></dd></div></dl>
+        <dl class="facts compact-facts"><div><dt>Letzter Versuch</dt><dd>${backupState?.last_attempt_at ? fmtDateTime(backupState.last_attempt_at) : '–'}</dd></div><div><dt>Letzter Erfolg</dt><dd>${backupState?.last_success_at ? fmtDateTime(backupState.last_success_at) : '–'}</dd></div><div><dt>Backup-Pfad</dt><dd><code>sites/${esc(site.slug)}/public</code></dd></div></dl>
       </section>
       <section>
         <div class="sectionhead"><div><span class="eyebrow">Letzter Check</span><h2>Diagnose</h2></div></div>
@@ -5903,12 +5910,12 @@ async function incidentPage(id) {
     incident.events
       .map(
         e =>
-          `<tr><td>${new Date(e.created_at).toLocaleString('de-DE')}</td><td><span class="pill">${esc(e.event_type)}</span></td><td><pre class="event-json">${esc(e.details ? JSON.stringify(e.details, null, 2) : '–')}</pre></td></tr>`
+          `<tr><td>${fmtDateTime(e.created_at)}</td><td><span class="pill">${esc(e.event_type)}</span></td><td><pre class="event-json">${esc(e.details ? JSON.stringify(e.details, null, 2) : '–')}</pre></td></tr>`
       )
       .join('') || '<tr><td colspan="3">Keine Events.</td></tr>';
   return page(
     'Incident',
-    `<a class="backlink" href="/sites/${esc(incident.slug)}">← ${esc(incident.domain)}</a><header><div><span class="eyebrow">INCIDENT · ${esc(incident.status.toUpperCase())}</span><h1>${esc(incident.title)}</h1><p>Gestartet ${new Date(incident.created_at).toLocaleString('de-DE')}${incident.resolved_at ? ' · beendet ' + new Date(incident.resolved_at).toLocaleString('de-DE') : ''}</p></div><div class="actions"><button onclick="siteOpsCopyPrompt({kind:'incident',id:'${incident.id}'},this)">Fix-Prompt kopieren</button></div></header><section><div class="sectionhead"><div><span class="eyebrow">Timeline</span><h2>Ereignisse & Alerts</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Typ</th><th>Details</th></tr></thead><tbody>${eventRows}</tbody></table></div></section>`
+    `<a class="backlink" href="/sites/${esc(incident.slug)}">← ${esc(incident.domain)}</a><header><div><span class="eyebrow">INCIDENT · ${esc(incident.status.toUpperCase())}</span><h1>${esc(incident.title)}</h1><p>Gestartet ${fmtDateTime(incident.created_at)}${incident.resolved_at ? ' · beendet ' + fmtDateTime(incident.resolved_at) : ''}</p></div><div class="actions"><button onclick="siteOpsCopyPrompt({kind:'incident',id:'${incident.id}'},this)">Fix-Prompt kopieren</button></div></header><section><div class="sectionhead"><div><span class="eyebrow">Timeline</span><h2>Ereignisse & Alerts</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Typ</th><th>Details</th></tr></thead><tbody>${eventRows}</tbody></table></div></section>`
   );
 }
 async function dashboard() {
@@ -5941,14 +5948,14 @@ async function dashboard() {
       const c = checkMap.get(s.id),
         b = backupMap.get(s.id),
         deploy = s.deployment_mode === 'hostinger_git' ? 'HOSTINGER GIT' : s.protocol.toUpperCase();
-      return `<a class="card" href="/sites/${esc(s.slug)}"><div class="row"><strong>${esc(s.name)}</strong><span class="pill ${c?.ok ? 'ok' : 'bad'}">${c ? (c.ok ? 'ONLINE' : 'ALARM') : 'NO DATA'}</span></div><small>${esc(s.domain)} · ${esc(deploy)}</small><div class="metrics"><span>${c?.response_ms ?? '–'} ms<em>Response</em></span><span>${c?.ssl_days ?? '–'} d<em>SSL</em></span><span>${s.monitor_enabled ? 'ON' : 'OFF'}<em>Monitor</em></span><span>${b?.created_at ? new Date(b.created_at).toLocaleDateString('de-DE') : '–'}<em>Backup</em></span></div></a>`;
+      return `<a class="card" href="/sites/${esc(s.slug)}"><div class="row"><strong>${esc(s.name)}</strong><span class="pill ${c?.ok ? 'ok' : 'bad'}">${c ? (c.ok ? 'ONLINE' : 'ALARM') : 'NO DATA'}</span></div><small>${esc(s.domain)} · ${esc(deploy)}</small><div class="metrics"><span>${c?.response_ms ?? '–'} ms<em>Response</em></span><span>${c?.ssl_days ?? '–'} d<em>SSL</em></span><span>${s.monitor_enabled ? 'ON' : 'OFF'}<em>Monitor</em></span><span>${b?.created_at ? fmtDate(b.created_at) : '–'}<em>Backup</em></span></div></a>`;
     })
     .join('');
   const inc = incidents.length
     ? incidents
         .map(
           i =>
-            `<li><a href="/incidents/${i.id}"><b>${esc(i.domain)}</b> ${esc(i.title)}</a><small>${new Date(i.created_at).toLocaleString('de-DE')}</small></li>`
+            `<li><a href="/incidents/${i.id}"><b>${esc(i.domain)}</b> ${esc(i.title)}</a><small>${fmtDateTime(i.created_at)}</small></li>`
         )
         .join('')
     : '<li>Keine offenen Incidents.</li>';
@@ -5956,7 +5963,7 @@ async function dashboard() {
     changes
       .map(
         c =>
-          `<li><b>${esc(c.domain)}</b> ${esc(c.description)} <span class="pill">${esc(c.status)}</span><small>${new Date(c.created_at).toLocaleString('de-DE')} · ${esc(c.actor)}</small></li>`
+          `<li><b>${esc(c.domain)}</b> ${esc(c.description)} <span class="pill">${esc(c.status)}</span><small>${fmtDateTime(c.created_at)} · ${esc(c.actor)}</small></li>`
       )
       .join('') || '<li>Noch keine Änderungen.</li>';
   const focusRows =
@@ -5966,7 +5973,7 @@ async function dashboard() {
           b = backupMap.get(s.id),
           deploy = s.deployment_mode === 'hostinger_git' ? 'Git' : 'Webspace',
           state = c ? (c.ok ? 'ONLINE' : 'ALARM') : 'NO DATA';
-        return `<tr><td><a href="/sites/${esc(s.slug)}"><strong>${esc(s.name)}</strong><small class="table-sub">${esc(s.domain)}</small></a></td><td><span class="pill ${c?.ok ? 'ok' : 'bad'}">${state}</span></td><td>${c?.response_ms ?? '–'} ms</td><td>${c?.ssl_days ?? '–'} d</td><td>${b?.created_at ? new Date(b.created_at).toLocaleDateString('de-DE') : '–'}</td><td>${esc(deploy)}</td><td class="compact-actions"><a href="/sites/${esc(s.slug)}/seo">SEO</a><a href="/sites/${esc(s.slug)}/tests">Tests</a></td></tr>`;
+        return `<tr><td><a href="/sites/${esc(s.slug)}"><strong>${esc(s.name)}</strong><small class="table-sub">${esc(s.domain)}</small></a></td><td><span class="pill ${c?.ok ? 'ok' : 'bad'}">${state}</span></td><td>${c?.response_ms ?? '–'} ms</td><td>${c?.ssl_days ?? '–'} d</td><td>${b?.created_at ? fmtDate(b.created_at) : '–'}</td><td>${esc(deploy)}</td><td class="compact-actions"><a href="/sites/${esc(s.slug)}/seo">SEO</a><a href="/sites/${esc(s.slug)}/tests">Tests</a></td></tr>`;
       })
       .join('') || '<tr><td colspan="7">Noch keine Websites.</td></tr>';
   const attention =
@@ -5996,10 +6003,7 @@ async function dashboard() {
   const recentFocus =
     changes
       .slice(0, 6)
-      .map(
-        c =>
-          `<li><b>${esc(c.domain)}</b> ${esc(c.description)}<small>${new Date(c.created_at).toLocaleString('de-DE')}</small></li>`
-      )
+      .map(c => `<li><b>${esc(c.domain)}</b> ${esc(c.description)}<small>${fmtDateTime(c.created_at)}</small></li>`)
       .join('') || '<li>Noch keine Änderungen.</li>';
   return page(
     'SiteOps',
@@ -6483,7 +6487,9 @@ export {
   gitTreeEntryPayload,
   githubRateLimitMessage,
   githubRetryDelayMs,
-  gitBlobSha
+  gitBlobSha,
+  fmtDateTime,
+  fmtDate
 };
 
 // Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a
