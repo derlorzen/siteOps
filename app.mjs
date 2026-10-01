@@ -829,41 +829,92 @@ function gitBlobSha(content) {
     header = Buffer.from('blob ' + b.length + '\0');
   return crypto.createHash('sha1').update(header).update(b).digest('hex');
 }
-async function gh(path, { method = 'GET', body, allow404 = false, allow409 = false } = {}) {
-  const res = await fetch('https://api.github.com' + backupRepoPath(path), {
-    method,
-    headers: {
-      accept: 'application/vnd.github+json',
-      authorization: 'Bearer ' + cfg.githubBackupToken,
-      'x-github-api-version': '2022-11-28',
-      'user-agent': 'Lorzen-SiteOps/1.0.0'
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(30000)
-  });
-  const raw = await res.text();
-  let data = null;
-  if (raw) {
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      data = raw;
-    }
+// GitHub's Git Data API only accepts UTF-8 text for a tree entry's inline `content` field;
+// anything else (or anything too large to want inline) must go through a separate blob
+// creation call. Preferring inline content for ordinary text files (the bulk of a typical
+// website: PHP/HTML/CSS/JS/JSON) cuts the number of GitHub API requests a full backup needs
+// roughly in half, which matters because GitHub's hourly rate limit is shared across every
+// request a backup makes - one POST /git/blobs per changed file adds up fast on a site's
+// first full backup.
+const GIT_INLINE_CONTENT_MAX_BYTES = 1024 * 1024;
+function isUtf8Text(buffer) {
+  if (buffer.includes(0)) return false;
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    return true;
+  } catch {
+    return false;
   }
-  if (allow404 && res.status === 404) return null;
-  if (allow409 && res.status === 409) return null;
-  if (!res.ok)
-    throw new Error(
-      'GitHub ' +
-        method +
-        ' ' +
-        path +
-        ' failed (' +
-        res.status +
-        '): ' +
-        (data?.message || String(data || '').slice(0, 500))
-    );
-  return data;
+}
+function gitTreeEntryPayload(content) {
+  const b = Buffer.isBuffer(content) ? content : Buffer.from(content);
+  if (b.length <= GIT_INLINE_CONTENT_MAX_BYTES && isUtf8Text(b)) return { content: b.toString('utf8') };
+  return null;
+}
+function githubRateLimitMessage(headers) {
+  const resetHeader = headers.get('x-ratelimit-reset');
+  if (!resetHeader) return null;
+  const resetAt = new Date(Number(resetHeader) * 1000);
+  if (Number.isNaN(resetAt.getTime())) return null;
+  return (
+    'GitHub API rate limit exceeded, resets at ' +
+    resetAt.toISOString() +
+    '. A large first full backup can exhaust the hourly quota by itself; later backups only touch changed files and need far fewer requests.'
+  );
+}
+function githubRetryDelayMs(headers) {
+  const retryAfter = Number(headers.get('retry-after'));
+  return retryAfter > 0 && retryAfter <= 60 ? retryAfter * 1000 : null;
+}
+async function gh(path, { method = 'GET', body, allow404 = false, allow409 = false } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch('https://api.github.com' + backupRepoPath(path), {
+      method,
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: 'Bearer ' + cfg.githubBackupToken,
+        'x-github-api-version': '2022-11-28',
+        'user-agent': 'Lorzen-SiteOps/1.0.0'
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30000)
+    });
+    const raw = await res.text();
+    let data = null;
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = raw;
+      }
+    }
+    if (allow404 && res.status === 404) return null;
+    if (allow409 && res.status === 409) return null;
+    if (!res.ok) {
+      if ((res.status === 403 || res.status === 429) && attempt < 2) {
+        const delayMs = githubRetryDelayMs(res.headers);
+        if (delayMs !== null) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue;
+        }
+      }
+      if (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0') {
+        const rateLimitMessage = githubRateLimitMessage(res.headers);
+        if (rateLimitMessage) throw new Error(rateLimitMessage);
+      }
+      throw new Error(
+        'GitHub ' +
+          method +
+          ' ' +
+          path +
+          ' failed (' +
+          res.status +
+          '): ' +
+          (data?.message || String(data || '').slice(0, 500))
+      );
+    }
+    return data;
+  }
 }
 let backupRepoChecked = false,
   backupRepoMeta = null;
@@ -940,6 +991,12 @@ async function createGitBlob(content) {
     throw new Error('Backup file exceeds BACKUP_MAX_FILE_BYTES (' + b.length + ' bytes)');
   return gh('/git/blobs', { method: 'POST', body: { content: b.toString('base64'), encoding: 'base64' } });
 }
+async function gitTreeChangeFor(repoPath, content) {
+  const inline = gitTreeEntryPayload(content);
+  if (inline) return { path: repoPath, mode: '100644', type: 'blob', ...inline };
+  const blob = await createGitBlob(content);
+  return { path: repoPath, mode: '100644', type: 'blob', sha: blob.sha };
+}
 async function commitTreeChanges(state, changes, message) {
   if (!changes.length) return state.headSha;
   const treeBody = { tree: changes, base_tree: state.rootTreeSha };
@@ -968,10 +1025,7 @@ async function commitPaths(site, paths, message) {
         if (await remote.exists(rp)) {
           const content = await remote.read(rp),
             sha = gitBlobSha(content);
-          if (existing?.sha !== sha) {
-            const blob = await createGitBlob(content);
-            changes.push({ path: repoPath, mode: '100644', type: 'blob', sha: blob.sha });
-          }
+          if (existing?.sha !== sha) changes.push(await gitTreeChangeFor(repoPath, content));
         } else if (existing) changes.push({ path: repoPath, mode: '100644', type: 'blob', sha: null });
       }
     } finally {
@@ -1039,10 +1093,7 @@ async function fullBackup(site, maxFiles = 10000) {
         content = await remote.read(joinRemote(site.remote_root, rel)),
         existing = state.treeMap.get(repoPath);
       seen.add(repoPath);
-      if (existing?.sha !== gitBlobSha(content)) {
-        const blob = await createGitBlob(content);
-        changes.push({ path: repoPath, mode: '100644', type: 'blob', sha: blob.sha });
-      }
+      if (existing?.sha !== gitBlobSha(content)) changes.push(await gitTreeChangeFor(repoPath, content));
     }
     async function walk(rel = '') {
       for (const e of await remote.list(joinRemote(site.remote_root, rel))) {
@@ -1058,10 +1109,7 @@ async function fullBackup(site, maxFiles = 10000) {
         meta = Buffer.from(JSON.stringify({ domain: site.domain, fileCount: count }, null, 2) + '\n'),
         metaExisting = state.treeMap.get(metaPath);
       seen.add(metaPath);
-      if (metaExisting?.sha !== gitBlobSha(meta)) {
-        const blob = await createGitBlob(meta);
-        changes.push({ path: metaPath, mode: '100644', type: 'blob', sha: blob.sha });
-      }
+      if (metaExisting?.sha !== gitBlobSha(meta)) changes.push(await gitTreeChangeFor(metaPath, meta));
       for (const p of state.treeMap.keys())
         if (p.startsWith(prefix) && !seen.has(p)) changes.push({ path: p, mode: '100644', type: 'blob', sha: null });
       const commit = await commitTreeChanges(state, changes, '[' + site.domain + '] Full backup'),
@@ -6430,7 +6478,12 @@ export {
   seoSameSiteHost,
   seoSiteUrlKey,
   seoCrawlableUrl,
-  seoFetchDocument
+  seoFetchDocument,
+  isUtf8Text,
+  gitTreeEntryPayload,
+  githubRateLimitMessage,
+  githubRetryDelayMs,
+  gitBlobSha
 };
 
 // Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a
