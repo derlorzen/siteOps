@@ -19,6 +19,14 @@ test('seoTokens drops grammatical stopwords', () => {
   assert.ok(tokens.includes('wichtig'));
 });
 
+test('seoTokens drops the accusative/dative article "den" (regression: was missing from the rewrite)', () => {
+  const tokens = seoTokens('Wir haben für den Kunden und für den Service gesorgt.');
+  assert.ok(!tokens.includes('den'), 'expected "den" to be filtered');
+  assert.ok(tokens.includes('kunden'));
+  assert.ok(tokens.includes('service'));
+  assert.ok(tokens.includes('gesorgt'));
+});
+
 test('seoTokens drops common discourse/filler words', () => {
   const tokens = seoTokens('Eigentlich ist unser Service natürlich einfach quasi immer sehr zuverlässig.');
   for (const filler of ['eigentlich', 'natürlich', 'einfach', 'quasi', 'immer'])

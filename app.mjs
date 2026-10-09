@@ -2385,7 +2385,7 @@ const SEO_STOPWORDS = new Set(
   (
     'aber alle allem allen aller alles als also am an ander andere anderem anderen anderer anderes anderm andern ' +
     'anderr anders auch auf aus bei bin bis bist da damit dann das dass daß dazu dein deine deinem deinen deiner ' +
-    'deines denn der derer des dem die dies diese diesem diesen dieser dieses dieselbe dieselben denselben ' +
+    'deines denn der derer des dem den die dies diese diesem diesen dieser dieses dieselbe dieselben denselben ' +
     'desselben demselben derselbe derselben dasselbe dessen dich dir doch dort du durch ein eine einem einen ' +
     'einer eines einig einige einigem einigen einiger einiges einmal er ihn ihm es etwas euer eure eurem euren ' +
     'eurer eures für gegen gewesen hab habe haben hat hatte hatten hier hin hinter ich mich mir ihr ihre ihrem ' +
