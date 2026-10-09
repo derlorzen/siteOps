@@ -2464,6 +2464,14 @@ async function seoDiscoverSitemaps(rootUrl, maxUrls) {
       for (const m of txt.matchAll(/^sitemap:\s*(\S+)/gim)) sitemapUrls.add(m[1]);
     }
   } catch {}
+  let llmsTxt = false;
+  try {
+    const res = await fetch(new URL('/llms.txt', root), {
+      signal: AbortSignal.timeout(8000),
+      headers: { 'User-Agent': cfg.seoUserAgent }
+    });
+    llmsTxt = res.ok;
+  } catch {}
   const seenMaps = new Set(),
     queue = [...sitemapUrls];
   while (queue.length && seenMaps.size < 12 && pages.size < maxUrls) {
@@ -2497,7 +2505,22 @@ async function seoDiscoverSitemaps(rootUrl, maxUrls) {
       }
     } catch {}
   }
-  return { pages: [...pages], sitemaps: [...seenMaps], robotsTxt };
+  return { pages: [...pages], sitemaps: [...seenMaps], robotsTxt, llmsTxt };
+}
+const GERMAN_SPEAKING_TLDS = /\.(de|at|ch)$/i;
+// Heuristic: an entity-establishing JSON-LD type helps both local SEO (Google) and GEO
+// (AI assistants quoting the site) attribute content to a real business/author, rather than
+// matching every LocalBusiness subtype (Restaurant, Dentist, ...) by name individually.
+const SEO_ENTITY_SCHEMA_TYPES = /organization|localbusiness|website|person|store|restaurant|shop|professionalservice/i;
+function seoHasEntitySchema(structuredDataList) {
+  return (structuredDataList || []).some(sd => {
+    if (!sd || typeof sd !== 'object') return false;
+    const types = [].concat(sd['@type'] ?? []);
+    return types.some(t => typeof t === 'string' && SEO_ENTITY_SCHEMA_TYPES.test(t));
+  });
+}
+function seoHasImpressumLink(pages) {
+  return (pages || []).some(p => (p.links || []).some(l => /impressum/i.test(l.anchor) || /impressum/i.test(l.target)));
 }
 function seoAiBotAccess(robotsTxt) {
   const bots = [
@@ -3251,6 +3274,24 @@ async function runSeoAudit(
           });
       }
     }
+    const germanSpeakingDomain = GERMAN_SPEAKING_TLDS.test(rootHost),
+      impressumFound = seoHasImpressumLink(pages),
+      entitySchemaFound = seoHasEntitySchema(pages.flatMap(p => p.structuredData || [])),
+      rootPage = pageMap.get(rootKey) || pages[0];
+    if (rootPage) {
+      if (germanSpeakingDomain && !impressumFound)
+        rootPage.issues.push({
+          level: 'warn',
+          code: 'impressum_missing',
+          text: 'Kein Impressum-Link gefunden (in DE/AT/CH gesetzlich vorgeschrieben)'
+        });
+      if (!entitySchemaFound)
+        rootPage.issues.push({
+          level: 'info',
+          code: 'entity_schema_missing',
+          text: 'Keine Organization/LocalBusiness/WebSite Structured Data gefunden – hilft Google (Local SEO) und KI-Suchmaschinen (GEO), die Seite einem Unternehmen zuzuordnen'
+        });
+    }
     for (let i = 0; i < pages.length; i++)
       for (let j = i + 1; j < pages.length; j++) {
         const a = pages[i],
@@ -3352,7 +3393,8 @@ async function runSeoAudit(
       media: allIssues.filter(i => /image|resource|mixed_content/.test(i.code)).length,
       accessibility: allIssues.filter(i => /accessibility|html_lang/.test(i.code)).length,
       security: allIssues.filter(i => /security|mixed_content/.test(i.code)).length,
-      social: allIssues.filter(i => /open_graph|twitter/.test(i.code)).length
+      social: allIssues.filter(i => /open_graph|twitter/.test(i.code)).length,
+      trust: allIssues.filter(i => /impressum|entity_schema/.test(i.code)).length
     };
     const summary = {
       healthScore: seoHealthScore(pages),
@@ -3387,7 +3429,11 @@ async function runSeoAudit(
       pageSpeedPages: psiCandidates.length,
       sitemapUrls: sitemap.sitemaps.length,
       sitemapPages: sitemap.pages.length,
-      aiBots: seoAiBotAccess(sitemap.robotsTxt)
+      aiBots: seoAiBotAccess(sitemap.robotsTxt),
+      llmsTxtPresent: sitemap.llmsTxt,
+      germanSpeakingDomain,
+      impressumFound,
+      entitySchemaFound
     };
     await q('update seo_runs set status=?,pages_crawled=?,summary=?,finished_at=now() where id=?', [
       'completed',
@@ -5579,6 +5625,38 @@ async function seoDashboardPage(slug) {
       '</section><section><div class="sectionhead"><div><span class="eyebrow">Interne Autorität</span><h2>Stärkste Seiten</h2></div><small>PageRank-artige Berechnung aus internen Links.</small></div><div class="strength-list">' +
       strength +
       '</div></section></div>';
+    const aiBotRows = (summary.aiBots || [])
+      .map(
+        b =>
+          '<tr><td>' +
+          esc(b.bot) +
+          '</td><td><span class="pill ' +
+          (b.blocked ? 'bad' : 'ok') +
+          '">' +
+          (b.blocked ? 'Blockiert' : 'Erlaubt') +
+          '</span></td></tr>'
+      )
+      .join('');
+    html +=
+      '<section><div class="sectionhead"><div><span class="eyebrow">GEO &amp; Vertrauen</span><h2>KI-Sichtbarkeit &amp; Trust-Signale</h2></div><small>Generative Engine Optimization (Zitierbarkeit durch KI-Suchmaschinen) und rechtliche/strukturelle Vertrauenssignale.</small></div><div class="twocol ops-grid"><div class="facts compact-facts"><dl><div><dt>llms.txt</dt><dd><span class="pill ' +
+      (summary.llmsTxtPresent ? 'ok' : 'bad') +
+      '">' +
+      (summary.llmsTxtPresent ? 'Vorhanden' : 'Fehlt') +
+      '</span></dd></div><div><dt>Organization/LocalBusiness Schema</dt><dd><span class="pill ' +
+      (summary.entitySchemaFound ? 'ok' : 'bad') +
+      '">' +
+      (summary.entitySchemaFound ? 'Gefunden' : 'Fehlt') +
+      '</span></dd></div>' +
+      (summary.germanSpeakingDomain
+        ? '<div><dt>Impressum-Link</dt><dd><span class="pill ' +
+          (summary.impressumFound ? 'ok' : 'bad') +
+          '">' +
+          (summary.impressumFound ? 'Gefunden' : 'Fehlt') +
+          '</span></dd></div>'
+        : '') +
+      '</dl></div><div class="tablewrap"><table><thead><tr><th>KI-Bot</th><th>Zugriff via robots.txt</th></tr></thead><tbody>' +
+      (aiBotRows || '<tr><td colspan="2">Keine robots.txt gefunden.</td></tr>') +
+      '</tbody></table></div></div></section>';
     html +=
       '<section><div class="sectionhead"><div><span class="eyebrow">Onpage</span><h2>Alle gecrawlten Seiten</h2></div><small>' +
       pages.length +
@@ -6512,7 +6590,10 @@ export {
   fmtDateTime,
   fmtDate,
   seoTokens,
-  calcWdfIdf
+  calcWdfIdf,
+  seoHasEntitySchema,
+  seoHasImpressumLink,
+  seoAiBotAccess
 };
 
 // Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a
