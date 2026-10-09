@@ -2512,12 +2512,17 @@ const GERMAN_SPEAKING_TLDS = /\.(de|at|ch)$/i;
 // (AI assistants quoting the site) attribute content to a real business/author, rather than
 // matching every LocalBusiness subtype (Restaurant, Dentist, ...) by name individually.
 const SEO_ENTITY_SCHEMA_TYPES = /organization|localbusiness|website|person|store|restaurant|shop|professionalservice/i;
+function seoJsonLdHasEntityType(node) {
+  if (!node || typeof node !== 'object') return false;
+  if (Array.isArray(node)) return node.some(seoJsonLdHasEntityType);
+  const types = [].concat(node['@type'] ?? []);
+  if (types.some(t => typeof t === 'string' && SEO_ENTITY_SCHEMA_TYPES.test(t))) return true;
+  // Common pattern: a single <script type="application/ld+json"> wraps several entities in
+  // an "@graph" array rather than being the entity itself.
+  return node['@graph'] ? seoJsonLdHasEntityType(node['@graph']) : false;
+}
 function seoHasEntitySchema(structuredDataList) {
-  return (structuredDataList || []).some(sd => {
-    if (!sd || typeof sd !== 'object') return false;
-    const types = [].concat(sd['@type'] ?? []);
-    return types.some(t => typeof t === 'string' && SEO_ENTITY_SCHEMA_TYPES.test(t));
-  });
+  return (structuredDataList || []).some(seoJsonLdHasEntityType);
 }
 function seoHasImpressumLink(pages) {
   return (pages || []).some(p => (p.links || []).some(l => /impressum/i.test(l.anchor) || /impressum/i.test(l.target)));
@@ -5637,22 +5642,21 @@ async function seoDashboardPage(slug) {
           '</span></td></tr>'
       )
       .join('');
+    // Runs completed before this check existed have no value at all for these fields (as
+    // opposed to a checked-and-missing `false`) - render that as "nicht geprüft", not as a
+    // false "Fehlt", so an old audit isn't misreported as failing a check it never ran.
+    const seoCheckPill = (value, trueLabel) =>
+      value === undefined
+        ? '<span class="pill">Nicht geprüft (alter Crawl)</span>'
+        : '<span class="pill ' + (value ? 'ok' : 'bad') + '">' + (value ? trueLabel : 'Fehlt') + '</span>';
     html +=
-      '<section><div class="sectionhead"><div><span class="eyebrow">GEO &amp; Vertrauen</span><h2>KI-Sichtbarkeit &amp; Trust-Signale</h2></div><small>Generative Engine Optimization (Zitierbarkeit durch KI-Suchmaschinen) und rechtliche/strukturelle Vertrauenssignale.</small></div><div class="twocol ops-grid"><div class="facts compact-facts"><dl><div><dt>llms.txt</dt><dd><span class="pill ' +
-      (summary.llmsTxtPresent ? 'ok' : 'bad') +
-      '">' +
-      (summary.llmsTxtPresent ? 'Vorhanden' : 'Fehlt') +
-      '</span></dd></div><div><dt>Organization/LocalBusiness Schema</dt><dd><span class="pill ' +
-      (summary.entitySchemaFound ? 'ok' : 'bad') +
-      '">' +
-      (summary.entitySchemaFound ? 'Gefunden' : 'Fehlt') +
-      '</span></dd></div>' +
+      '<section><div class="sectionhead"><div><span class="eyebrow">GEO &amp; Vertrauen</span><h2>KI-Sichtbarkeit &amp; Trust-Signale</h2></div><small>Generative Engine Optimization (Zitierbarkeit durch KI-Suchmaschinen) und rechtliche/strukturelle Vertrauenssignale.</small></div><div class="twocol ops-grid"><div class="facts compact-facts"><dl><div><dt>llms.txt</dt><dd>' +
+      seoCheckPill(summary.llmsTxtPresent, 'Vorhanden') +
+      '</dd></div><div><dt>Organization/LocalBusiness Schema</dt><dd>' +
+      seoCheckPill(summary.entitySchemaFound, 'Gefunden') +
+      '</dd></div>' +
       (summary.germanSpeakingDomain
-        ? '<div><dt>Impressum-Link</dt><dd><span class="pill ' +
-          (summary.impressumFound ? 'ok' : 'bad') +
-          '">' +
-          (summary.impressumFound ? 'Gefunden' : 'Fehlt') +
-          '</span></dd></div>'
+        ? '<div><dt>Impressum-Link</dt><dd>' + seoCheckPill(summary.impressumFound, 'Gefunden') + '</dd></div>'
         : '') +
       '</dl></div><div class="tablewrap"><table><thead><tr><th>KI-Bot</th><th>Zugriff via robots.txt</th></tr></thead><tbody>' +
       (aiBotRows || '<tr><td colspan="2">Keine robots.txt gefunden.</td></tr>') +

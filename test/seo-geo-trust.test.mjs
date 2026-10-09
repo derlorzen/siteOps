@@ -27,6 +27,22 @@ test('seoHasEntitySchema returns false when only navigational schema is present'
   assert.equal(seoHasEntitySchema([{ '@type': 'BreadcrumbList' }]), false);
 });
 
+test('seoHasEntitySchema finds an entity nested inside an @graph array (regression: Codex review on #13)', () => {
+  assert.equal(
+    seoHasEntitySchema([
+      {
+        '@context': 'https://schema.org',
+        '@graph': [{ '@type': 'BreadcrumbList' }, { '@type': 'Organization', name: 'Test GmbH' }]
+      }
+    ]),
+    true
+  );
+});
+
+test('seoHasEntitySchema finds an entity inside a bare top-level array', () => {
+  assert.equal(seoHasEntitySchema([[{ '@type': 'BreadcrumbList' }, { '@type': 'LocalBusiness' }]]), true);
+});
+
 test('seoHasEntitySchema returns false for empty/missing structured data', () => {
   assert.equal(seoHasEntitySchema([]), false);
   assert.equal(seoHasEntitySchema(undefined), false);
