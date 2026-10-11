@@ -6257,6 +6257,11 @@ async function start() {
         path === '/oauth/register' ||
         path === '/oauth/token' ||
         path === '/oauth/revoke';
+    // Dashboard pages and API responses must never be served stale from a browser cache -
+    // basic-auth-protected pages are especially prone to this, since browsers tend to treat
+    // them as static once authenticated, which can otherwise hide a deployed fix behind a
+    // cached pre-fix page. Only /assets/ (explicitly cache-busted via ?v=) is exempt.
+    if (!path.startsWith('/assets/')) reply.header('Cache-Control', 'no-store, max-age=0');
     if (path === '/health' || path.startsWith('/assets/') || oauthPublic) return;
     if (path === '/mcp') {
       if (!(await mcpAuth(req, reply))) return reply;
