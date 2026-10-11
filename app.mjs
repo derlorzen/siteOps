@@ -990,7 +990,17 @@ async function branchState() {
   const tree = await gh('/git/trees/' + commit.tree.sha + '?recursive=1');
   if (tree.truncated) throw new Error('Backup repository tree is too large for safe recursive processing');
   const map = new Map((tree.tree || []).filter(x => x.type === 'blob').map(x => [x.path, x]));
-  return { headSha: ref.object.sha, rootTreeSha: commit.tree.sha, treeMap: map };
+  return { headSha: ref.object.sha, rootTreeSha: commit.tree.sha, treeMap: map, branch: configuredBranch };
+}
+// Cheap check for whether a previously-resolved branchState() is still current - just the
+// ref, not the full recursive tree. withBackupLock serializes everything _inside_ a single
+// commitPaths call, but applyPreview's pre- and post-change snapshots are two separate
+// commitPaths calls with the live FTP write in between, so the lock is released and
+// reacquired between them; some other site's scheduled backup could land in that window and
+// move the branch, which would make a reused pre-commit state stale.
+async function branchHeadMatches(branch, expectedSha) {
+  const ref = await gh('/git/ref/heads/' + encodeURIComponent(branch), { allow404: true, allow409: true });
+  return Boolean(ref && ref.object.sha === expectedSha);
 }
 async function createGitBlob(content) {
   const b = Buffer.isBuffer(content) ? content : Buffer.from(content);
@@ -1032,12 +1042,16 @@ function applyTreeMapUpdates(treeMap, updates) {
   return next;
 }
 // `knownState` lets a caller that already holds a fresh branchState() (returned by a prior
-// commitPaths/commitTreeChanges call) skip the expensive full recursive tree refetch -
-// see the comment on commitTreeChanges. Always safe to omit; branchState() is then fetched
-// as before.
+// commitPaths/commitTreeChanges call) skip the expensive full recursive tree refetch - see
+// the comment on commitTreeChanges. It's revalidated with a cheap ref check (not a full
+// branchState()) before use, in case something else committed to the backup repo in the
+// window between that prior call and this one (see the comment on branchHeadMatches);
+// always safe to omit, or to pass a now-stale one - branchState() is fetched fresh instead.
 async function commitPaths(site, paths, message, knownState = null) {
   return withBackupLock(async () => {
-    const state = knownState || (await branchState()),
+    const state =
+        (knownState && (await branchHeadMatches(knownState.branch, knownState.headSha)) && knownState) ||
+        (await branchState()),
       remote = await connectSite(site),
       changes = [],
       treeUpdates = [];
@@ -1064,7 +1078,12 @@ async function commitPaths(site, paths, message, knownState = null) {
     const { sha, treeSha } = await commitTreeChanges(state, changes, '[' + site.domain + '] ' + message);
     return {
       sha,
-      state: { headSha: sha, rootTreeSha: treeSha, treeMap: applyTreeMapUpdates(state.treeMap, treeUpdates) }
+      state: {
+        headSha: sha,
+        rootTreeSha: treeSha,
+        treeMap: applyTreeMapUpdates(state.treeMap, treeUpdates),
+        branch: state.branch
+      }
     };
   });
 }
@@ -6626,7 +6645,8 @@ export {
   seoHasImpressumLink,
   seoAiBotAccess,
   applyTreeMapUpdates,
-  commitTreeChanges
+  commitTreeChanges,
+  branchHeadMatches
 };
 
 // Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a

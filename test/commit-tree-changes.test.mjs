@@ -14,7 +14,7 @@ process.env.DASHBOARD_PASSWORD ||= 'test-password';
 process.env.GITHUB_BACKUP_REPO ||= 'example/backups';
 process.env.GITHUB_BACKUP_TOKEN ||= 'test-token';
 process.env.SITEOPS_TEST_NO_AUTOSTART = '1';
-const { applyTreeMapUpdates, commitTreeChanges } = await import('../app.mjs');
+const { applyTreeMapUpdates, commitTreeChanges, branchHeadMatches } = await import('../app.mjs');
 
 function fakeResponse(body, { status = 200, headers = {} } = {}) {
   return {
@@ -81,4 +81,30 @@ test('commitTreeChanges creates a tree, commit and moves the ref, returning the 
     calls.map(c => c.method),
     ['POST', 'POST', 'PATCH']
   );
+});
+
+// Codex review on #15 flagged the real race this guards against: applyPreview's pre- and
+// post-change snapshots are two separate commitPaths calls (withBackupLock is released and
+// reacquired between them, around the live FTP write), so a concurrent commit to the backup
+// repo - e.g. another site's scheduled backup - could land in that window and move the
+// branch past the pre-commit's resolved state before the post-commit tries to reuse it.
+test('branchHeadMatches returns true only when the ref still points at the expected sha', async t => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    text: async () => JSON.stringify({ object: { sha: 'head1' } })
+  }));
+  assert.equal(await branchHeadMatches('main', 'head1'), true);
+  assert.equal(await branchHeadMatches('main', 'some-other-sha'), false);
+});
+
+test('branchHeadMatches returns false when the branch does not exist yet (404)', async t => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: false,
+    status: 404,
+    headers: { get: () => null },
+    text: async () => ''
+  }));
+  assert.equal(await branchHeadMatches('main', 'head1'), false);
 });
