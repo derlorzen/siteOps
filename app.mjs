@@ -1004,11 +1004,15 @@ async function gitTreeChangeFor(repoPath, content) {
   const blob = await createGitBlob(content);
   return { path: repoPath, mode: '100644', type: 'blob', sha: blob.sha };
 }
+// Returns the resulting tree sha alongside the commit sha so a caller that already knows
+// exactly which paths it just changed (e.g. applyPreview's post-change snapshot, right after
+// its own pre-change snapshot) can patch its already-fetched treeMap locally instead of
+// paying for another full recursive GET /git/trees of the whole backup repo.
 async function commitTreeChanges(state, changes, message) {
-  if (!changes.length) return state.headSha;
+  if (!changes.length) return { sha: state.headSha, treeSha: state.rootTreeSha };
   const treeBody = { tree: changes, base_tree: state.rootTreeSha };
   const tree = await gh('/git/trees', { method: 'POST', body: treeBody });
-  if (tree.sha === state.rootTreeSha) return state.headSha;
+  if (tree.sha === state.rootTreeSha) return { sha: state.headSha, treeSha: tree.sha };
   const commit = await gh('/git/commits', {
     method: 'POST',
     body: { message, tree: tree.sha, parents: [state.headSha] }
@@ -1017,13 +1021,26 @@ async function commitTreeChanges(state, changes, message) {
     method: 'PATCH',
     body: { sha: commit.sha, force: false }
   });
-  return commit.sha;
+  return { sha: commit.sha, treeSha: tree.sha };
 }
-async function commitPaths(site, paths, message) {
+function applyTreeMapUpdates(treeMap, updates) {
+  const next = new Map(treeMap);
+  for (const u of updates) {
+    if (u.sha === null) next.delete(u.path);
+    else next.set(u.path, u);
+  }
+  return next;
+}
+// `knownState` lets a caller that already holds a fresh branchState() (returned by a prior
+// commitPaths/commitTreeChanges call) skip the expensive full recursive tree refetch -
+// see the comment on commitTreeChanges. Always safe to omit; branchState() is then fetched
+// as before.
+async function commitPaths(site, paths, message, knownState = null) {
   return withBackupLock(async () => {
-    const state = await branchState(),
+    const state = knownState || (await branchState()),
       remote = await connectSite(site),
-      changes = [];
+      changes = [],
+      treeUpdates = [];
     try {
       for (const path of paths) {
         const repoPath = 'sites/' + site.slug + '/public/' + path,
@@ -1032,13 +1049,23 @@ async function commitPaths(site, paths, message) {
         if (await remote.exists(rp)) {
           const content = await remote.read(rp),
             sha = gitBlobSha(content);
-          if (existing?.sha !== sha) changes.push(await gitTreeChangeFor(repoPath, content));
-        } else if (existing) changes.push({ path: repoPath, mode: '100644', type: 'blob', sha: null });
+          if (existing?.sha !== sha) {
+            changes.push(await gitTreeChangeFor(repoPath, content));
+            treeUpdates.push({ path: repoPath, mode: '100644', type: 'blob', sha });
+          }
+        } else if (existing) {
+          changes.push({ path: repoPath, mode: '100644', type: 'blob', sha: null });
+          treeUpdates.push({ path: repoPath, sha: null });
+        }
       }
     } finally {
       await remote.close();
     }
-    return commitTreeChanges(state, changes, '[' + site.domain + '] ' + message);
+    const { sha, treeSha } = await commitTreeChanges(state, changes, '[' + site.domain + '] ' + message);
+    return {
+      sha,
+      state: { headSha: sha, rootTreeSha: treeSha, treeMap: applyTreeMapUpdates(state.treeMap, treeUpdates) }
+    };
   });
 }
 const commitTreeCache = new Map();
@@ -1119,7 +1146,7 @@ async function fullBackup(site, maxFiles = 10000) {
       if (metaExisting?.sha !== gitBlobSha(meta)) changes.push(await gitTreeChangeFor(metaPath, meta));
       for (const p of state.treeMap.keys())
         if (p.startsWith(prefix) && !seen.has(p)) changes.push({ path: p, mode: '100644', type: 'blob', sha: null });
-      const commit = await commitTreeChanges(state, changes, '[' + site.domain + '] Full backup'),
+      const { sha: commit } = await commitTreeChanges(state, changes, '[' + site.domain + '] Full backup'),
         changed = commit !== state.headSha;
       const backupId = crypto.randomUUID();
       await q('insert into backups(id,site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?,?)', [
@@ -1267,7 +1294,7 @@ async function applyPreview(previewId) {
   const site = await getSite(preview.site_id),
     changes = preview.changes,
     paths = changes.map(c => c.path),
-    preCommit = await commitPaths(site, paths, 'Pre-change snapshot'),
+    { sha: preCommit, state: preCommitState } = await commitPaths(site, paths, 'Pre-change snapshot'),
     remote = await connectSite(site),
     touched = [];
   let writeError = null;
@@ -1310,7 +1337,7 @@ async function applyPreview(previewId) {
   }
   let postCommit;
   try {
-    postCommit = await commitPaths(site, paths, preview.description);
+    ({ sha: postCommit } = await commitPaths(site, paths, preview.description, preCommitState));
   } catch (e) {
     try {
       await restoreRemoteSnapshot(site, paths, preCommit);
@@ -6597,7 +6624,9 @@ export {
   calcWdfIdf,
   seoHasEntitySchema,
   seoHasImpressumLink,
-  seoAiBotAccess
+  seoAiBotAccess,
+  applyTreeMapUpdates,
+  commitTreeChanges
 };
 
 // Some hosts (e.g. Hostinger's Node.js hosting) run the entry file through a
