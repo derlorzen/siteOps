@@ -38,7 +38,7 @@ test(
       await db.end();
     });
     await q(
-      'CREATE TABLE sites (id CHAR(36) PRIMARY KEY,slug VARCHAR(100),name VARCHAR(190),domain VARCHAR(255),deployment_mode VARCHAR(30),protocol VARCHAR(10),host VARCHAR(255),port INT,username VARCHAR(255),encrypted_credentials LONGTEXT,remote_root VARCHAR(500),exclude_patterns LONGTEXT,monitor_enabled INT) ENGINE=InnoDB'
+      'CREATE TABLE sites (id CHAR(36) PRIMARY KEY,slug VARCHAR(100),name VARCHAR(190),domain VARCHAR(255),deployment_mode VARCHAR(30),protocol VARCHAR(10),host VARCHAR(255),port INT,username VARCHAR(255),encrypted_credentials LONGTEXT,remote_root VARCHAR(500),exclude_patterns LONGTEXT,monitor_enabled INT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
     const migration = await readFile(new URL('../migrations/0003_lorzcms.sql', import.meta.url), 'utf8');
     for (const statement of migration.split(/;\s*(?:\n|$)/).filter(x => x.trim())) await q(statement);

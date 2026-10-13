@@ -68,9 +68,21 @@ function cmsAgentBackup(string $root, string $job, PDO $db): string {
                 $create = $db->query('SHOW CREATE TABLE '.$quoted)->fetch(PDO::FETCH_NUM)[1];
                 if (fwrite($out, 'DROP TABLE IF EXISTS '.$quoted.";\n".$create.";\n") === false) { throw new RuntimeException('backup'); }
                 $rows = $db->query('SELECT * FROM '.$quoted);
+                $numeric = [];
+                for ($column=0;$column<$rows->columnCount();$column++) {
+                    $meta = $rows->getColumnMeta($column);
+                    $numeric[$meta['name']] = in_array($meta['native_type'] ?? '', ['TINY','SHORT','INT24','LONG','LONGLONG','DECIMAL','NEWDECIMAL','FLOAT','DOUBLE','YEAR'],true);
+                }
                 while ($row = $rows->fetch(PDO::FETCH_ASSOC)) {
                     $columns = array_map(static fn($key)=>'`'.str_replace('`','``',$key).'`',array_keys($row));
-                    $values = array_map(static fn($value)=>$value === null ? 'NULL' : "X'".bin2hex((string)$value)."'", array_values($row));
+                    $values = [];
+                    foreach ($row as $column=>$value) {
+                        if ($value === null) { $values[]='NULL'; }
+                        elseif ($numeric[$column]) {
+                            if (!preg_match('/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/D',(string)$value)) { throw new RuntimeException('numeric backup value'); }
+                            $values[]=(string)$value;
+                        } else { $values[]="X'".bin2hex((string)$value)."'"; }
+                    }
                     if (fwrite($out, 'INSERT INTO '.$quoted.' ('.implode(',',$columns).') VALUES ('.implode(',',$values).");\n") === false) { throw new RuntimeException('backup'); }
                 }
             }

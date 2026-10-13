@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS cms_releases (
   package LONGTEXT NOT NULL,
   notes TEXT NOT NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS cms_installations (
   id CHAR(36) PRIMARY KEY,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS cms_installations (
   last_checked_at DATETIME(3) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   CONSTRAINT fk_cms_installation_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS cms_jobs (
   id CHAR(36) PRIMARY KEY,
@@ -36,4 +36,4 @@ CREATE TABLE IF NOT EXISTS cms_jobs (
   CONSTRAINT fk_cms_job_installation FOREIGN KEY (installation_id) REFERENCES cms_installations(id) ON DELETE CASCADE,
   INDEX idx_cms_job_due (state,run_at),
   INDEX idx_cms_job_installation (installation_id,state)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
