@@ -111,7 +111,7 @@ test(
         if (!options.body) return Response.json({ instanceId: inst.id, ...live.get(origin), maintenance: false });
         const body = JSON.parse(options.body);
         calls.push(body);
-        if (body.action === 'preflight') return Response.json({ ok: true });
+        if (body.action === 'preflight') return Response.json({ ok: true, instanceId: inst.id });
         if (activationConflict) return new Response('conflict', { status: 409 });
         live.set(origin, { version: body.version, jobId: body.jobId });
         return Response.json({ ok: true, instanceId: inst.id, version: body.version });

@@ -106,7 +106,7 @@ try {
     $version = cmsAgentVersion($body['version'] ?? null);
     $digest = $body['digest'] ?? '';
     $manifest = cmsAgentVerify($root,$version,$digest);
-    if ($action === 'preflight') { echo json_encode(['ok'=>true,'version'=>$version,'schemaVersion'=>1],JSON_THROW_ON_ERROR); return; }
+    if ($action === 'preflight') { echo json_encode(['ok'=>true,'instanceId'=>$agent['instance_id'],'version'=>$version,'schemaVersion'=>1],JSON_THROW_ON_ERROR); return; }
     $job = $body['jobId'] ?? '';
     if (!is_string($job) || !preg_match('/^[a-zA-Z0-9-]{1,80}$/D',$job)) { cmsAgentFail(422, 'Ungültiger Auftrag.'); }
     $lock = fopen($root.'/.lorzcms/deploy.lock','c');
