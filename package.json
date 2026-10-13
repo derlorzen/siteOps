@@ -1,6 +1,6 @@
 {
   "name": "lorzen-siteops",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -10,10 +10,12 @@
     "start": "node app.mjs",
     "migrate": "node app.mjs --migrate",
     "check": "node --check app.mjs",
+    "cms:build": "node scripts/build-cms-release.mjs",
+    "cms:check": "node scripts/check-cms.mjs",
     "check:runtime": "node app.mjs --check-runtime",
-    "lint": "eslint app.mjs lib migrations test",
-    "format": "prettier --write app.mjs lib migrations test",
-    "format:check": "prettier --check app.mjs lib migrations test",
+    "lint": "eslint app.mjs lib migrations test scripts",
+    "format": "prettier --write app.mjs lib migrations test scripts",
+    "format:check": "prettier --check app.mjs lib migrations test scripts",
     "test": "node --test"
   },
   "dependencies": {

@@ -2,3 +2,5 @@ node_modules/
 .env
 *.log
 workspaces/
+dist/
+.test-runtime/

@@ -16,6 +16,8 @@ import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
 import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/crypto.mjs';
+import { createCmsController, cmsInstallSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
+import { cmsDashboardBody } from './lib/lorzcms-ui.mjs';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -132,6 +134,7 @@ function key() {
 }
 const encrypt = value => encryptWithKey(value, key());
 const decrypt = value => decryptWithKey(value, key());
+const cmsController = createCmsController({ q, db, getSite, createSite, listSites, connectSite, encrypt, decrypt });
 const phpParser = new PHPParser({
   parser: { suppressErrors: false, extractDoc: false },
   ast: { withPositions: false }
@@ -3764,7 +3767,7 @@ const toolText = value => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }]
 });
 function mcpServer() {
-  const s = new McpServer({ name: 'lorzen-siteops', version: '1.0.0' });
+  const s = new McpServer({ name: 'lorzen-siteops', version: '1.2.0' });
   s.registerTool(
     'sites_list',
     {
@@ -4236,6 +4239,81 @@ function mcpServer() {
     'settings_get',
     { description: 'Get redacted global SiteOps settings. Secrets are never returned.', inputSchema: z.object({}) },
     async () => toolText(publicSettings())
+  );
+  s.registerTool(
+    'cms_overview',
+    {
+      description: 'LorzCMS releases, connected installations and persisted update jobs. Never returns credentials.',
+      inputSchema: z.object({})
+    },
+    async () => toolText(await cmsController.overview())
+  );
+  s.registerTool(
+    'cms_release_bundled',
+    {
+      description: 'Publish the bundled LorzCMS core as an immutable release. Does not deploy websites.',
+      inputSchema: z.object({})
+    },
+    async () => toolText(await cmsController.publishBundled())
+  );
+  s.registerTool(
+    'cms_install',
+    {
+      description:
+        'Create a managed website and queue CMS installation into an empty hosting directory. Requires the domain document root to be its public subdirectory.',
+      inputSchema: cmsInstallSchema
+    },
+    async input => toolText(await cmsController.create(input))
+  );
+  s.registerTool(
+    'cms_attach',
+    {
+      description:
+        'Queue enrollment of an existing LorzCMS with a stored FTP/SFTP connection; preserve project, data and original core.',
+      inputSchema: z.object({ site: z.string(), baseUrl: z.string().url(), publicRootReady: z.literal(true) })
+    },
+    async input => toolText(await cmsController.attach(input))
+  );
+  s.registerTool(
+    'cms_update_schedule',
+    {
+      description: 'Queue a selected release for selected CMS installations, now or at an explicit ISO timestamp.',
+      inputSchema: cmsScheduleSchema
+    },
+    async input => toolText(await cmsController.schedule(input))
+  );
+  s.registerTool(
+    'cms_rollback',
+    {
+      description: 'Queue code rollback of a completed CMS update. Does not restore or overwrite editorial data.',
+      inputSchema: z.object({ jobId: z.string().uuid(), runAt: z.iso.datetime({ offset: true }).optional() })
+    },
+    async ({ jobId, runAt }) => toolText(await cmsController.rollback(jobId, runAt))
+  );
+  s.registerTool(
+    'cms_job_cancel',
+    {
+      description: 'Cancel a queued CMS job and erase its installation secrets.',
+      inputSchema: z.object({ jobId: z.string().uuid() })
+    },
+    async ({ jobId }) => toolText(await cmsController.cancel(jobId))
+  );
+  s.registerTool(
+    'cms_job_retry',
+    {
+      description: 'Retry an interrupted CMS job with its original idempotency key.',
+      inputSchema: z.object({ jobId: z.string().uuid() })
+    },
+    async ({ jobId }) => toolText(await cmsController.retry(jobId))
+  );
+  s.registerTool(
+    'cms_inspect',
+    {
+      description:
+        'Check the connected CMS version and website health, and reconcile its recorded state. Does not deploy code.',
+      inputSchema: z.object({ installationId: z.uuid() })
+    },
+    async ({ installationId }) => toolText(await cmsController.inspect(installationId))
   );
   return s;
 }
@@ -4860,7 +4938,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -6228,7 +6306,7 @@ async function start() {
       ok = databaseReady && missing.length === 0;
     return reply.code(ok ? 200 : 503).send({
       status: ok ? 'ok' : 'degraded',
-      version: '1.1.0',
+      version: '1.2.0',
       port: cfg.port,
       database: { engine: 'mysql', ready: databaseReady, error: databaseError },
       backup: {
@@ -6247,6 +6325,12 @@ async function start() {
       .header('Cache-Control', 'no-store, max-age=0')
       .type('text/css')
       .send(await readFile(new URL('./public/app.css', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/lorzcms.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/lorzcms.js', import.meta.url), 'utf8'))
   );
   app.addHook('onRequest', async (req, reply) => {
     const path = req.url.split('?')[0],
@@ -6295,6 +6379,37 @@ async function start() {
     nodeHandler = toNodeHandler(handler);
   app.all('/mcp', async (req, reply) => nodeHandler(req.raw, reply.raw, req.body));
   app.get('/', async (_r, reply) => reply.type('text/html').send(await dashboard()));
+  app.get('/lorzcms', async (_r, reply) =>
+    reply.type('text/html').send(page('LorzCMS', cmsDashboardBody(await cmsController.overview(), esc)))
+  );
+  app.addHook('preHandler', async (req, reply) => {
+    if (!req.url.startsWith('/api/lorzcms/') || req.method === 'GET') return;
+    if (!String(req.headers['content-type'] || '').startsWith('application/json'))
+      return reply.code(415).send({ error: 'JSON erforderlich.' });
+    if (req.headers.origin && req.headers.origin !== new URL(cfg.publicBaseUrl).origin)
+      return reply.code(403).send({ error: 'Fremde Herkunft abgelehnt.' });
+  });
+  app.get('/api/lorzcms/overview', async () => cmsController.overview());
+  app.post('/api/lorzcms/releases/bundled', async () => cmsController.publishBundled());
+  app.post('/api/lorzcms/releases', { bodyLimit: 18 * 1024 * 1024 }, async req =>
+    cmsController.importRelease(req.body)
+  );
+  app.post('/api/lorzcms/installations', async (req, reply) =>
+    reply.code(202).send(await cmsController.create(req.body))
+  );
+  app.post('/api/lorzcms/installations/attach', async (req, reply) =>
+    reply.code(202).send(await cmsController.attach(req.body))
+  );
+  app.post('/api/lorzcms/updates', async (req, reply) => reply.code(202).send(await cmsController.schedule(req.body)));
+  app.post('/api/lorzcms/installations/:id/inspect', async req => cmsController.inspect(z.uuid().parse(req.params.id)));
+  app.post('/api/lorzcms/jobs/:id/rollback', async req =>
+    cmsController.rollback(
+      z.uuid().parse(req.params.id),
+      z.iso.datetime({ offset: true }).optional().parse(req.body?.runAt)
+    )
+  );
+  app.post('/api/lorzcms/jobs/:id/cancel', async req => cmsController.cancel(z.uuid().parse(req.params.id)));
+  app.post('/api/lorzcms/jobs/:id/retry', async req => cmsController.retry(z.uuid().parse(req.params.id)));
   app.get('/api/sites', async () => listSites());
   app.get('/api/sites/:site', async req => publicSite(await getSite(req.params.site)));
   app.get('/api/sites/:site/overview', async req => siteOverview(req.params.site));
@@ -6622,6 +6737,7 @@ async function start() {
     startMonitor();
     startBackupWorker();
     startSyntheticWorker();
+    cmsController.startWorker();
   }
   await app.listen({ host: cfg.host, port: cfg.port });
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');

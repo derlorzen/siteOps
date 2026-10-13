@@ -38,6 +38,10 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm install --ignore-scripts
+      - name: Install CMS PHP runtime
+        run: sudo apt-get update && sudo apt-get install -y php-cli php-sqlite3 php-mbstring php-xml php-mysql
+      - name: CMS PHP syntax and release build
+        run: npm run cms:check && npm run cms:build
       - name: Syntax check
         run: npm run check
       - name: Lint

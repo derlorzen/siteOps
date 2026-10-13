@@ -1,0 +1,15 @@
+{
+  "public/router.php": [
+    "a11082a0b4827649330d74e0e94d4dbb9a24f6b570f8db0d46dbae43bb71ec53",
+    "2619101bba3f2b5fc18a0eba9c6f1f6dae2a4b204f31e87512b12396dee58867"
+  ],
+  "public/.htaccess": [
+    "5c36811aeaaf4929faf4ed59c3a2bda83ada76294731a3aaf246ec1e433e92a9",
+    "1ba9c3de366e91118de140c926425f264a2b8b89e21b36a2b42e8158c91c4105"
+  ],
+  "public/index.php": ["49b472743dd2ebf9dbfbb4d1b9d20efe309d42beec1daf22fb28202ef75ba2bc"],
+  "bootstrap.php": [
+    "380881c2b150a2960e93002e5606072237fd733928b712a315219738211a13fb",
+    "eb40f8ece903b8072dabe1c22b53ab615ef22b624faba7bd176d7f20747e5548"
+  ]
+}
