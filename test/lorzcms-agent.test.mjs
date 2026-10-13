@@ -4,7 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdtemp, mkdir, readFile, writeFile, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import crypto from 'node:crypto';
 import { bundledRelease, validateRelease } from '../lib/lorzcms.mjs';
 
@@ -35,6 +35,7 @@ test(
           if (server.exitCode !== null) resolve();
           else server.once('exit', resolve);
         });
+      assert.equal(dirname(resolve(root)), resolve(tmpdir()));
       await rm(root, { recursive: true, force: true });
     });
     for (const dir of ['.lorzcms', 'config', 'var', 'public', 'projects/base'])
