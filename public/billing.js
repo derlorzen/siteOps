@@ -190,6 +190,12 @@ function draw() {
             (i.status === 'issued'
               ? '<button type="button" class="ghost" data-pay="' + escapeHtml(i.id) + '">Bezahlt</button>'
               : '') +
+            (i.status === 'issued' || i.status === 'paid'
+              ? '<button type="button" class="ghost" data-cancel="' + escapeHtml(i.id) + '">Storno</button>'
+              : '') +
+            (i.cancellation_status === 'issued'
+              ? '<a class="btn ghost" href="/api/billing/invoices/' + escapeHtml(i.id) + '/cancellation-pdf">Stornobeleg</a>'
+              : '') +
             (i.status === 'draft'
               ? '<button type="button" class="ghost" data-discard="' + escapeHtml(i.id) + '">Verwerfen</button>'
               : '') +
@@ -370,6 +376,11 @@ function install() {
       if (btn.dataset.issue) {
         if (!confirm('Rechnung verbindlich ausstellen und im privaten GitHub-Backup archivieren?')) return;
         await write('/api/billing/invoices/' + btn.dataset.issue + '/issue', 'POST');
+      } else if (btn.dataset.cancel) {
+        const reason = prompt('Stornierungsgrund (mindestens 5 Zeichen):');
+        if (!reason) return;
+        if (!confirm('Verbindlichen, nummerierten Stornobeleg ausstellen und archivieren?')) return;
+        await write('/api/billing/invoices/' + btn.dataset.cancel + '/cancel', 'POST', { reason });
       } else if (btn.dataset.pay) {
         if (!confirm('Zahlungseingang bestätigen?')) return;
         await write('/api/billing/invoices/' + btn.dataset.pay + '/pay', 'POST');
