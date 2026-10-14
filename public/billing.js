@@ -61,7 +61,8 @@ function clearEditForm(formId, buttonLabel) {
   if (!form.dataset.editId) return;
   form.reset();
   delete form.dataset.editId;
-  form.querySelector('button[type="submit"]')?.textContent = buttonLabel;
+  const button = form.querySelector('button');
+  if (button) button.textContent = buttonLabel;
 }
 function renderHierarchyContext() {
   const customer = data.customers.find(x => x.id === selectedCustomer());
