@@ -18,6 +18,8 @@ import * as cheerio from 'cheerio';
 import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/crypto.mjs';
 import { createCmsController, cmsInstallSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
 import { cmsDashboardBody } from './lib/lorzcms-ui.mjs';
+import { billingDashboardBody } from './lib/billing-ui.mjs';
+import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -135,6 +137,47 @@ function key() {
 const encrypt = value => encryptWithKey(value, key());
 const decrypt = value => decryptWithKey(value, key());
 const cmsController = createCmsController({ q, db, getSite, createSite, listSites, connectSite, encrypt, decrypt });
+
+async function archiveIssuedInvoice(snapshot, pdf) {
+  return withBackupLock(async () => {
+    const state = await branchState();
+    const number = String(snapshot.number);
+    if (!/^RE-[0-9]{4}-[0-9]{5}$/.test(number)) throw new Error('Ungültige Rechnungsnummer.');
+    const prefix = 'invoices/' + number.slice(3, 7) + '/' + number + '/';
+    const pdfPath = prefix + number + '.pdf';
+    const archiveManifest = Buffer.from(
+      JSON.stringify(
+        {
+          ...snapshot,
+          archive: {
+            pdf_sha256: crypto.createHash('sha256').update(pdf).digest('hex'),
+            archived_file: pdfPath
+          }
+        },
+        null,
+        2
+      ) + '\n'
+    );
+    const files = [
+      [pdfPath, pdf],
+      [prefix + number + '.json', archiveManifest]
+    ];
+    const changes = [];
+    for (const [path, content] of files) {
+      const existing = state.treeMap.get(path);
+      if (existing) {
+        if (existing.sha !== gitBlobSha(content))
+          throw new Error('Rechnungsarchiv enthält unter diesem Pfad bereits andere Daten: ' + path);
+      } else {
+        changes.push(await gitTreeChangeFor(path, content));
+      }
+    }
+    const saved = await commitTreeChanges(state, changes, '[invoice] Archive ' + number);
+    return { commit: saved.sha, path: pdfPath };
+  });
+}
+const billingController = createBillingController({ db, archive: archiveIssuedInvoice });
+
 const phpParser = new PHPParser({
   parser: { suppressErrors: false, extractDoc: false },
   ast: { withPositions: false }
@@ -4938,7 +4981,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -6326,6 +6369,12 @@ async function start() {
       .type('text/css')
       .send(await readFile(new URL('./public/app.css', import.meta.url), 'utf8'))
   );
+  app.get('/assets/billing.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/billing.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/lorzcms.js', async (_r, reply) =>
     reply
       .type('text/javascript')
@@ -6410,6 +6459,11 @@ async function start() {
   );
   app.post('/api/lorzcms/jobs/:id/cancel', async req => cmsController.cancel(z.uuid().parse(req.params.id)));
   app.post('/api/lorzcms/jobs/:id/retry', async req => cmsController.retry(z.uuid().parse(req.params.id)));
+  registerBillingRoutes(app, billingController, {
+    baseUrl: () => cfg.publicBaseUrl,
+    page,
+    dashboardBody: billingDashboardBody
+  });
   app.get('/api/sites', async () => listSites());
   app.get('/api/sites/:site', async req => publicSite(await getSite(req.params.site)));
   app.get('/api/sites/:site/overview', async req => siteOverview(req.params.site));
