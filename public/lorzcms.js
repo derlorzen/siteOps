@@ -38,6 +38,21 @@
     });
   });
   const create = byId('cmsCreate');
+  document.querySelectorAll('[data-cms-restart]').forEach(button =>
+    button.addEventListener('click', () => {
+      create.reset();
+      const values = JSON.parse(button.dataset.cmsRestart);
+      Object.entries(values).forEach(([name, value]) => {
+        const field = create.elements.namedItem(name);
+        if (field) field.value = value;
+      });
+      byId('cmsMysql').hidden = true;
+      notice.hidden = false;
+      notice.textContent =
+        'Einrichtung erneut planen: Hosting-Passwort, Datenbank und Administratorkonto wieder eintragen. Nach einer unterbrochenen Einrichtung die ursprünglichen Daten verwenden oder zuerst den CMS-Zustand prüfen.';
+      create.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    })
+  );
   create.elements.protocol.addEventListener('change', () => {
     create.elements.port.value = create.elements.protocol.value === 'sftp' ? 22 : 21;
   });

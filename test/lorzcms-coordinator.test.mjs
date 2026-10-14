@@ -121,7 +121,7 @@ test(
     const base = await bundledRelease();
     await controller.importRelease(base);
     await assert.rejects(() => controller.importRelease({ ...base, notes: 'different' }), /existiert bereits/);
-    const created = await controller.create({
+    const installInput = {
       slug: 'queue-test',
       name: 'Queue test',
       baseUrl: 'https://cms.example.de',
@@ -138,13 +138,25 @@ test(
       database: { engine: 'sqlite' },
       publicRootReady: true,
       runAt: '2099-01-01T00:00:00Z'
-    });
+    };
+    const created = await controller.create(installInput);
     const stored = (await q('select * from cms_jobs where id=?', [created.jobId])).rows[0];
     assert.ok(!stored.encrypted_payload.includes('strong-admin-password'));
     assert.equal(decryptWithKey(stored.encrypted_payload, key).adminPassword, 'strong-admin-password');
     assert.ok(!JSON.stringify(await controller.overview()).includes('ftp-secret'));
     await controller.tick();
     assert.equal(calls.length, 0, 'future job does not execute');
+    await controller.cancel(created.jobId);
+    assert.equal((await q('select * from cms_jobs where id=?', [created.jobId])).rows[0].encrypted_payload, null);
+    const resumed = await controller.create({ ...installInput, adminPassword: 'resupplied-admin-password' });
+    assert.equal(resumed.jobId, created.jobId);
+    assert.equal(resumed.installationId, created.installationId);
+    assert.equal((await q('select * from sites')).rows.length, 1);
+    assert.equal(
+      decryptWithKey((await q('select * from cms_jobs where id=?', [created.jobId])).rows[0].encrypted_payload, key)
+        .adminPassword,
+      'resupplied-admin-password'
+    );
     await q('update cms_jobs set run_at=UTC_TIMESTAMP(3) where id=?', [created.jobId]);
     controller = createCmsController(deps);
     await controller.tick();
@@ -187,5 +199,25 @@ test(
     await controller.cancel(cancelled.jobs[0].jobId);
     await controller.tick();
     assert.equal((await q('select * from cms_jobs where id=?', [cancelled.jobs[0].jobId])).rows[0].state, 'cancelled');
+    const oldSite = await createSite({
+      ...installInput,
+      slug: 'existing',
+      domain: 'existing.example.de',
+      remoteRoot: '/existing'
+    });
+    const adopted = await controller.attach({
+      site: oldSite.id,
+      baseUrl: 'https://existing.example.de',
+      publicRootReady: true
+    });
+    await controller.cancel(adopted.jobId);
+    const readopted = await controller.attach({
+      site: oldSite.id,
+      baseUrl: 'https://existing.example.de',
+      publicRootReady: true
+    });
+    assert.equal(readopted.jobId, adopted.jobId);
+    assert.equal(readopted.installationId, adopted.installationId);
+    await controller.cancel(readopted.jobId);
   }
 );

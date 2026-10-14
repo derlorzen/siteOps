@@ -28,6 +28,13 @@ Passwords are not included in API responses, audit records or job errors. The
 server stores only a hash of its deployment token. The stored token remains
 encrypted in SiteOps. A hosting account is never created by this workflow.
 
+Cancelling a setup erases its queued secrets. Use **Neu einrichten** on the
+cancelled installation to enter those credentials again; the website and
+installation identity are reused. Cancelled enrollments of an existing CMS can
+be selected again in the enrollment form. For an interrupted setup that already
+reached the host, retain the original setup parameters and job ID; if the CMS is
+already active, **Zustand prüfen** reconciles its state instead of reinstalling it.
+
 An incorrect document root, missing HTTPS, unsupported PHP or missing database
 extension prevents installation. Fix the hosting setting and use **Erneut
 starten**; completed actions use the same job ID. Do not point the domain at the
