@@ -16,7 +16,7 @@ final class Editor {
                 elseif(isset($_POST['trash']) && $id){$saved=$this->content->save($id,(int)($_POST['version'] ?? 0),['status'=>'trash'],$actor);}
                 elseif(isset($_POST['restore']) && $id){
                     $row=$this->store->query('SELECT snapshot FROM revisions WHERE id=? AND content_id=?',[(string)$_POST['restore'],$id])->fetch() ?: throw new HttpError(404,'Version nicht gefunden.');
-                    $old=Store::decode($row['snapshot']);$old['options'] ??= $this->site->initialOptions($old);$old['options']['template'] ??='inherit';$saved=$this->content->save($id,(int)($_POST['version'] ?? 0),array_intersect_key($old,array_flip(['title','fields','seo','status','options'])),$actor);
+                    $old=Store::decode($row['snapshot']);$old['options'] ??= $this->site->initialOptions($old);$old['options']['template'] ??='inherit';$old['options']['page_template'] ??='inherit';$saved=$this->content->save($id,(int)($_POST['version'] ?? 0),array_intersect_key($old,array_flip(['title','fields','seo','status','options'])),$actor);
                 } else {
                     $seo=[];foreach(['title','description','image','canonical','share_title','share_description'] as $key){$seo[$key]=(string)($_POST['seo_'.$key] ?? '');}$seo['noindex']=isset($_POST['seo_noindex']);$seo['nofollow']=isset($_POST['seo_nofollow']);
                     $changes=['title'=>(string)($_POST['title'] ?? ''),'fields'=>(array)($_POST['fields'] ?? []),'seo'=>$seo];

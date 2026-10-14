@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-use SiteCms\{Access,Content,Html,HttpError,PageTemplates,Schema,Site,SiteAdmin,Store,Templates};
+use SiteCms\{Access,Content,Editor,Html,HttpError,PageTemplates,Schema,Site,SiteAdmin,Store,Templates};
 define('LORZCMS_CORE',dirname(__DIR__,2).'/packages/lorzcms-core');
 define('LORZCMS_ROOT',dirname(__DIR__,2));
 require LORZCMS_CORE.'/runtime/bootstrap.php';
@@ -24,6 +24,17 @@ if(isset($argv[1])){file_put_contents($argv[1].'/site-theme.css',$site->themeCss
 foreach(PageTemplates::PRESETS as $id=>$label){$current=$item;$current['options']['page_template']=$id;$html=$pages->render($current);check(str_contains($html,'page-'.$id),'Preset class');check(substr_count($html,'<h1>')===1,'Exactly one title');check(str_contains($html,'aria-current="page"'),'Active navigation');check(str_contains($html,'project-footer'),'Project partial hook');check(str_contains($html,'Gute Gedanken.'),'Shared footer text');check(str_contains($html,'https://example.de/'),'SEO canonical');if(isset($argv[1])){file_put_contents($argv[1].'/'.$id.'.html',$html);}}
 $changed=$cms->save($item['id'],1,['options'=>['page_template'=>'split']],$actor);check($changed['options']['page_template']==='split','Page override is persisted');check(str_contains($pages->render($cms->at('/')),'page-split'),'Page override renders');
 $inherited=$cms->save($item['id'],2,['options'=>['page_template'=>'inherit']],$actor);check(!isset($inherited['options']['page_template']),'Reset to inherit removes the new key for older cores');
+// Both old snapshots and new inherited snapshots omit page_template. Restoring either must clear an explicit layout.
+foreach([1,3] as $revisionVersion){
+    $current=$cms->get($item['id']);$explicit=$cms->save($item['id'],$current['version'],['options'=>['page_template'=>'split']],$actor);
+    $_POST=['restore'=>$store->query('SELECT id FROM revisions WHERE content_id=? AND version=?',[$item['id'],$revisionVersion])->fetchColumn(),'version'=>(string)$explicit['version']];
+    (new Editor($store,$cms,$access,$site))->page($actor,'POST',$item['id']);$_POST=[];
+    check(!isset($cms->get($item['id'])['options']['page_template']),'Restoring revision '.$revisionVersion.' restores inheritance');
+    check(str_contains($pages->render($cms->get($item['id'])),'page-studio'),'Restored page follows the global layout');
+}
+$blocks=$item;$blocks['options']['blocks']=[['kind'=>'text','title'=>'Textbaustein','body'=>'<p>Ein eigener Abschnitt mit ausreichend Abstand.</p>'],['kind'=>'image','image'=>'/assets/sitecms-favicon.svg','alt'=>'Beispielbild','body'=>'<p>Eine Bildunterschrift.</p>'],['kind'=>'cta','title'=>'Gemeinsam starten','body'=>'<p>Wir freuen uns auf deine Nachricht.</p>','label'=>'Kontakt aufnehmen','url'=>'/kontakt/']];
+$blockHtml=$pages->render($blocks);foreach(['text','image','cta'] as $kind){check(str_contains($blockHtml,'cms-block-'.$kind),'Additional '.$kind.' block renders');}
+if(isset($argv[1])){file_put_contents($argv[1].'/blocks.html',$blockHtml);}
 rejected(fn()=>$site->options('page',['page_template'=>'../../config']),422);
 check(str_contains($site->themeCss(),$appearance['custom_css']),'Custom CSS served by theme endpoint');
 $safe=PageTemplates::validatePartial('<div class="custom-header" onclick="alert(1)">{{brand}}{{navigation}}<script>alert(1)</script></div>','header');check(str_contains($safe,'class="custom-header"') && !str_contains($safe,'script') && !str_contains($safe,'onclick'),'Safe HTML allows styling classes');
