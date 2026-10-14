@@ -1,0 +1,30 @@
+name: Format hierarchy tests
+on:
+  push:
+    branches:
+      - fix/billing-strict-parent-hierarchy
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/billing-strict-parent-hierarchy
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --write test/billing-hierarchy.test.mjs
+      - name: Commit formatting if necessary
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test/billing-hierarchy.test.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m "style: format billing hierarchy tests"
+            git push origin HEAD:fix/billing-strict-parent-hierarchy
+          fi
