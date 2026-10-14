@@ -21,6 +21,7 @@
     '</div><div><h3>Fällige Aufgaben – alle Kunden</h3><div id="billingDueList" class="kb-workflow-list"></div></div></div></section>',
     '<dialog id="billingTaskDetail" class="kb-dialog kb-detail-dialog"><div class="kb-detail-content"><div class="kb-toolbar"><h2 id="billingDetailTitle">Task</h2><button id="billingDetailClose" class="ghost" type="button">Schließen</button></div><p id="billingTaskContext"></p><div class="kb-workflow-split"><div>',
     '<h3>Checkliste</h3><div id="billingChecklist"></div><form id="billingChecklistForm" class="kb-row-form"><input name="text" maxlength="500" placeholder="Neuer Checklistenpunkt" required><button>+</button></form>',
+    '<h3>Verlauf</h3><div id="billingActivity" class="kb-workflow-list"></div>',
     '<h3>Kommentare</h3><form id="billingCommentForm" class="inner-form"><textarea name="text" maxlength="4000" rows="3" required placeholder="Arbeitsschritt dokumentieren"></textarea><button>Kommentar speichern</button></form><div id="billingComments" class="kb-workflow-list"></div></div><div>',
     '<h3>Zeit erfassen</h3><form id="billingQuickTime" class="inner-form"><label>Minuten<input name="duration_minutes" type="number" min=".01" step=".01" required></label><label>Beschreibung<input name="description" maxlength="1000"></label><label class="check"><input name="billable" type="checkbox" checked>Abrechenbar</label><button>Zeit buchen</button></form>',
     '<h3>Anhänge (max. 2 MB je Datei)</h3><form id="billingFileForm" class="inner-form"><input type="file" name="file" required><button>Datei anhängen</button></form><div id="billingFiles" class="kb-workflow-list"></div>',
@@ -64,6 +65,9 @@
     el('billingComments').innerHTML=task.comments.length?task.comments.map(c=>
       '<div class="kb-workflow-item"><strong>'+esc(c.actor)+'</strong> <small>'+esc(String(c.created_at).slice(0,16))+'</small><p>'+esc(c.text)+'</p></div>'
     ).join(''):'<p>Keine Kommentare.</p>';
+    el('billingActivity').innerHTML=task.events?.length?task.events.map(e=>
+      '<div class="kb-workflow-item"><strong>'+esc(e.event_type)+'</strong><small>'+esc(String(e.created_at).slice(0,16))+'</small><p>'+esc(e.details)+'</p></div>'
+    ).join(''):'<p>Keine protokollierten Änderungen.</p>';
     el('billingFiles').innerHTML=task.files.length?task.files.map(f=>
       '<div class="kb-workflow-item"><a href="/api/billing/tasks/'+esc(taskId)+'/files/'+esc(f.id)+'">'+esc(f.filename)+'</a> <small>'+Math.round(f.size_bytes/1024)+' KB</small> <button type="button" class="ghost" data-remove-file="'+esc(f.id)+'">Löschen</button></div>'
     ).join(''):'<p>Keine Anhänge.</p>';
