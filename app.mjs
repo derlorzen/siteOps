@@ -145,13 +145,19 @@ async function archiveIssuedInvoice(snapshot, pdf) {
     if (!/^RE-[0-9]{4}-[0-9]{5}$/.test(number)) throw new Error('Ungültige Rechnungsnummer.');
     const prefix = 'invoices/' + number.slice(3, 7) + '/' + number + '/';
     const pdfPath = prefix + number + '.pdf';
-    const archiveManifest = Buffer.from(JSON.stringify({
-      ...snapshot,
-      archive: {
-        pdf_sha256: crypto.createHash('sha256').update(pdf).digest('hex'),
-        archived_file: pdfPath
-      }
-    }, null, 2) + '\n');
+    const archiveManifest = Buffer.from(
+      JSON.stringify(
+        {
+          ...snapshot,
+          archive: {
+            pdf_sha256: crypto.createHash('sha256').update(pdf).digest('hex'),
+            archived_file: pdfPath
+          }
+        },
+        null,
+        2
+      ) + '\n'
+    );
     const files = [
       [pdfPath, pdf],
       [prefix + number + '.json', archiveManifest]
@@ -6364,9 +6370,10 @@ async function start() {
       .send(await readFile(new URL('./public/app.css', import.meta.url), 'utf8'))
   );
   app.get('/assets/billing.js', async (_r, reply) =>
-    reply.type('text/javascript').header('Cache-Control', 'no-store').send(
-      await readFile(new URL('./public/billing.js', import.meta.url), 'utf8')
-    )
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/billing.js', import.meta.url), 'utf8'))
   );
   app.get('/assets/lorzcms.js', async (_r, reply) =>
     reply
