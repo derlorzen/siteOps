@@ -15,6 +15,9 @@ SiteOps-Anmeldung. Die Daten werden über Migration 0004 in MySQL angelegt.
 5. Abrechnungszeitraum wählen, offene Zeiten auswählen und einen Entwurf erstellen.
 6. Nach Prüfung **Ausstellen** wählen. Die Rechnungsnummer wird vergeben und
    die endgültige Rechnung als PDF und Datensnapshot archiviert.
+7. Eine ausgestellte Rechnung kann nur über eine eigenständig nummerierte
+   Stornorechnung mit negativem Betrag korrigiert werden. Der Stornobeleg wird
+   zusätzlich als Original-PDF und JSON im selben privaten GitHub-Archiv abgelegt.
 
 Bei einem Archivfehler verbleibt der Vorgang in **archiving**. Er kann mit
 identischem PDF und derselben Rechnungsnummer erneut ausgeführt werden. Eine
@@ -53,8 +56,9 @@ müssen separat eingerichtet und geprüft werden.
 - PDF-Rechnungen sind nur im Rahmen der E-Rechnungs-Übergangsregelungen und
   bei elektronischer Zustellung mit Zustimmung des Empfängers vorgesehen.
   ZUGFeRD/XRechnung folgen als separates Release.
-- Rechnungsdaten sind nach Ausstellung festgeschrieben. Fehler müssen mit
-  nachvollziehbaren Berichtigungs-/Stornobelegen korrigiert werden.
+- Rechnungsdaten sind nach Ausstellung festgeschrieben. Für vollständige
+  Aufhebung wird ein separat nummerierter, archivierter Stornobeleg erzeugt.
+  Teilberichtigungen sind in dieser Version noch nicht vorgesehen.
 - Automatischer E-Mail-Versand und eine vollständige Buchhaltung sind nicht Teil
   dieses Moduls.
 - Vor produktiver Verwendung rechtliche, steuerliche und Layout-Prüfung
