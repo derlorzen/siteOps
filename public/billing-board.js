@@ -65,6 +65,8 @@
       '<div class="kb-card-meta"><span>' + escape(time) + '</span>' +
       (task.due_date ? '<span class="' + (isDue(task) ? 'kb-overdue' : '') + '">Bis ' + escape(date(task.due_date)) + '</span>' : '') +
       '</div>' +
+      '<div class="kb-card-workflow"><button type="button" class="ghost" data-workflow-detail="' + escape(task.id) + '">Details</button>' +
+      '<button type="button" class="ghost" data-workflow-timer="' + escape(task.id) + '">Timer</button></div>' +
       '<div class="kb-card-controls"><label class="kb-status-label">Spalte<select data-kanban-status="' + escape(task.id) + '" aria-label="Status für ' + escape(task.name) + '">' +
       options + '</select></label>' +
       '<button type="button" class="kb-step" data-kanban-step="up" data-task="' + escape(task.id) + '" title="Eine Position nach oben" aria-label="Nach oben">↑</button>' +

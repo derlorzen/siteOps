@@ -45,6 +45,58 @@ Wenn mehrere Browser gleichzeitig dasselbe Projekt-Board ändern, schützt
 `board_revision` vor unbeabsichtigtem Überschreiben: Ein veralteter
 Stand wird abgelehnt und neu geladen.
 
+
+## Task-Workflows (Phase 1)
+
+Das Projekt-Kanban unter `/billing` bietet nun:
+
+- **Task-Details** mit Checklisten, Kommentaren, Aktivitätsprotokoll der
+  Kanban-Verschiebungen und Datei-Anhängen (maximal 2 MB je Datei, gespeichert
+  in der MySQL-Datenbank; nur angemeldete SiteOps-Benutzer).
+- **Timer auf Task-Karten** zum Starten/Stoppen des bereits vorhandenen
+  Einzel-Timers; direkte manuelle Zeiterfassung im Task-Detailfenster.
+- **Fälligkeiten** kundenübergreifend für die nächsten sieben Tage. Bei
+  konfigurierter `ALERT_EMAIL_TO` bzw. SiteOps-Alarmadresse und funktionierendem
+  SMTP wird einmal täglich eine Nachricht über heute oder morgen fällige und
+  überfällige Tasks verschickt; Versand wird in MySQL dedupliziert.
+- **Projektvorlagen:** `Neue Website` und `Website-Wartung` erzeugen
+  Standard-Tasks im gerade ausgewählten Projekt.
+
+## Rechnungsversand und Nachverfolgung (Phase 3, ohne ZUGFeRD)
+
+- In der Rechnungsübersicht **Per E-Mail senden**: nur nach erfolgreicher
+  Rechnungs-Ausstellung und Archivierung. Versand an die gepflegte
+  Kunden-E-Mail-Adresse mit unveränderter Original-PDF als Anhang.
+- **Zahlungserinnerung** für überfällige, unbezahlte Rechnungen; höchstens
+  einmal innerhalb von sieben Tagen. Versand über bereits vorhandene
+  SiteOps-SMTP-Konfiguration. Fehlversuche und erfolgreiche Sendungen werden
+  protokolliert.
+- **DATEV-Vorbereitung CSV** pro Jahr, Basis-SKR03-Logik mit Rechnungen und
+  Stornos. Die Datei ist ein Buchungsvorschlag, kein zertifizierter
+  DATEV-Buchungsstapel und ersetzt keine Kontierungs-/Steuerprüfung.
+- **Archiv-Manifest JSON** pro Jahr mit Git-Commit, Archivpfad und SHA-256.
+  Für revisionssichere Langzeitaufbewahrung müssen **Originale plus Manifest**
+  in ein separat betriebenes, geeignet konfiguriertes WORM-Archiv übernommen
+  werden. Eine automatische WORM-Anbindung ist nicht Bestandteil dieses Releases.
+
+## Wiederkehrende Wartung und Monitoring-Anbindung
+
+- Wartungsregeln gehören zu einem Kundenprojekt und legen automatisch neue
+  offene Tasks an (erste Aufgabe beim nächsten Worker-Lauf; danach nach der
+  gewählten Anzahl Tage). Pausieren ist jederzeit möglich.
+- Das Projektformular enthält die optionale Zuordnung einer **SiteOps-Website**.
+  Entsteht nach Erreichen der eingestellten Monitor-Fehlerschwelle ein Vorfall,
+  legt SiteOps im **eindeutig** zugeordneten Kundenprojekt einen dringenden
+  Task an. Wiederholte Monitor-Checks erzeugen für denselben Vorfall keine
+  Duplikate.
+- Sobald die Website wieder erreichbar ist, erhält der Task automatisch
+  einen Kommentar und wird zur Prüfung nach `Abnahme` verschoben. Er wird
+  bewusst nicht als erledigt markiert: Ursache und Arbeitszeit sind noch
+  zu dokumentieren.
+- Sind mehrere Kundenprojekte mit derselben Website verbunden, wird zur
+  Vermeidung einer fehlerhaften Kundenzuordnung **kein automatischer Task**
+  erzeugt; die Verknüpfung muss eindeutig eingerichtet werden.
+
 ## GitHub-Archiv
 
 SiteOps verwendet **ausschließlich das bereits konfigurierte private

@@ -14,7 +14,7 @@ const date = () =>
     month: '2-digit',
     day: '2-digit'
   }).format(new Date());
-const data = { customers: [], projects: [], tasks: [], entries: [], invoices: [], settings: {} };
+const data = { customers: [], projects: [], tasks: [], entries: [], invoices: [], sites: [], settings: {} };
 const message = s => {
   byId('billingMessage').textContent = s;
 };
@@ -220,6 +220,12 @@ function draw() {
             (i.status === 'issued' || i.status === 'paid' || i.status === 'cancelled'
               ? '<a class="btn ghost" href="/api/billing/invoices/' + escapeHtml(i.id) + '/pdf">PDF</a>'
               : '') +
+            (i.status === 'issued' || i.status === 'paid'
+              ? '<button type="button" class="ghost" data-send-invoice="' + escapeHtml(i.id) + '">Per E-Mail senden</button>'
+              : '') +
+            (i.status === 'issued' && iso(i.due_at) < date()
+              ? '<button type="button" class="ghost" data-remind-invoice="' + escapeHtml(i.id) + '">Zahlungserinnerung</button>'
+              : '') +
             (i.status === 'issued'
               ? '<button type="button" class="ghost" data-pay="' + escapeHtml(i.id) + '">Bezahlt</button>'
               : '') +
@@ -261,16 +267,18 @@ function drawTotal() {
     rows.length + ' Einträge · Netto ' + fmtMoney(net) + ' · Brutto ' + fmtMoney(net + Math.round(net * 0.19));
 }
 async function refresh() {
-  const [customers, projects, tasks, entries, invoices, settings] = await Promise.all([
+  const [customers, projects, tasks, entries, invoices, settings, sites] = await Promise.all([
     get('/api/billing/customers'),
     get('/api/billing/projects'),
     get('/api/billing/tasks'),
     get('/api/billing/entries'),
     get('/api/billing/invoices'),
-    get('/api/billing/settings')
+    get('/api/billing/settings'),
+    get('/api/sites')
   ]);
-  Object.assign(data, { customers, projects, tasks, entries, invoices, settings });
+  Object.assign(data, { customers, projects, tasks, entries, invoices, settings, sites });
   renderSelection();
+  pick(byId('projectSite'), [{id:'',name:'Keine Verknüpfung'}, ...sites], x => x.domain || x.name, byId('projectSite').value);
   draw();
   if (window.SiteOpsKanban) await window.SiteOpsKanban.reload();
   for (const [key, value] of Object.entries(settings)) {
@@ -291,6 +299,7 @@ function install() {
   byId('editProject').addEventListener('click', () => {
     const p=data.projects.find(x=>x.id===selectedProject());if(!p)return;
     const f=byId('projectForm');f.elements.namedItem('name').value=p.name;
+    f.elements.namedItem('site_id').value=p.site_id || '';
     f.elements.namedItem('rate_eur').value=p.hourly_cents==null?'':(Number(p.hourly_cents)/100).toFixed(2);
     f.dataset.editId=p.id;message('Projekt bearbeiten und speichern.');
   });
@@ -346,6 +355,7 @@ function install() {
       await write(el.dataset.editId ? '/api/billing/projects/' + el.dataset.editId : '/api/billing/projects', el.dataset.editId ? 'PATCH' : 'POST', {
         customer_id: selectedCustomer(),
         name: x.name,
+        site_id: x.site_id || null,
         hourly_cents: rate(x.rate_eur)
       });
       el.reset();
@@ -452,7 +462,13 @@ function install() {
     const btn = ev.target.closest('button');
     if (!btn) return;
     try {
-      if (btn.dataset.issue) {
+      if (btn.dataset.sendInvoice || btn.dataset.remindInvoice) {
+        const kind = btn.dataset.remindInvoice ? 'reminder' : 'invoice';
+        const invoiceId = btn.dataset.remindInvoice || btn.dataset.sendInvoice;
+        const what = kind === 'reminder' ? 'Zahlungserinnerung' : 'Rechnung mit PDF';
+        if (!confirm(what + ' wirklich per E-Mail an den Kunden senden?')) return;
+        await write('/api/billing/invoices/' + invoiceId + '/send', 'POST', { kind });
+      } else if (btn.dataset.issue) {
         if (!confirm('Rechnung verbindlich ausstellen und im privaten GitHub-Backup archivieren?')) return;
         await write('/api/billing/invoices/' + btn.dataset.issue + '/issue', 'POST');
       } else if (btn.dataset.cancel) {
@@ -474,6 +490,7 @@ function install() {
     }
   });
   window.SiteOpsBillingRefresh = refresh;
+  window.SiteOpsBillingContext = () => ({ customer_id: selectedCustomer(), project_id: selectedProject() });
   refresh().catch(errorHandler);
 }
 const root = byId('billingRoot');
@@ -488,7 +505,7 @@ if (root) {
     '<label>Name / Firma<input name="name" required></label><label>Kontakt<input name="contact_name"></label><label>E-Mail<input name="email" type="email"></label>',
     '<label>Straße<input name="street"></label><label>PLZ<input name="postal_code"></label><label>Ort<input name="city"></label>',
     '<label>Stundensatz in €<input name="rate_eur" type="number" min="0" step=".01" value="75" required></label><button>Kunde anlegen</button></form></section>',
-    '<section><h2>Projekt anlegen</h2><p>Gehört zum Kunden: <strong id="projectParentLabel"></strong></p><form id="projectForm" class="inner-form"><label>Projekt<input name="name" required></label><label>Stundensatz € (optional)<input type="number" min="0" step=".01" name="rate_eur"></label><button>Projekt anlegen</button></form>',
+    '<section><h2>Projekt anlegen</h2><p>Gehört zum Kunden: <strong id="projectParentLabel"></strong></p><form id="projectForm" class="inner-form"><label>Projekt<input name="name" required></label><label>SiteOps-Website (für automatische Monitoring-Tasks)<select id="projectSite" name="site_id"></select></label><label>Stundensatz € (optional)<input type="number" min="0" step=".01" name="rate_eur"></label><button>Projekt anlegen</button></form>',
     '<h2>Task anlegen</h2><p>Gehört zum Projekt: <strong id="taskParentLabel"></strong></p><form id="taskForm" class="inner-form"><label>Task<input name="name" required></label><label>Stundensatz € (optional)<input type="number" min="0" step=".01" name="rate_eur"></label><button>Task anlegen</button></form></section></div>',
     '<section id="kanbanSection" class="kb-section"><div class="kb-toolbar"><div><span class="eyebrow">Projekt-Board</span><h2>Kanban</h2><p>Tasks innerhalb eines Projekts per Drag & Drop organisieren.</p></div><div class="buttonrow"><button type="button" id="kanbanReload" class="ghost">Aktualisieren</button><button type="button" id="kanbanNew">+ Task</button></div></div><p id="kanbanHint" class="kb-hint" role="status"></p><div id="kanbanBoard" class="kb-board" aria-label="Kanban-Board für das ausgewählte Projekt"></div></section>',
     '<dialog id="kanbanDialog" class="kb-dialog"><form id="kanbanForm" class="inner-form"><h2 id="kanbanDialogTitle">Task bearbeiten</h2><label>Titel<input name="name" maxlength="255" required></label><label>Beschreibung<textarea name="description" rows="4" maxlength="3000"></textarea></label><div class="formgrid"><label>Fällig am<input name="due_date" type="date"></label><label>Priorität<select name="priority"><option value="low">Niedrig</option><option value="normal">Normal</option><option value="high">Hoch</option><option value="urgent">Dringend</option></select></label><label>Spalte<select name="status"><option value="backlog">Ideen</option><option value="open">Offen</option><option value="in_progress">In Arbeit</option><option value="review">Abnahme</option><option value="done">Erledigt</option></select></label><label>Stundensatz € (optional)<input name="rate_eur" type="number" min="0" step=".01"></label></div><p id="kanbanDialogError" class="kb-error" role="alert"></p><div class="buttonrow"><button type="button" id="kanbanCancel" class="ghost">Abbrechen</button><button type="submit">Speichern</button></div></form></dialog>',
