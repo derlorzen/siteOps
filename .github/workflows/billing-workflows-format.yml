@@ -1,0 +1,30 @@
+name: Format Billing Workflows
+on:
+  push:
+    branches:
+      - feat/billing-workflows-phase1-phase3-monitoring
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/billing-workflows-phase1-phase3-monitoring
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --write app.mjs lib/billing-workflows.mjs lib/billing-board.mjs lib/billing-ui.mjs test/billing-board.test.mjs test/billing-workflows.test.mjs
+      - name: Commit formatting
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.mjs lib/billing-workflows.mjs lib/billing-board.mjs lib/billing-ui.mjs test/billing-board.test.mjs test/billing-workflows.test.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m "style: format billing workflows"
+            git push origin HEAD:feat/billing-workflows-phase1-phase3-monitoring
+          fi
