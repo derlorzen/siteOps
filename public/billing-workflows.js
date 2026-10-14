@@ -14,11 +14,11 @@
   const context=()=>window.SiteOpsBillingContext?.()||{};
   let activeTask='';
   el('kanbanSection').insertAdjacentHTML('afterend',[
-    '<section class="kb-workflow-panel"><div class="kb-toolbar"><div><h2>Projekt-Workflows</h2><p>Vorlagen, regelmäßige Wartung und Fälligkeiten.</p></div><button id="billingDueReload" class="ghost" type="button">Fälligkeiten aktualisieren</button></div>',
+    '<section class="kb-workflow-panel"><div class="kb-toolbar"><div><h2>Vorlagen & Wartung</h2><p>Standardaufgaben und regelmäßige Arbeiten für das ausgewählte Projekt.</p></div></div>',
     '<p id="billingWorkflowMessage" role="status"></p><div class="kb-workflow-split"><div>',
     '<h3>Projektvorlage</h3><div class="buttonrow"><select id="billingTemplate"><option value="website">Neue Website (6 Tasks)</option><option value="maintenance">Wartung (4 Tasks)</option></select><button type="button" id="billingApplyTemplate">Vorlage anlegen</button></div>',
     '<h3>Wiederkehrende Wartungsaufgabe</h3><form id="billingRecurringForm" class="inner-form"><label>Task-Titel<input name="task_name" maxlength="255" required></label><label>Intervall<select name="every_days"><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="90">90 Tage</option><option value="365">365 Tage</option></select></label><label>Beschreibung<input name="description" maxlength="3000"></label><button>Wartungsregel speichern</button></form><div id="billingRecurringList" class="kb-workflow-list"></div>',
-    '</div><div><h3>Fällige Aufgaben – alle Kunden</h3><div id="billingDueList" class="kb-workflow-list"></div></div></div></section>',
+    '</div></div></section>',
     '<dialog id="billingTaskDetail" class="kb-dialog kb-detail-dialog"><div class="kb-detail-content"><div class="kb-toolbar"><h2 id="billingDetailTitle">Task</h2><button id="billingDetailClose" class="ghost" type="button">Schließen</button></div><p id="billingTaskContext"></p><div class="kb-workflow-split"><div>',
     '<h3>Checkliste</h3><div id="billingChecklist"></div><form id="billingChecklistForm" class="kb-row-form"><input name="text" maxlength="500" placeholder="Neuer Checklistenpunkt" required><button>+</button></form>',
     '<h3>Verlauf</h3><div id="billingActivity" class="kb-workflow-list"></div>',
@@ -27,6 +27,8 @@
     '<h3>Anhänge (max. 2 MB je Datei)</h3><form id="billingFileForm" class="inner-form"><input type="file" name="file" required><button>Datei anhängen</button></form><div id="billingFiles" class="kb-workflow-list"></div>',
     '</div></div></div></dialog>'
   ].join(''));
+  // Dialog is shared with the overview, so it must not live inside a hidden board page.
+  el('billingModalHost').appendChild(el('billingTaskDetail'));
   el('billingInvoices').closest('section').insertAdjacentHTML('beforeend',[
     '<div class="kb-finance-panel"><h3>Export & Langzeitarchivierung</h3><p>Rechnungsversand über den SiteOps-SMTP-Server; DATEV-Vorbereitung (SKR03) ist vor Import fachlich zu prüfen.</p>',
     '<div class="buttonrow"><label>Jahr<input id="billingFinanceYear" type="number" min="2000" max="2100"></label>',
@@ -171,6 +173,7 @@
   el('billingDueReload').onclick=reloadDue;
   el('billingProject').addEventListener('change',reloadRules);
   el('billingCustomer').addEventListener('change',reloadRules);
+  document.addEventListener('siteops:billing-data', reloadRules);
   const links=()=>{
     const year=Number(el('billingFinanceYear').value);
     el('billingDatevLink').href='/api/billing/datev/'+year+'.csv';
