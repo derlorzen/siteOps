@@ -15,6 +15,13 @@ const date = () =>
     day: '2-digit'
   }).format(new Date());
 const data = { customers: [], projects: [], tasks: [], entries: [], invoices: [], sites: [], settings: {} };
+const rememberedBillingSelection = (() => {
+  try {
+    return JSON.parse(sessionStorage.getItem('siteopsBillingSelection') || '{}');
+  } catch {
+    return {};
+  }
+})();
 const message = s => {
   byId('billingMessage').textContent = s;
 };
@@ -88,9 +95,9 @@ function renderHierarchyContext() {
   byId('editTask').disabled = !task;
 }
 function renderSelection() {
-  const cp = selectedCustomer(),
-    pr = selectedProject(),
-    tk = selectedTask();
+  const cp = selectedCustomer() || rememberedBillingSelection.customer_id,
+    pr = selectedProject() || rememberedBillingSelection.project_id,
+    tk = selectedTask() || rememberedBillingSelection.task_id;
   pick(byId('billingCustomer'), data.customers, x => x.name, cp);
   pick(
     byId('billingProject'),
@@ -104,6 +111,7 @@ function renderSelection() {
     x => x.name,
     tk
   );
+  for (const key of ['customer_id', 'project_id', 'task_id']) delete rememberedBillingSelection[key];
 }
 function updateProject() {
   const current = selectedProject();
@@ -127,6 +135,13 @@ function updateTasks() {
 }
 function draw() {
   renderHierarchyContext();
+  try {
+    sessionStorage.setItem('siteopsBillingSelection', JSON.stringify({
+      customer_id: selectedCustomer(), project_id: selectedProject(), task_id: selectedTask()
+    }));
+  } catch {
+    // State is still kept within this browser page when storage is disabled.
+  }
   window.SiteOpsKanban?.setProject(selectedProject());
   const entries = data.entries.filter(x => x.customer_id === selectedCustomer()),
     invoices = data.invoices.filter(x => x.customer_id === selectedCustomer());
@@ -285,6 +300,7 @@ async function refresh() {
     const el = byId('billingSettingsForm').elements.namedItem(key);
     if (el) el.value = value;
   }
+  document.dispatchEvent(new Event('siteops:billing-data'));
 }
 function install() {
   byId('entryDate').value = date();
@@ -490,6 +506,7 @@ function install() {
     }
   });
   window.SiteOpsBillingRefresh = refresh;
+  window.SiteOpsBillingState = () => data;
   window.SiteOpsBillingContext = () => ({ customer_id: selectedCustomer(), project_id: selectedProject() });
   refresh().catch(errorHandler);
 }
