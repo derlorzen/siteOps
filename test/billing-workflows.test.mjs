@@ -70,7 +70,7 @@ test('DATEV preparation uses documented decimal separator and escaped customer t
   });
   const content = await api.datevCsv(2026);
   assert.match(content, /119,00/);
-  assert.match(content, /"Beispiel; Firma"/);
+  assert.match(content, /"Rechnung Beispiel; Firma"/);
   assert.match(content, /8400/);
 });
 test('public workflows JavaScript parses', async () => {
