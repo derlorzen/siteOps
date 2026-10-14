@@ -56,6 +56,36 @@ const request = f => async ev => {
     errorHandler(e);
   }
 };
+function clearEditForm(formId, buttonLabel) {
+  const form = byId(formId);
+  if (!form.dataset.editId) return;
+  form.reset();
+  delete form.dataset.editId;
+  form.querySelector('button[type="submit"]')?.textContent = buttonLabel;
+}
+function renderHierarchyContext() {
+  const customer = data.customers.find(x => x.id === selectedCustomer());
+  const project = data.projects.find(x => x.id === selectedProject() && x.customer_id === customer?.id);
+  const task = data.tasks.find(x => x.id === selectedTask() && x.project_id === project?.id);
+  byId('projectParentLabel').textContent = customer ? customer.name : 'Bitte zuerst einen Kunden wählen';
+  byId('taskParentLabel').textContent = project ? customer.name + ' / ' + project.name : 'Bitte zuerst ein Projekt wählen';
+  byId('timeParentLabel').textContent = task
+    ? customer.name + ' / ' + project.name + ' / ' + task.name
+    : 'Bitte zuerst eine Aufgabe wählen';
+  byId('billingHierarchy').textContent =
+    'Zuordnung: ' +
+    (customer?.name || 'Kunde') +
+    ' → ' +
+    (project?.name || 'Projekt') +
+    ' → ' +
+    (task?.name || 'Task');
+  byId('projectForm').querySelector('button').disabled = !customer;
+  byId('taskForm').querySelector('button').disabled = !project;
+  byId('timeForm').querySelector('button').disabled = !task;
+  byId('editCustomer').disabled = !customer;
+  byId('editProject').disabled = !project;
+  byId('editTask').disabled = !task;
+}
 function renderSelection() {
   const cp = selectedCustomer(),
     pr = selectedProject(),
@@ -95,6 +125,7 @@ function updateTasks() {
   draw();
 }
 function draw() {
+  renderHierarchyContext();
   const entries = data.entries.filter(x => x.customer_id === selectedCustomer()),
     invoices = data.invoices.filter(x => x.customer_id === selectedCustomer());
   const bill = entries.filter(x => x.billable && !x.invoice_id && !x.started_at);
@@ -267,9 +298,21 @@ function install() {
     f.dataset.editId=t.id;message('Aufgabe bearbeiten und speichern.');
   });
 
-  byId('billingCustomer').addEventListener('change', updateProject);
-  byId('billingProject').addEventListener('change', updateTasks);
-  byId('billingTask').addEventListener('change', draw);
+  byId('billingCustomer').addEventListener('change', () => {
+    clearEditForm('customerForm', 'Kunde anlegen');
+    clearEditForm('projectForm', 'Projekt anlegen');
+    clearEditForm('taskForm', 'Task anlegen');
+    updateProject();
+  });
+  byId('billingProject').addEventListener('change', () => {
+    clearEditForm('projectForm', 'Projekt anlegen');
+    clearEditForm('taskForm', 'Task anlegen');
+    updateTasks();
+  });
+  byId('billingTask').addEventListener('change', () => {
+    clearEditForm('taskForm', 'Task anlegen');
+    draw();
+  });
   byId('billingFrom').addEventListener('change', draw);
   byId('billingTo').addEventListener('change', draw);
   byId('billingCandidates').addEventListener('change', drawTotal);
@@ -434,15 +477,16 @@ if (root) {
   root.innerHTML = [
     '<header><div><h2>Kunde auswählen</h2><p id="billingMessage" role="status"></p></div></header>',
     '<section><div class="formgrid"><label>Kunde<select id="billingCustomer"></select></label><label>Projekt<select id="billingProject"></select></label><label>Aufgabe<select id="billingTask"></select></label></div>',
+    '<p id="billingHierarchy" role="status"></p>',
     '<div class="buttonrow"><button id="editCustomer" type="button" class="ghost">Kunde bearbeiten</button><button id="editProject" type="button" class="ghost">Projekt bearbeiten</button><button id="editTask" type="button" class="ghost">Aufgabe bearbeiten</button></div>',
     '<div class="metrics"><span id="billingTimeTotal">–<em>Gesamtzeit</em></span><span id="billingUnbilled">–<em>Offener Netto-Wert</em></span><span id="billingInvoiceTotal">–<em>Rechnungsvolumen</em></span></div></section>',
     '<div class="twocol ops-grid"><section><h2>Neuer Kunde</h2><form id="customerForm" class="inner-form">',
     '<label>Name / Firma<input name="name" required></label><label>Kontakt<input name="contact_name"></label><label>E-Mail<input name="email" type="email"></label>',
     '<label>Straße<input name="street"></label><label>PLZ<input name="postal_code"></label><label>Ort<input name="city"></label>',
     '<label>Stundensatz in €<input name="rate_eur" type="number" min="0" step=".01" value="75" required></label><button>Kunde anlegen</button></form></section>',
-    '<section><h2>Projekt anlegen</h2><form id="projectForm" class="inner-form"><label>Projekt<input name="name" required></label><label>Stundensatz € (optional)<input type="number" min="0" step=".01" name="rate_eur"></label><button>Projekt anlegen</button></form>',
-    '<h2>Aufgabe anlegen</h2><form id="taskForm" class="inner-form"><label>Aufgabe<input name="name" required></label><label>Stundensatz € (optional)<input type="number" min="0" step=".01" name="rate_eur"></label><button>Aufgabe anlegen</button></form></section></div>',
-    '<section><h2>Zeiterfassung</h2><div class="twocol ops-grid"><form id="timeForm" class="inner-form">',
+    '<section><h2>Projekt anlegen</h2><p>Gehört zum Kunden: <strong id="projectParentLabel"></strong></p><form id="projectForm" class="inner-form"><label>Projekt<input name="name" required></label><label>Stundensatz € (optional)<input type="number" min="0" step=".01" name="rate_eur"></label><button>Projekt anlegen</button></form>',
+    '<h2>Task anlegen</h2><p>Gehört zum Projekt: <strong id="taskParentLabel"></strong></p><form id="taskForm" class="inner-form"><label>Task<input name="name" required></label><label>Stundensatz € (optional)<input type="number" min="0" step=".01" name="rate_eur"></label><button>Task anlegen</button></form></section></div>',
+    '<section><h2>Zeiterfassung</h2><p>Zeiten werden auf den ausgewählten Task gebucht: <strong id="timeParentLabel"></strong></p><div class="twocol ops-grid"><form id="timeForm" class="inner-form">',
     '<label>Datum<input id="entryDate" type="date" name="entry_date" required></label><label>Typ<select name="kind"><option value="work">Arbeit</option><option value="call">Telefonat</option></select></label>',
     '<label>Dauer (Minuten)<input name="duration_minutes" type="number" min="0.01" step="0.01" required></label>',
     '<label>Beschreibung<input name="description"></label><label>Gesprächspartner<input name="contact_name"></label>',
