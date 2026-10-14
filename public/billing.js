@@ -194,7 +194,9 @@ function draw() {
               ? '<button type="button" class="ghost" data-cancel="' + escapeHtml(i.id) + '">Storno</button>'
               : '') +
             (i.cancellation_status === 'issued'
-              ? '<a class="btn ghost" href="/api/billing/invoices/' + escapeHtml(i.id) + '/cancellation-pdf">Stornobeleg</a>'
+              ? '<a class="btn ghost" href="/api/billing/invoices/' +
+                escapeHtml(i.id) +
+                '/cancellation-pdf">Stornobeleg</a>'
               : '') +
             (i.status === 'draft'
               ? '<button type="button" class="ghost" data-discard="' + escapeHtml(i.id) + '">Verwerfen</button>'
