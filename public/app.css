@@ -212,3 +212,33 @@ section+section{margin-top:20px}
 .kb-dialog textarea{width:100%;resize:vertical;margin-top:5px;min-height:92px;padding:10px;border:1px solid #ccd5da;border-radius:7px;font:inherit}
 .kb-error{color:#a92828;font-size:13px;min-height:1em;margin:0}
 @media(max-width:650px){.kb-board{grid-auto-columns:minmax(232px,82vw)}.kb-dialog .formgrid{grid-template-columns:1fr}.kb-toolbar{align-items:flex-start}}
+
+/* Billing task workflows */
+.kb-card-workflow{display:flex;gap:7px;margin-top:11px}
+.kb-card-workflow button{flex:1;padding:7px 9px;font-size:11px}
+.kb-workflow-panel,.kb-finance-panel{margin:20px 0}
+.kb-workflow-panel p,.kb-finance-panel p{font-size:13px;color:#5d7180;line-height:1.5}
+.kb-workflow-split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.kb-workflow-split>div{min-width:0}
+.kb-workflow-list{display:grid;gap:8px;margin-top:14px}
+.kb-workflow-item{display:block;text-align:left;width:100%;border:1px solid #dce6ea;border-radius:10px;padding:11px 13px;background:#f8fafb;color:#183140;font-size:13px}
+.kb-workflow-item strong,.kb-workflow-item small{display:block}
+.kb-workflow-item small{font-size:11px;color:#607786;margin-top:5px}
+.kb-workflow-item p{white-space:pre-wrap;margin:8px 0 0;overflow-wrap:anywhere;color:#1d3646}
+.kb-workflow-item button{margin-top:8px}
+.kb-workflow-item a{overflow-wrap:anywhere}
+.kb-detail-dialog{width:min(1000px,calc(100vw - 24px))}
+.kb-detail-content{padding:24px;max-height:90vh;overflow:auto}
+.kb-detail-content h3{margin:22px 0 12px}
+.kb-detail-content .inner-form{padding:0;max-width:none}
+.kb-detail-content textarea{width:100%;min-height:82px;padding:10px;border:1px solid #ccd5da;border-radius:8px;font:inherit}
+.kb-row-form{display:flex;flex-direction:row;max-width:none;padding:0;align-items:center;gap:8px}
+.kb-row-form input{flex:1;min-width:0}
+.kb-check-item{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #edf0f2}
+.kb-check-item label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.kb-check-item input{width:auto;margin:0}
+.kb-check-item button{padding:5px 10px}
+.kb-finance-panel{border-top:1px solid #e1e9ed;padding-top:18px}
+.kb-finance-panel label{max-width:130px}
+.kb-finance-panel label input{margin-top:6px}
+@media(max-width:800px){.kb-workflow-split{grid-template-columns:1fr}.kb-detail-content{padding:15px}}
