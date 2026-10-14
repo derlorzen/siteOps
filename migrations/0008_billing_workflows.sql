@@ -71,3 +71,13 @@ CREATE TABLE IF NOT EXISTS billing_due_notifications (
   sent_at DATETIME NULL,
   error_text VARCHAR(1500) NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS billing_task_events (
+  id CHAR(36) PRIMARY KEY,
+  task_id CHAR(36) NOT NULL,
+  event_type VARCHAR(40) NOT NULL,
+  details VARCHAR(1000) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_billing_events_task FOREIGN KEY(task_id) REFERENCES project_tasks(id) ON DELETE CASCADE,
+  INDEX idx_billing_events_task(task_id,created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
