@@ -9,13 +9,14 @@ final class Html {
         return str_starts_with($value, '/') || str_starts_with($value, '#') || preg_match($image ? '~^https?://~i' : '~^(https?://|mailto:|tel:)~i', $value) === 1;
     }
     /** Allowlisted rich text, used for import, saving and final rendering. */
-    public static function sanitize(string $html): string {
+    public static function sanitize(string $html, bool $template = false): string {
         $document = new \DOMDocument('1.0', 'UTF-8');
         $previous = libxml_use_internal_errors(true);
         $document->loadHTML('<?xml encoding="UTF-8"><html><body>' . $html . '</body></html>', LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
         libxml_clear_errors(); libxml_use_internal_errors($previous);
         $allowed = ['p','h2','h3','h4','strong','em','b','i','a','img','ul','ol','li','br','blockquote','table','thead','tbody','tr','th','td','figure','figcaption','hr','span'];
-        $walk = function (\DOMNode $parent) use (&$walk, $allowed): void {
+        if($template){$allowed=array_merge($allowed,['div','section','nav','aside','address']);}
+        $walk = function (\DOMNode $parent) use (&$walk, $allowed, $template): void {
             foreach (iterator_to_array($parent->childNodes) as $node) {
                 if (!$node instanceof \DOMElement) { if ($node instanceof \DOMComment) { $parent->removeChild($node); } continue; }
                 $tag = strtolower($node->tagName);
@@ -27,7 +28,7 @@ final class Html {
                 }
                 foreach (iterator_to_array($node->attributes) as $attribute) {
                     $name = strtolower($attribute->name); $value = $attribute->value;
-                    $keep = in_array($name, ['alt','title'], true)
+                    $keep = ($template && $name==='class' && preg_match('/^[a-zA-Z0-9 _-]{1,500}$/D',$value)) || in_array($name, ['alt','title'], true)
                         || ($tag === 'a' && $name === 'href' && self::url($value))
                         || ($tag === 'img' && $name === 'src' && self::url($value, true))
                         || (in_array($tag, ['th','td'], true) && in_array($name, ['colspan','rowspan'], true) && preg_match('/^[1-9][0-9]?$/D', $value));
