@@ -45,13 +45,21 @@ final class Admin {
             if($catalog=$this->project['media_catalog'] ?? null){foreach($catalog($this->configuration) as $image){if(str_starts_with($image['mime'],'image/')){$images[]=$image;}}}
             echo json_encode(['images'=>$images],JSON_THROW_ON_ERROR);return;
         }
+        if($path==='/admin/page-preview/' && $method==='GET'){
+            $this->access->require($actor,'settings');$preset=(string)($_GET['layout'] ?? 'studio');
+            if(!isset(PageTemplates::PRESETS[$preset])){throw new HttpError(422,'Unbekanntes Basislayout.');}
+            $items=array_values(array_filter($this->content->list($actor),static fn($item)=>$item['status']!=='trash'));
+            $item=$items[0] ?? throw new HttpError(404,'Bitte zuerst einen Inhalt anlegen, um das Layout mit echten Inhalten anzusehen.');
+            $item['options']['page_template']=$preset;header('X-Robots-Tag: noindex, nofollow');
+            echo (new PageTemplates($this->content,array_replace($this->configuration,['environment'=>'development'])))->render($item);return;
+        }
         if($path==='/admin/template-preview/' && $method==='POST'){(new TemplateAdmin($this->content,$this->access,$this->configuration))->preview($actor);return;}
         if($path==='/admin/templates/'){[$title,$body]=(new TemplateAdmin($this->content,$this->access,$this->configuration))->page($actor,$method);if(http_response_code()!==303){$this->layout($title,$body,$actor);}return;}
         if($path==='/admin/logout/' && $method==='POST') { $_SESSION=[]; session_regenerate_id(true); $this->redirect('/admin/login/'); }
         if($path==='/admin/users/') {$this->users($actor,$method);return;}
         if(preg_match('~^/admin/preview/([a-zA-Z0-9_-]+)/$~D',$path,$match) && $method==='GET'){
             $item=$this->content->get($match[1]) ?? throw new HttpError(404,'Inhalt nicht gefunden.');$this->access->require($actor,'read',$item);
-            header('X-Robots-Tag: noindex, nofollow');($this->project['render'])($item,array_replace($this->configuration,['environment'=>'development']),$this->content);return;
+            header('X-Robots-Tag: noindex, nofollow');PageTemplates::output($item,array_replace($this->configuration,['environment'=>'development']),$this->content);return;
         }
         if(preg_match('~^/admin/(settings|layout|categories|menus|seo|redirects|customizations)(/|$)~',$path)){
             [$title,$body]=(new SiteAdmin($this->site,$this->content,$this->access,$this->configuration))->page($path,$method,$actor);

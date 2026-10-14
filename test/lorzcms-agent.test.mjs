@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, writeFile, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import crypto from 'node:crypto';
+import { load } from 'cheerio';
 import { bundledRelease, validateRelease } from '../lib/lorzcms.mjs';
 
 const php = process.env.SITEOPS_PHP || 'php';
@@ -138,13 +139,68 @@ test(
     assert.equal(loggedIn.status, 303, 'generated administrator can sign in');
     const session = loggedIn.headers.get('set-cookie').split(';')[0];
     assert.equal((await fetch(base + '/admin/', { headers: { cookie: session } })).status, 200);
+    const layoutResponse = await fetch(base + '/admin/layout/', { headers: { cookie: session } });
+    assert.equal(layoutResponse.status, 200);
+    const layout = load(await layoutResponse.text());
+    const settings = new URLSearchParams();
+    layout('.settings-form [name]').each((_, element) => {
+      const field = layout(element);
+      settings.set(field.attr('name'), String(field.val() ?? ''));
+    });
+    settings.set('values[page_template]', 'editorial');
+    settings.set(
+      'values[header_template]',
+      '<div class="custom-header header-inner site-container">{{brand}}{{navigation}}</div>'
+    );
+    settings.set('values[custom_css]', '.custom-header { border-bottom: 3px solid #123456; }');
+    const savedLayout = await fetch(base + '/admin/layout/', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { cookie: session, 'content-type': 'application/x-www-form-urlencoded' },
+      body: settings
+    });
+    assert.equal(savedLayout.status, 303, 'layout form saves with session and CSRF protection');
+    const themedHome = await (await fetch(base + '/')).text();
+    assert.match(themedHome, /page-editorial/);
+    assert.match(themedHome, /custom-header/);
+    assert.equal((themedHome.match(/<h1>/g) || []).length, 1);
+    assert.match(await (await fetch(base + '/assets/site-theme.css')).text(), /border-bottom: 3px solid #123456/);
+    assert.equal((await fetch(base + '/assets/page-templates.css')).status, 200);
+    const preview = await fetch(base + '/admin/page-preview/?layout=split', { headers: { cookie: session } });
+    assert.equal(preview.status, 200);
+    assert.match(await preview.text(), /page-split/);
+    assert.match(await (await fetch(base + '/')).text(), /page-editorial/, 'preview does not change the saved layout');
+    const contents = load(await (await fetch(base + '/admin/contents/', { headers: { cookie: session } })).text());
+    const contentUrl = contents('a[href^="/admin/content/"]').first().attr('href');
+    assert.ok(contentUrl, 'installed homepage appears in the content list');
+    const editorForm = load(await (await fetch(base + contentUrl, { headers: { cookie: session } })).text());
+    const pageFields = new URLSearchParams();
+    editorForm('form.editor input[name], form.editor textarea[name], form.editor select[name]').each((_, element) => {
+      const field = editorForm(element);
+      if (['checkbox', 'radio'].includes(field.attr('type')) && !field.is(':checked')) return;
+      pageFields.append(field.attr('name'), String(field.val() ?? ''));
+    });
+    pageFields.set('page_template', 'split');
+    const savedPage = await fetch(base + contentUrl, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { cookie: session, 'content-type': 'application/x-www-form-urlencoded' },
+      body: pageFields
+    });
+    assert.equal(savedPage.status, 303, 'content editor saves the individual page layout');
+    assert.match(await (await fetch(base + '/')).text(), /page-split/);
+    const editorPreview = await fetch(base + contentUrl.replace('/content/', '/preview/'), {
+      headers: { cookie: session }
+    });
+    assert.equal(editorPreview.status, 200);
+    assert.match(await editorPreview.text(), /page-split/);
     const css = await fetch(base + '/assets/cms.css');
     assert.equal(css.status, 200);
     assert.match(css.headers.get('content-type'), /text\/css/);
     assert.equal((await fetch(base + '/config/local.php')).status, 404);
     assert.equal((await fetch(base + '/.lorzcms/backups/test/database.sqlite')).status, 404);
     const config = await readFile(join(root, 'config/local.php'));
-    const next = validateRelease({ ...initial, version: '3.3.1', notes: 'Test update' });
+    const next = validateRelease({ ...initial, version: '3.4.1', notes: 'Test update' });
     await stage(next);
     assert.equal(
       (
@@ -200,7 +256,7 @@ test(
     );
     assert.equal(snapshot.status, 0, snapshot.stderr);
     assert.doesNotMatch(snapshot.stdout, /Redaktion nach Update/);
-    const tampered = join(root, '.lorzcms/releases/3.3.1/src/Store.php');
+    const tampered = join(root, '.lorzcms/releases/3.4.1/src/Store.php');
     await writeFile(tampered, '<?php echo "bad";');
     assert.equal(
       (
@@ -216,7 +272,7 @@ test(
     );
     assert.equal((await call()).data.version, initial.version);
     const active = await readFile(join(root, '.lorzcms/active.json'));
-    await writeFile(join(root, '.lorzcms/releases/3.3.1/manifest.json'), '{}');
+    await writeFile(join(root, '.lorzcms/releases/3.4.1/manifest.json'), '{}');
     assert.equal(
       (
         await call({

@@ -44,7 +44,7 @@ try {
             }
             if($handled){}
             elseif(!$item && !str_ends_with($path,'/') && $content->at($path.'/')) {header('Location: '.$path.'/',true,301);}
-            elseif($item) {($project['render'])($item,$configuration,$content);}
+            elseif($item) {\SiteCms\PageTemplates::output($item,$configuration,$content);}
             else {throw new HttpError(404,'Diese Seite wurde nicht gefunden.');}
         }
     }

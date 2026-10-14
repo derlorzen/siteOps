@@ -11,3 +11,7 @@ immutable after import. Schema 1 is the existing additive CMS schema. Renaming o
 dropping a table/column requires a new migration and an explicit compatibility
 policy before a release may be accepted. The current deployment agent rejects
 schema versions other than 1.
+
+Core 3.4 adds reusable header/footer partials and four page layouts. See
+[CMS template guide](../../docs/CMS-TEMPLATES.md) for styling, per-page selection,
+project extension hooks and compatibility when rolling back to an older core.

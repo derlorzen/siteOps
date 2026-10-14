@@ -36,6 +36,14 @@ final class Templates {
         foreach($template['sections'] as $section){$html.='<section class="template-section tone-'.$section['tone'].' spacing-'.$section['spacing'].'"><div class="template-container grid-'.$section['layout'].'">';foreach($section['columns'] as $column){$html.='<div class="template-column">';foreach($column as $node){$value=$this->widget($node,$item,$placeholders);if($value!==''){$html.='<div class="template-widget widget-'.$node['kind'].'">'.(!empty($node['heading'])?'<h2>'.Html::escape($node['heading']).'</h2>':'').$value.'</div>';}}$html.='</div>';}$html.='</div></section>';}
         return $html.'</div>';
     }
+    public function renderFields(array $item):string {
+        $placeholders=new Placeholders($this->content,$this->configuration);$html='';
+        foreach($this->content->schema->types[$item['type']]['fields'] as $key=>$field){
+            if($field['admin_hidden'] ?? false){continue;}
+            $html.=$this->widget(['kind'=>'field','field'=>$key],$item,$placeholders);
+        }
+        return $html;
+    }
     private function widget(array $node,array $item,Placeholders $placeholders):string {
         if($node['kind']==='module'){return $placeholders->module($node['module'],$node['params'],$item);}if($node['kind']==='text'){return '<div class="rich">'.$placeholders->rich($node['html'],$item).'</div>';}
         $key=$node['field'];if($key==='title'){return '<h1>'.Html::escape($item['title']).'</h1>';}$value=$item['fields'][$key] ?? '';$resolver=$this->content->site->project['field_resolvers'][$key] ?? null;if($value==='' && $resolver){$value=$resolver($item,$this->content,$this->configuration);}if($value==='' || $value===[]){return '';}$field=$this->content->schema->types[$item['type']]['fields'][$key] ?? [];$kind=$field['kind'] ?? 'text';

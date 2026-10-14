@@ -31,6 +31,7 @@ final class SiteAdmin {
         $body=$error.(isset($_GET['saved'])?'<p class="success" role="status">Änderungen gespeichert.</p>':'');
         $description=$definition['description'] ?? match($section){'categories'=>'Ordne Inhalte nach Themen. Kategorien können hierarchisch aufgebaut und auf bestimmte Inhaltstypen eingeschränkt werden.','menus'=>'Beschriftung, Ziel, Reihenfolge und Hierarchie für Hauptnavigation und Fußzeile.','redirects'=>'Alte Adressen auf ein neues Ziel umleiten (HTTP 301). Bestehende Seitenpfade werden nicht automatisch geändert.',default=>''};
         $body.='<p class="intro">'.Html::escape($description).'</p><form method="post" class="settings-form">'.$this->token().'<input type="hidden" name="version" value="'.$record['version'].'">';
+        if($section==='appearance'){$body.=self::presetCards();}
         if(isset($titles[$section])){$body.=$this->collection($section,$record['value']);}
         else {foreach($definition['fields'] as $key=>$field){$body.=($field['admin_hidden'] ?? false)?'<input type="hidden" name="values['.Html::escape($key).']" value="'.Html::escape((string)($record['value'][$key] ?? '')).'">':self::field('values['.$key.']',$field,$record['value'][$key] ?? '');}}
         $body.='<div class="save-bar"><span>Version '.$record['version'].'</span><button>Änderungen speichern</button></div></form>';
@@ -49,6 +50,7 @@ final class SiteAdmin {
         if($kind==='image'){
             return '<div class="image-control" data-image-control><label class="field">'.$e($field['label']).'<input name="'.$e($name).'" value="'.$e($value).'" data-image-url'.$required.'></label><img class="image-field-preview" src="'.$e($value).'" alt="Aktuelle Bildauswahl"'.($value===''?' hidden':'').'><div class="image-field-actions"><button type="button" class="secondary" data-open-image-picker>Foto auswählen oder hochladen</button><button type="button" class="secondary" data-clear-image>Foto entfernen</button></div><small>'.$e($field['help'] ?? 'Bild aus der Mediathek auswählen oder neu hochladen.').'</small><noscript><a href="/admin/media/" target="_blank">Mediathek öffnen und Datei-URL kopieren</a></noscript></div>';
         }
+        if($kind==='code'){return '<label class="field">'.$e($field['label']).'<textarea class="template-code" spellcheck="false" name="'.$e($name).'" rows="8" maxlength="'.($field['max'] ?? 100000).'">'.$e($value).'</textarea><small>'.$e($field['help'] ?? '').'</small></label>';}
         if($kind==='multi'){$selected=$value===''?[]:array_map('trim',explode(',',$value));$html='<fieldset class="types-field"><legend>'.$e($field['label']).'</legend>';foreach($field['options'] as $option){$html.='<label class="check"><input type="checkbox" name="'.$e($name).'[]" value="'.$e($option).'"'.(in_array($option,$selected,true)?' checked':'').'>'.$e($field['option_labels'][$option] ?? $option).'</label>';}return $html.'<small>Keine Auswahl erlaubt alle Inhaltstypen.</small></fieldset>';}
         $html='<label class="field">'.$e($field['label']);
         if($kind==='select'){$html.='<select name="'.$e($name).'"'.$required.'>';if(!($field['required'] ?? false) && !isset($field['default'])){$html.='<option value="">Bitte wählen</option>';}
@@ -56,6 +58,12 @@ final class SiteAdmin {
         } elseif(in_array($kind,['html','textarea'],true)){$html.='<textarea name="'.$e($name).'" rows="'.($kind==='html'?12:4).'"'.($kind==='html'?' data-rich-editor aria-label="'.$e($field['label']).'"':'').$required.'>'.$e($kind==='html'?Html::sanitize($value):$value).'</textarea>';}
         else{$html.='<input type="'.(in_array($kind,['email','time','color'],true)?$kind:'text').'" name="'.$e($name).'" value="'.$e($value).'" maxlength="'.($field['max'] ?? 100000).'"'.$required.'>';}
         return $html.(isset($field['help'])?'<small>'.$e($field['help']).'</small>':'').'</label>';
+    }
+    public static function presetCards():string {
+        $descriptions=['studio'=>'Klarer Titel, flexible Inhaltsfläche. Für Unternehmen, Vereine und Praxen.','editorial'=>'Ruhige Typografie und schmale Lesespalte. Für Texte, Artikel und Wissenswertes.','split'=>'Titel und Inhalt nebeneinander. Für Leistungen, Profile und übersichtliche Details.','landing'=>'Großer, zentrierter Auftakt. Für Startseiten, Kampagnen und Angebote.'];
+        $html='<section class="page-preset-library" aria-label="Vier Basislayouts">';
+        foreach(PageTemplates::PRESETS as $id=>$label){$html.='<article class="page-preset"><div class="preset-sketch preset-'.$id.'" aria-hidden="true"><span></span><strong></strong><i></i><i></i></div><h2>'.Html::escape($label).'</h2><p>'.Html::escape($descriptions[$id]).'</p><a href="/admin/page-preview/?layout='.$id.'" target="_blank" rel="noopener">Mit vorhandenem Inhalt ansehen ↗</a></article>';}
+        return $html.'</section><p class="muted">Die Vorschau zeigt gespeicherte Farben, Header, Footer und CSS. Das Basislayout unten auswählen; einzelne Seiten können davon abweichen. <a href="/admin/layout/">Header, Footer und CSS bearbeiten →</a></p>';
     }
     private function collection(string $section,array $values):string {
         $keys=match($section){'categories'=>['name'=>'Name','slug'=>'URL-Name','description'=>'Beschreibung','parent'=>'Übergeordnete Kategorie','types'=>'Inhaltstypen'],'menus'=>['label'=>'Beschriftung','url'=>'Link-Ziel','parent'=>'Übergeordneter Eintrag','location'=>'Position'],default=>['from'=>'Alter Pfad','to'=>'Neues Ziel']};

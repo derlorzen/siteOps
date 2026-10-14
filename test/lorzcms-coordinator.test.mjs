@@ -106,7 +106,7 @@ test(
       request: async (url, options = {}) => {
         const origin = new URL(url).origin;
         if (!url.endsWith('/siteops.php'))
-          return new Response('website', { status: unhealthy && live.get(origin)?.version === '3.3.1' ? 500 : 200 });
+          return new Response('website', { status: unhealthy && live.get(origin)?.version === '3.4.1' ? 500 : 200 });
         const inst = (await q('select * from cms_installations where base_url=?', [origin])).rows[0];
         if (!options.body) return Response.json({ instanceId: inst.id, ...live.get(origin), maintenance: false });
         const body = JSON.parse(options.body);
@@ -165,7 +165,7 @@ test(
     assert.equal(finished.encrypted_payload, null);
     const inst = (await controller.overview()).installations[0];
     assert.equal(inst.version, base.version);
-    const next = validateRelease({ ...base, version: '3.3.1', notes: 'Next version' });
+    const next = validateRelease({ ...base, version: '3.4.1', notes: 'Next version' });
     await controller.importRelease(next);
     unhealthy = true;
     const scheduled = await controller.schedule({ installations: [inst.id], version: next.version });

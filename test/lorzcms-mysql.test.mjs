@@ -60,7 +60,7 @@ test(
       join(root, 'projects/base/project.php')
     );
     const initial = await bundledRelease(),
-      next = validateRelease({ ...initial, version: '3.3.1', notes: 'Snapshot test' });
+      next = validateRelease({ ...initial, version: '3.4.1', notes: 'Snapshot test' });
     for (const pkg of [initial, next]) {
       const target = join(root, '.lorzcms/releases', pkg.version);
       for (const file of pkg.files) {
