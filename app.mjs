@@ -181,6 +181,7 @@ const billingController = createBillingController({ db, archive: archiveIssuedIn
 const billingWorkflows = createBillingWorkflows({
   db,
   billing: billingController,
+  reminderEmail: () => cfg.alertEmail,
   sendMail: async message => {
     if (!cfg.smtpHost || !cfg.smtpFrom || cfg.smtpFrom.includes('@localhost'))
       throw new Error('SMTP-Absender unter SiteOps-Einstellungen konfigurieren.');
@@ -6835,8 +6836,10 @@ async function start() {
     startMonitor();
     // Durable, DB-locked maintenance rules; process overdue rules after startup as well.
     billingWorkflows.runRecurring().catch(error => console.error('recurring billing startup', error));
+    billingWorkflows.notifyDue().catch(error => console.error('billing due reminder startup', error));
     setInterval(() => {
       billingWorkflows.runRecurring().catch(error => console.error('recurring billing worker', error));
+      billingWorkflows.notifyDue().catch(error => console.error('billing due reminder worker', error));
     }, 15 * 60 * 1000).unref();
     startBackupWorker();
     startSyntheticWorker();
