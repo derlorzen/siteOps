@@ -28,7 +28,10 @@ test('project creation requires an existing customer', async () => {
     api.createProject({ name: 'Neue Website', customer_id: customerId }),
     error => error.statusCode === 404 && error.message === 'Kunde fehlt.'
   );
-  assert.equal(calls.some(call => call.sql.startsWith('INSERT')), false);
+  assert.equal(
+    calls.some(call => call.sql.startsWith('INSERT')),
+    false
+  );
 });
 
 test('task creation requires an existing project', async () => {
@@ -38,7 +41,10 @@ test('task creation requires an existing project', async () => {
     api.createTask({ name: 'Logo entwerfen', project_id: projectId }),
     error => error.statusCode === 404 && error.message === 'Projekt fehlt.'
   );
-  assert.equal(calls.some(call => call.sql.startsWith('INSERT')), false);
+  assert.equal(
+    calls.some(call => call.sql.startsWith('INSERT')),
+    false
+  );
 });
 
 test('project creation assigns exactly the selected parent customer', async () => {
