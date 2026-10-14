@@ -220,6 +220,12 @@ function draw() {
             (i.status === 'issued' || i.status === 'paid' || i.status === 'cancelled'
               ? '<a class="btn ghost" href="/api/billing/invoices/' + escapeHtml(i.id) + '/pdf">PDF</a>'
               : '') +
+            (i.status === 'issued' || i.status === 'paid'
+              ? '<button type="button" class="ghost" data-send-invoice="' + escapeHtml(i.id) + '">Per E-Mail senden</button>'
+              : '') +
+            (i.status === 'issued' && iso(i.due_at) < date()
+              ? '<button type="button" class="ghost" data-remind-invoice="' + escapeHtml(i.id) + '">Zahlungserinnerung</button>'
+              : '') +
             (i.status === 'issued'
               ? '<button type="button" class="ghost" data-pay="' + escapeHtml(i.id) + '">Bezahlt</button>'
               : '') +
@@ -456,7 +462,13 @@ function install() {
     const btn = ev.target.closest('button');
     if (!btn) return;
     try {
-      if (btn.dataset.issue) {
+      if (btn.dataset.sendInvoice || btn.dataset.remindInvoice) {
+        const kind = btn.dataset.remindInvoice ? 'reminder' : 'invoice';
+        const invoiceId = btn.dataset.remindInvoice || btn.dataset.sendInvoice;
+        const what = kind === 'reminder' ? 'Zahlungserinnerung' : 'Rechnung mit PDF';
+        if (!confirm(what + ' wirklich per E-Mail an den Kunden senden?')) return;
+        await write('/api/billing/invoices/' + invoiceId + '/send', 'POST', { kind });
+      } else if (btn.dataset.issue) {
         if (!confirm('Rechnung verbindlich ausstellen und im privaten GitHub-Backup archivieren?')) return;
         await write('/api/billing/invoices/' + btn.dataset.issue + '/issue', 'POST');
       } else if (btn.dataset.cancel) {
