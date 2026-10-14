@@ -1,6 +1,6 @@
 // Kanban is an additional view on the existing client -> project -> task hierarchy.
 // This migration retains all existing tasks, tracked time, and invoice associations.
-export default async function run({ ensureColumn, q }) {
+export default async function run({ ensureColumn }) {
   await ensureColumn('customer_projects', 'board_revision', 'BIGINT UNSIGNED NOT NULL DEFAULT 0');
   await ensureColumn('project_tasks', 'sort_position', 'INT NOT NULL DEFAULT 0');
   await ensureColumn('project_tasks', 'description', 'TEXT NULL');
