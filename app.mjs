@@ -20,6 +20,7 @@ import { createCmsController, cmsInstallSchema, cmsScheduleSchema } from './lib/
 import { cmsDashboardBody } from './lib/lorzcms-ui.mjs';
 import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
+import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -177,6 +178,21 @@ async function archiveIssuedInvoice(snapshot, pdf) {
   });
 }
 const billingController = createBillingController({ db, archive: archiveIssuedInvoice });
+const billingWorkflows = createBillingWorkflows({
+  db,
+  billing: billingController,
+  sendMail: async message => {
+    if (!cfg.smtpHost || !cfg.smtpFrom || cfg.smtpFrom.includes('@localhost'))
+      throw new Error('SMTP-Absender unter SiteOps-Einstellungen konfigurieren.');
+    const transport = nodemailer.createTransport({
+      host: cfg.smtpHost,
+      port: cfg.smtpPort,
+      secure: cfg.smtpSecure,
+      auth: cfg.smtpUser ? { user: cfg.smtpUser, pass: cfg.smtpPassword } : undefined
+    });
+    return transport.sendMail({ from: cfg.smtpFrom, ...message });
+  }
+});
 
 const phpParser = new PHPParser({
   parser: { suppressErrors: false, extractDoc: false },
@@ -1705,6 +1721,11 @@ async function processMonitor(site) {
     if (open) {
       await q("update incidents set resolved_at=now(),status='resolved' where id=?", [open]);
       await incidentEvent(open, site.id, 'recovered', { responseMs: result.responseMs, status: result.status });
+      try {
+        await billingWorkflows.incidentRecovered(open);
+      } catch (error) {
+        console.error('monitor task recovery', site.domain, error);
+      }
       const alertResult = await sendAlert(
         `RECOVERED: ${site.domain}`,
         `${site.domain} is healthy again. Response ${result.responseMs} ms.`
@@ -1729,6 +1750,11 @@ async function processMonitor(site) {
         JSON.stringify(result)
       ]);
       await incidentEvent(incidentId, site.id, 'opened', { failureCount: failures, result });
+      try {
+        await billingWorkflows.incidentOpened(incidentId, site.id, site.domain, result);
+      } catch (error) {
+        console.error('monitor task creation', site.domain, error);
+      }
       const alertResult = await sendAlertWithFixPrompt(`DOWN: ${site.domain}`, JSON.stringify(result, null, 2), {
         kind: 'monitor',
         site: site.id
@@ -1737,6 +1763,11 @@ async function processMonitor(site) {
       lastAlert = Date.now();
       await incidentEvent(incidentId, site.id, 'alert', alertResult);
     } else if (incidentId) {
+      try {
+        await billingWorkflows.incidentOpened(incidentId, site.id, site.domain, result);
+      } catch (error) {
+        console.error('monitor task retry', site.domain, error);
+      }
       await incidentEvent(incidentId, site.id, 'check_failed', { failureCount: failures, result });
       const repeatMs = Math.max(1, Number(site.alert_repeat_minutes || 60)) * 60000;
       if (!lastAlert || Date.now() - lastAlert >= repeatMs) {
@@ -6381,6 +6412,12 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/billing-board.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/billing-workflows.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/billing-workflows.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/lorzcms.js', async (_r, reply) =>
     reply
       .type('text/javascript')
@@ -6470,6 +6507,7 @@ async function start() {
     page,
     dashboardBody: billingDashboardBody
   });
+  registerBillingWorkflowRoutes(app, billingWorkflows);
   app.get('/api/sites', async () => listSites());
   app.get('/api/sites/:site', async req => publicSite(await getSite(req.params.site)));
   app.get('/api/sites/:site/overview', async req => siteOverview(req.params.site));
@@ -6795,6 +6833,11 @@ async function start() {
   app.get('/incidents/:id', async (req, reply) => reply.type('text/html').send(await incidentPage(req.params.id)));
   if (databaseReady) {
     startMonitor();
+    // Durable, DB-locked maintenance rules; process overdue rules after startup as well.
+    billingWorkflows.runRecurring().catch(error => console.error('recurring billing startup', error));
+    setInterval(() => {
+      billingWorkflows.runRecurring().catch(error => console.error('recurring billing worker', error));
+    }, 15 * 60 * 1000).unref();
     startBackupWorker();
     startSyntheticWorker();
     cmsController.startWorker();
