@@ -130,7 +130,7 @@ function draw() {
             '</td><td>' +
             (e.invoice_id || e.started_at
               ? ''
-              : '<button type="button" class="ghost" data-remove-entry="' + escapeHtml(e.id) + '">Löschen</button>') +
+              : '<button type="button" class="ghost" data-edit-entry="' + escapeHtml(e.id) + '">Bearbeiten</button><button type="button" class="ghost" data-remove-entry="' + escapeHtml(e.id) + '">Löschen</button>') +
             '</td></tr>'
         )
         .join('')
@@ -383,6 +383,15 @@ function install() {
     })
   );
   byId('billingEntries').addEventListener('click', async ev => {
+    const editor=ev.target.closest('[data-edit-entry]');
+    if(editor){
+      const entry=data.entries.find(e=>e.id===editor.dataset.editEntry);if(!entry)return;
+      const value=prompt('Dauer in Minuten', String(Number(entry.duration_seconds)/60));if(value===null)return;
+      const description=prompt('Leistungsbeschreibung',entry.description||'');if(description===null)return;
+      const when=prompt('Datum (JJJJ-MM-TT)',iso(entry.entry_date));if(when===null)return;
+      try{await write('/api/billing/entries/'+entry.id,'PATCH',{duration_minutes:Number(value),description,entry_date:when});message('Eintrag korrigiert.');await refresh();}catch(e){errorHandler(e);}
+      return;
+    }
     const btn = ev.target.closest('[data-remove-entry]');
     if (!btn || !confirm('Unberechneten Zeiteintrag löschen?')) return;
     try {
