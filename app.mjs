@@ -6407,6 +6407,12 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/billing.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/billing-navigation.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/billing-navigation.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/billing-board.js', async (_r, reply) =>
     reply
       .type('text/javascript')
