@@ -168,3 +168,47 @@ section+section{margin-top:20px}
   .runner-guide>summary{align-items:flex-start}
   .runner-guide-grid{grid-template-columns:1fr}
 }
+
+/* Kundenverwaltung: Projektgebundenes Kanban-Board */
+.kb-section{margin:20px 0}
+.kb-toolbar{display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.kb-toolbar h2{margin:5px 0}
+.kb-toolbar p{color:#667987;margin:5px 0 0}
+.kb-hint{color:#52707d;font-size:13px;margin:12px 0 15px;min-height:18px}
+.kb-board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(246px,1fr);gap:12px;overflow-x:auto;overscroll-behavior-x:contain;padding:3px 3px 15px;scrollbar-color:#b8cad3 transparent}
+.kb-lane{display:flex;flex-direction:column;min-width:246px;min-height:215px;border:1px solid #e0e7ec;border-radius:12px;background:#f3f6f8;padding:10px;gap:10px}
+.kb-lane-heading{display:flex;gap:8px;align-items:center;padding:4px}
+.kb-lane-heading h3{font-size:14px;margin:0;font-weight:800;flex:1}
+.kb-count{font-size:11px;border-radius:14px;min-width:24px;text-align:center;padding:3px 7px;background:#dce7ec;color:#456471;font-weight:800}
+.kb-lane-add,.kb-edit,.kb-step{background:transparent;color:#52707d;border-radius:7px;padding:4px 8px;font-size:16px}
+.kb-lane-add:hover,.kb-edit:hover,.kb-step:hover{background:#dce7ec}
+.kb-lane-cards{display:flex;flex-direction:column;gap:9px;min-height:120px;flex:1}
+.kb-card{background:#fff;border:1px solid #dfe8eb;border-radius:10px;box-shadow:0 2px 7px rgba(13,57,76,.05);padding:12px;cursor:grab;overflow-wrap:anywhere}
+.kb-card:hover{border-color:#a7c5d2;box-shadow:0 5px 14px rgba(13,57,76,.10)}
+.kb-card:focus-visible{outline:3px solid #1489a8;outline-offset:2px}
+.kb-card:active{cursor:grabbing}
+.kb-dragging{opacity:.45}
+.kb-touch-drag{outline:2px solid #1489a8;box-shadow:0 9px 20px rgba(13,57,76,.18)}
+.kb-saving{opacity:.7;pointer-events:none}
+.kb-card-head,.kb-card-meta,.kb-card-controls{display:flex;align-items:center;gap:7px}
+.kb-card-head{margin-bottom:7px}
+.kb-drag-handle{color:#9badb4;font-weight:900;letter-spacing:1px;touch-action:none;cursor:grab;user-select:none;padding:5px}
+.kb-priority{font-size:10px;font-weight:800;border-radius:5px;padding:4px 6px;background:#eef1f3;color:#536776}
+.kb-priority.kb-high{background:#fff2d7;color:#885900}
+.kb-priority.kb-urgent{background:#ffe5e5;color:#ad2525}
+.kb-priority.kb-low{background:#e8f3ee;color:#257253}
+.kb-edit{margin-left:auto}
+.kb-title{display:block;font-size:14px;line-height:1.35;color:#172b3a}
+.kb-description{font-size:12px;color:#60727e;line-height:1.45;margin:8px 0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.kb-card-meta{justify-content:space-between;flex-wrap:wrap;font-size:11px;color:#7a8993;margin-top:12px}
+.kb-overdue{font-weight:800;color:#aa302b}
+.kb-card-controls{margin-top:12px;padding-top:9px;border-top:1px solid #edf0f2}
+.kb-status-label{flex:1;min-width:0;font-size:10px;color:#71808a}
+.kb-status-label select{font-size:11px;padding:5px 6px;margin-top:3px;max-width:100%}
+.kb-step{font-size:17px;align-self:end;min-width:27px}
+.kb-dialog{width:min(520px,calc(100vw - 24px));max-height:min(92vh,840px);overflow:auto;padding:0;border:1px solid #dce6eb;border-radius:15px;box-shadow:0 25px 70px rgba(17,43,58,.27)}
+.kb-dialog::backdrop{background:rgba(14,32,43,.48)}
+.kb-dialog form{max-width:none;margin:0;padding:24px}
+.kb-dialog textarea{width:100%;resize:vertical;margin-top:5px;min-height:92px;padding:10px;border:1px solid #ccd5da;border-radius:7px;font:inherit}
+.kb-error{color:#a92828;font-size:13px;min-height:1em;margin:0}
+@media(max-width:650px){.kb-board{grid-auto-columns:minmax(232px,82vw)}.kb-dialog .formgrid{grid-template-columns:1fr}.kb-toolbar{align-items:flex-start}}

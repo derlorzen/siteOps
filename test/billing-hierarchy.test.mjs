@@ -13,6 +13,7 @@ function fakeDatabase(lookup = {}) {
         return [lookup.projects ? [{ id: values[0] }] : []];
       if (sql.startsWith('SELECT * FROM customer_projects WHERE id='))
         return [[{ id: values[0], customer_id: lookup.customerId, name: 'Website' }]];
+      if (sql.startsWith('SELECT COALESCE(MAX(sort_position)')) return [[{ next_position: 1000 }]];
       if (sql.startsWith('SELECT * FROM project_tasks WHERE id='))
         return [[{ id: values[0], project_id: lookup.projectId, name: 'Layout' }]];
       return [[]];

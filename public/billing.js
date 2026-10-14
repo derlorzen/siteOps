@@ -127,6 +127,7 @@ function updateTasks() {
 }
 function draw() {
   renderHierarchyContext();
+  window.SiteOpsKanban?.setProject(selectedProject());
   const entries = data.entries.filter(x => x.customer_id === selectedCustomer()),
     invoices = data.invoices.filter(x => x.customer_id === selectedCustomer());
   const bill = entries.filter(x => x.billable && !x.invoice_id && !x.started_at);
@@ -271,6 +272,7 @@ async function refresh() {
   Object.assign(data, { customers, projects, tasks, entries, invoices, settings });
   renderSelection();
   draw();
+  if (window.SiteOpsKanban) await window.SiteOpsKanban.reload();
   for (const [key, value] of Object.entries(settings)) {
     const el = byId('billingSettingsForm').elements.namedItem(key);
     if (el) el.value = value;
@@ -471,6 +473,7 @@ function install() {
       errorHandler(e);
     }
   });
+  window.SiteOpsBillingRefresh = refresh;
   refresh().catch(errorHandler);
 }
 const root = byId('billingRoot');
@@ -487,6 +490,8 @@ if (root) {
     '<label>Stundensatz in €<input name="rate_eur" type="number" min="0" step=".01" value="75" required></label><button>Kunde anlegen</button></form></section>',
     '<section><h2>Projekt anlegen</h2><p>Gehört zum Kunden: <strong id="projectParentLabel"></strong></p><form id="projectForm" class="inner-form"><label>Projekt<input name="name" required></label><label>Stundensatz € (optional)<input type="number" min="0" step=".01" name="rate_eur"></label><button>Projekt anlegen</button></form>',
     '<h2>Task anlegen</h2><p>Gehört zum Projekt: <strong id="taskParentLabel"></strong></p><form id="taskForm" class="inner-form"><label>Task<input name="name" required></label><label>Stundensatz € (optional)<input type="number" min="0" step=".01" name="rate_eur"></label><button>Task anlegen</button></form></section></div>',
+    '<section id="kanbanSection" class="kb-section"><div class="kb-toolbar"><div><span class="eyebrow">Projekt-Board</span><h2>Kanban</h2><p>Tasks innerhalb eines Projekts per Drag & Drop organisieren.</p></div><div class="buttonrow"><button type="button" id="kanbanReload" class="ghost">Aktualisieren</button><button type="button" id="kanbanNew">+ Task</button></div></div><p id="kanbanHint" class="kb-hint" role="status"></p><div id="kanbanBoard" class="kb-board" aria-label="Kanban-Board für das ausgewählte Projekt"></div></section>',
+    '<dialog id="kanbanDialog" class="kb-dialog"><form id="kanbanForm" class="inner-form"><h2 id="kanbanDialogTitle">Task bearbeiten</h2><label>Titel<input name="name" maxlength="255" required></label><label>Beschreibung<textarea name="description" rows="4" maxlength="3000"></textarea></label><div class="formgrid"><label>Fällig am<input name="due_date" type="date"></label><label>Priorität<select name="priority"><option value="low">Niedrig</option><option value="normal">Normal</option><option value="high">Hoch</option><option value="urgent">Dringend</option></select></label><label>Spalte<select name="status"><option value="backlog">Ideen</option><option value="open">Offen</option><option value="in_progress">In Arbeit</option><option value="review">Abnahme</option><option value="done">Erledigt</option></select></label><label>Stundensatz € (optional)<input name="rate_eur" type="number" min="0" step=".01"></label></div><p id="kanbanDialogError" class="kb-error" role="alert"></p><div class="buttonrow"><button type="button" id="kanbanCancel" class="ghost">Abbrechen</button><button type="submit">Speichern</button></div></form></dialog>',
     '<section><h2>Zeiterfassung</h2><p>Zeiten werden auf den ausgewählten Task gebucht: <strong id="timeParentLabel"></strong></p><div class="twocol ops-grid"><form id="timeForm" class="inner-form">',
     '<label>Datum<input id="entryDate" type="date" name="entry_date" required></label><label>Typ<select name="kind"><option value="work">Arbeit</option><option value="call">Telefonat</option></select></label>',
     '<label>Dauer (Minuten)<input name="duration_minutes" type="number" min="0.01" step="0.01" required></label>',

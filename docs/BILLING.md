@@ -23,6 +23,28 @@ Bei einem Archivfehler verbleibt der Vorgang in **archiving**. Er kann mit
 identischem PDF und derselben Rechnungsnummer erneut ausgeführt werden. Eine
 Rechnung gilt erst nach erfolgreichem GitHub-Commit als ausgestellt.
 
+## Kanban-Board für Projekt-Tasks
+
+Das Kanban-Board ist im Kundenbereich unter `/billing` integriert.
+
+1. Kunden und danach das Projekt auswählen. Das Board zeigt **nur Tasks dieses Projekts**.
+2. Tasks per Drag & Drop zwischen **Ideen → Offen → In Arbeit → Abnahme → Erledigt**
+   verschieben und innerhalb einer Spalte sortieren.
+3. Auf Smartphones lässt sich eine Karte auch am Griff ziehen oder alternativ
+   mit Spaltenauswahl und den ↑/↓-Tasten bewegen.
+4. Über das Drei-Punkte-Menü einer Karte Titel, Beschreibung, Priorität,
+   Fälligkeit und optionalen Stundensatz bearbeiten. Über `+ Task` eine
+   neue Karte in der jeweiligen Spalte erstellen.
+
+Alle Änderungen werden in MySQL gespeichert. Bereits bestehende offene und
+erledigte Tasks bleiben erhalten. Es werden **keine neuen eigenständigen Tasks
+ohne Projekt** eingeführt. Bestehende Zeiteinträge und Rechnungspositionen
+bleiben mit demselben Task verknüpft.
+
+Wenn mehrere Browser gleichzeitig dasselbe Projekt-Board ändern, schützt
+`board_revision` vor unbeabsichtigtem Überschreiben: Ein veralteter
+Stand wird abgelehnt und neu geladen.
+
 ## GitHub-Archiv
 
 SiteOps verwendet **ausschließlich das bereits konfigurierte private
