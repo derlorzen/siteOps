@@ -63,3 +63,18 @@ test('service invoice PDF has valid catalog, page, cross-reference and totals', 
   assert.match(str, /%%EOF/);
   assert.ok(pdf.length > 500);
 });
+
+test('cancellation renders a separate negative service invoice', () => {
+  const pdf=renderInvoicePdf({
+    sender:{name:'Beispiel Webdesign',street:'Musterweg 1',postal_code:'24392',city:'Süderbrarup',tax_id:'12345'},
+    customer:{name:'Gartenbau Muster',street:'Gartenstraße 3',postal_code:'24376',city:'Kappeln',country:'DE'},
+    number:'RE-2026-00002',cancellation_of:'RE-2026-00001',reason:'Falscher Leistungsumfang',
+    issued_at:'2026-10-14T12:00:00Z',due_at:'2026-10-28',
+    service_from:'2026-10-01',service_to:'2026-10-14',
+    items:[{entry_date:'2026-10-04',description:'Storno: Layout entwerfen',duration_seconds:5400,hourly_cents:7500,amount_cents:-11250}],
+    vat_percent:19,net_cents:-11250,tax_cents:-2138,gross_cents:-13388
+  });
+  assert.match(pdf.toString('latin1'),/STORNORECHNUNG RE-2026-00002/);
+  assert.match(pdf.toString('latin1'),/-133,88 EUR/);
+  assert.match(pdf.toString('latin1'),/RE-2026-00001/);
+});
