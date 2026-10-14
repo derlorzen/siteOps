@@ -64,3 +64,10 @@ CREATE TABLE IF NOT EXISTS monitor_billing_tasks (
   CONSTRAINT fk_monitor_billing_incident FOREIGN KEY(incident_id) REFERENCES incidents(id),
   CONSTRAINT fk_monitor_billing_task FOREIGN KEY(task_id) REFERENCES project_tasks(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS billing_due_notifications (
+  reminder_day DATE PRIMARY KEY,
+  status VARCHAR(20) NOT NULL DEFAULT 'sending',
+  sent_at DATETIME NULL,
+  error_text VARCHAR(1500) NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
