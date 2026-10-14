@@ -41,7 +41,7 @@ function fakeBoard() {
     if (sql.includes('FROM project_tasks t LEFT JOIN')) return [tasks];
     if (sql.startsWith('SELECT id,board_revision FROM customer_projects'))
       return [[{ id: projectId, board_revision: revision }]];
-    if (sql.startsWith('SELECT id FROM project_tasks WHERE project_id')) return [tasks.map(({ id }) => ({ id }))];
+    if (sql.startsWith('SELECT id,status,sort_position FROM project_tasks WHERE project_id')) return [tasks.map(({ id }) => ({ id }))];
     if (sql.startsWith('UPDATE project_tasks SET')) {
       changes.push(params);
       const task = tasks.find(x => x.id === params[2]);
