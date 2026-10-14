@@ -248,6 +248,25 @@ function install() {
   byId('entryDate').value = date();
   byId('billingFrom').value = date().slice(0, 8) + '01';
   byId('billingTo').value = date();
+  byId('editCustomer').addEventListener('click', () => {
+    const c=data.customers.find(x=>x.id===selectedCustomer()); if(!c)return;
+    const f=byId('customerForm'); for(const k of ['name','contact_name','email','street','postal_code','city'])f.elements.namedItem(k).value=c[k]||'';
+    f.elements.namedItem('rate_eur').value=(Number(c.default_hourly_cents)/100).toFixed(2);
+    f.dataset.editId=c.id;message('Kunde bearbeiten und im Formular speichern.');
+  });
+  byId('editProject').addEventListener('click', () => {
+    const p=data.projects.find(x=>x.id===selectedProject());if(!p)return;
+    const f=byId('projectForm');f.elements.namedItem('name').value=p.name;
+    f.elements.namedItem('rate_eur').value=p.hourly_cents==null?'':(Number(p.hourly_cents)/100).toFixed(2);
+    f.dataset.editId=p.id;message('Projekt bearbeiten und speichern.');
+  });
+  byId('editTask').addEventListener('click', () => {
+    const t=data.tasks.find(x=>x.id===selectedTask());if(!t)return;
+    const f=byId('taskForm');f.elements.namedItem('name').value=t.name;
+    f.elements.namedItem('rate_eur').value=t.hourly_cents==null?'':(Number(t.hourly_cents)/100).toFixed(2);
+    f.dataset.editId=t.id;message('Aufgabe bearbeiten und speichern.');
+  });
+
   byId('billingCustomer').addEventListener('change', updateProject);
   byId('billingProject').addEventListener('change', updateTasks);
   byId('billingTask').addEventListener('change', draw);
@@ -259,7 +278,7 @@ function install() {
     request(async () => {
       const el = byId('customerForm'),
         x = form(el);
-      await write('/api/billing/customers', 'POST', {
+      await write(el.dataset.editId ? '/api/billing/customers/' + el.dataset.editId : '/api/billing/customers', el.dataset.editId ? 'PATCH' : 'POST', {
         name: x.name,
         contact_name: x.contact_name,
         email: x.email,
@@ -269,6 +288,7 @@ function install() {
         default_hourly_cents: rate(x.rate_eur)
       });
       el.reset();
+      delete el.dataset.editId;
     })
   );
   byId('projectForm').addEventListener(
@@ -277,12 +297,13 @@ function install() {
       const el = byId('projectForm'),
         x = form(el);
       if (!selectedCustomer()) throw Error('Zuerst Kunden wählen.');
-      await write('/api/billing/projects', 'POST', {
+      await write(el.dataset.editId ? '/api/billing/projects/' + el.dataset.editId : '/api/billing/projects', el.dataset.editId ? 'PATCH' : 'POST', {
         customer_id: selectedCustomer(),
         name: x.name,
         hourly_cents: rate(x.rate_eur)
       });
       el.reset();
+      delete el.dataset.editId;
     })
   );
   byId('taskForm').addEventListener(
@@ -291,12 +312,13 @@ function install() {
       const el = byId('taskForm'),
         x = form(el);
       if (!selectedProject()) throw Error('Zuerst Projekt wählen.');
-      await write('/api/billing/tasks', 'POST', {
+      await write(el.dataset.editId ? '/api/billing/tasks/' + el.dataset.editId : '/api/billing/tasks', el.dataset.editId ? 'PATCH' : 'POST', {
         project_id: selectedProject(),
         name: x.name,
         hourly_cents: rate(x.rate_eur)
       });
       el.reset();
+      delete el.dataset.editId;
     })
   );
   byId('timeForm').addEventListener(
@@ -403,6 +425,7 @@ if (root) {
   root.innerHTML = [
     '<header><div><h2>Kunde auswählen</h2><p id="billingMessage" role="status"></p></div></header>',
     '<section><div class="formgrid"><label>Kunde<select id="billingCustomer"></select></label><label>Projekt<select id="billingProject"></select></label><label>Aufgabe<select id="billingTask"></select></label></div>',
+    '<div class="buttonrow"><button id="editCustomer" type="button" class="ghost">Kunde bearbeiten</button><button id="editProject" type="button" class="ghost">Projekt bearbeiten</button><button id="editTask" type="button" class="ghost">Aufgabe bearbeiten</button></div>',
     '<div class="metrics"><span id="billingTimeTotal">–<em>Gesamtzeit</em></span><span id="billingUnbilled">–<em>Offener Netto-Wert</em></span><span id="billingInvoiceTotal">–<em>Rechnungsvolumen</em></span></div></section>',
     '<div class="twocol ops-grid"><section><h2>Neuer Kunde</h2><form id="customerForm" class="inner-form">',
     '<label>Name / Firma<input name="name" required></label><label>Kontakt<input name="contact_name"></label><label>E-Mail<input name="email" type="email"></label>',
