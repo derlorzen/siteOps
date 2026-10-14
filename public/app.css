@@ -242,3 +242,90 @@ section+section{margin-top:20px}
 .kb-finance-panel label{max-width:130px}
 .kb-finance-panel label input{margin-top:6px}
 @media(max-width:800px){.kb-workflow-split{grid-template-columns:1fr}.kb-detail-content{padding:15px}}
+
+/* Billing workspace: compact navigation and focused subpages */
+.billing-layout{display:grid;grid-template-columns:224px minmax(0,1fr);align-items:start;gap:24px}
+.billing-sidebar{position:sticky;top:80px;background:#fff;border:1px solid #e2e9ec;border-radius:15px;padding:16px 12px;box-shadow:0 6px 24px rgba(0,0,0,.025)}
+.billing-sidebar-heading{display:grid;gap:6px;padding:12px 12px 18px;border-bottom:1px solid #edf1f3}
+.billing-sidebar-heading strong{font-size:16px;line-height:1.3}
+.billing-side-nav{display:grid;gap:5px;margin-top:12px}
+.billing-nav-link{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:10px;font-size:13px;font-weight:750;color:#506775;white-space:nowrap}
+.billing-nav-link:hover{background:#f0f7f9;color:#146e88}
+.billing-nav-link.active{background:#e5f3f8;color:#126b86;box-shadow:inset 3px 0 #1489a8}
+.billing-nav-icon{display:grid;place-items:center;min-width:21px;font-size:20px;font-weight:650;color:inherit}
+.billing-sidebar-note{margin:22px 12px 4px;font-size:12px;line-height:1.6;color:#70838d}
+.billing-workspace-content{min-width:0}
+.billing-content-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin:3px 0 20px}
+.billing-content-heading h1{font-size:31px;line-height:1.14;margin:7px 0 10px}
+.billing-content-heading .lead{margin:0}
+#billingStatusSlot{font-size:13px;color:#137f9d;font-weight:700;text-align:right;max-width:280px}
+#billingContextSlot>section{margin-bottom:18px;padding:18px}
+#billingContextSlot .formgrid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+#billingContextSlot label{font-size:12px;color:#576f7e}
+#billingContextSlot select{margin-top:7px}
+#billingContextSlot #billingHierarchy{font-size:12px;color:#71818d;margin:10px 0 0}
+.billing-page[hidden]{display:none!important}
+.billing-page>section,.billing-page>div{margin-bottom:18px}
+.billing-page .twocol{margin-top:0}
+.billing-page #billingManagementSlot>.twocol{margin-top:0}
+.billing-overview-hero{display:flex;justify-content:space-between;align-items:center;gap:20px;border-color:#e0edf3;background:linear-gradient(120deg,#f0f7fa,#fff)}
+.billing-overview-hero h2{font-size:24px;margin:5px 0}
+.billing-overview-hero p{color:#5d7481;max-width:570px;line-height:1.5;margin:0}
+.billing-overview-hero .btn{white-space:nowrap}
+.billing-overview-metrics>.metrics{margin:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.billing-overview-metrics>.metrics span{background:#fff;border:1px solid #e2e9ec;border-radius:12px;padding:18px 16px;font-size:24px;display:block}
+.billing-overview-metrics>.metrics em{margin-top:6px;font-size:12px}
+.billing-overview-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.billing-count-card{display:grid;gap:7px;padding:15px;background:#fff;border:1px solid #e2e9ec;border-radius:12px;color:#172b3a}
+.billing-count-card strong{font-size:26px}
+.billing-count-card span{font-size:11px;color:#70838d;font-weight:700}
+.billing-count-card:hover,.billing-shortcut:hover{border-color:#78b4c7;background:#f9fcfd}
+.billing-panel-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;flex-wrap:wrap}
+.billing-panel-heading h2{margin:0}
+.billing-panel-heading p{margin:6px 0 0;color:#70838d;font-size:13px}
+.billing-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.billing-shortcut{display:grid;gap:8px;border:1px solid #e2e9ec;background:#fff;border-radius:12px;padding:16px;color:#172b3a}
+.billing-shortcut strong{display:flex;justify-content:space-between}
+.billing-shortcut span{font-size:12px;line-height:1.5;color:#70838d}
+.billing-directory-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.billing-directory-columns h3{font-size:14px;margin:15px 0 10px}
+.billing-directory{display:grid;gap:8px;max-height:330px;overflow:auto;align-content:start}
+.billing-directory-item{display:flex;flex-direction:column;align-items:flex-start;gap:5px;text-align:left;background:#f7fafb;color:#172b3a;border:1px solid #e2e9ec;width:100%;padding:12px}
+.billing-directory-item strong{font-size:13px}
+.billing-directory-item span{font-size:11px;color:#71808a}
+.billing-directory-item.chosen{border-color:#1489a8;background:#ebf7fa}
+.billing-empty-state{font-size:13px;color:#657d89}
+#billingEditActions{margin-bottom:14px}
+#billingEditActions .buttonrow{margin:0}
+.billing-page[data-billing-page="board"] .kb-workflow-panel .kb-workflow-split{grid-template-columns:1fr}
+.billing-page[data-billing-page="board"] .kb-workflow-panel .inner-form{padding:0}
+.billing-page[data-billing-page="settings"] section{margin-bottom:16px}
+.billing-page[data-billing-page="settings"] details{display:block}
+.billing-page[data-billing-page="settings"] summary{cursor:pointer}
+@media(max-width:1100px){
+  .billing-layout{grid-template-columns:185px minmax(0,1fr);gap:16px}
+  .billing-overview-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:850px){
+  .billing-layout{display:flex;flex-direction:column;gap:16px}
+  .billing-sidebar{width:100%;position:relative;top:auto;padding:8px 10px}
+  .billing-sidebar-heading{display:none}
+  .billing-sidebar-note{display:none}
+  .billing-side-nav{display:flex;overflow-x:auto;gap:5px;margin:0;scrollbar-width:thin;white-space:nowrap}
+  .billing-nav-link{flex:none;padding:10px 12px;font-size:12px}
+  .billing-nav-link.active{box-shadow:inset 0 -3px #1489a8}
+  .billing-workspace-content{width:100%}
+  .billing-content-heading h1{font-size:26px}
+  #billingContextSlot .formgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .billing-overview-metrics>.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:600px){
+  .billing-content-heading{display:block}
+  #billingStatusSlot{text-align:left;max-width:100%}
+  #billingContextSlot .formgrid{grid-template-columns:1fr}
+  .billing-overview-hero{align-items:flex-start;flex-direction:column}
+  .billing-overview-metrics>.metrics{grid-template-columns:1fr}
+  .billing-overview-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .billing-shortcuts,.billing-directory-columns{grid-template-columns:1fr}
+  .billing-page #billingManagementSlot>.twocol{grid-template-columns:1fr}
+}
