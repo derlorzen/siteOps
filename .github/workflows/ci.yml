@@ -38,6 +38,10 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm install --ignore-scripts
+      - name: Install CMS PHP runtime
+        run: sudo apt-get update && sudo apt-get install -y php-cli php-sqlite3 php-mbstring php-xml php-mysql
+      - name: CMS PHP syntax and release build
+        run: npm run cms:check && npm run cms:build
       - name: Syntax check
         run: npm run check
       - name: Lint
@@ -63,6 +67,7 @@ jobs:
           GITHUB_BACKUP_TOKEN: ci-token
         run: npm run check:runtime
       - name: Test
+        timeout-minutes: 3
         env:
           DB_HOST: 127.0.0.1
           DB_PORT: 3306

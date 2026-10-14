@@ -4,7 +4,7 @@ Self-hosted website operations for monitoring, backups, SEO/quality analysis, sa
 
 SiteOps is intended for people or agencies that manage multiple customer websites across classic SFTP/FTPS hosting and Git-based deployments. It provides one operational dashboard while keeping the live website or deployment repository as the source of truth.
 
-> **Current version:** 1.1.1  
+> **Current version:** 1.2.0
 > **License:** PolyForm Noncommercial 1.0.0  
 > **Model:** source-available, free for noncommercial use  
 > **Runtime:** Node.js 22+ / Fastify / MySQL  
@@ -88,6 +88,15 @@ SiteOps is intended for people or agencies that manage multiple customer website
   - [License history](#license-history)
 
 ## What SiteOps does
+
+### LorzCMS administration
+
+The **LorzCMS** page manages the shared CMS core, release publication, selected
+website updates with execution times, code rollback, and new website installation
+using stored FTP/FTPS/SFTP credentials. Existing HSG and NorDiaMed installations
+can be enrolled while preserving project-specific code and editorial data.
+See [LorzCMS operations](docs/LORZCMS.md) for setup, hosting requirements,
+rollback semantics and validation.
 
 ### Website operations
 

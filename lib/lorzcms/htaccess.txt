@@ -1,0 +1,5 @@
+Options -Indexes
+RewriteEngine On
+RewriteRule ^siteops\.php$ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization},L]
+RewriteRule ^api/cms/ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteRule ^ index.php [L,QSA]

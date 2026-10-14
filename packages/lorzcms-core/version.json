@@ -1,0 +1,7 @@
+{
+  "version": "3.3.0",
+  "schemaVersion": 1,
+  "compatibleSchemas": [1],
+  "minPhp": "8.3",
+  "notes": "Gemeinsamer CMS-Kern mit SiteOps-Installation, versionierter Aktivierung und Code-Rollback."
+}
