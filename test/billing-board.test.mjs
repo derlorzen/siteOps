@@ -27,9 +27,20 @@ function fakeBoard() {
   let rollbacks = 0;
   const query = async (sql, params = []) => {
     if (sql.includes('FROM customer_projects p JOIN customers c'))
-      return [[{ id: projectId, name: 'Homepage', customer_id: randomUUID(), customer_name: 'Gartenbau', board_revision: revision }]];
+      return [
+        [
+          {
+            id: projectId,
+            name: 'Homepage',
+            customer_id: randomUUID(),
+            customer_name: 'Gartenbau',
+            board_revision: revision
+          }
+        ]
+      ];
     if (sql.includes('FROM project_tasks t LEFT JOIN')) return [tasks];
-    if (sql.startsWith('SELECT id,board_revision FROM customer_projects')) return [[{ id: projectId, board_revision: revision }]];
+    if (sql.startsWith('SELECT id,board_revision FROM customer_projects'))
+      return [[{ id: projectId, board_revision: revision }]];
     if (sql.startsWith('SELECT id FROM project_tasks WHERE project_id')) return [tasks.map(({ id }) => ({ id }))];
     if (sql.startsWith('UPDATE project_tasks SET')) {
       changes.push(params);
@@ -49,12 +60,28 @@ function fakeBoard() {
     getConnection: async () => ({
       query,
       beginTransaction: async () => {},
-      commit: async () => { commits++; },
-      rollback: async () => { rollbacks++; },
+      commit: async () => {
+        commits++;
+      },
+      rollback: async () => {
+        rollbacks++;
+      },
       release: () => {}
     })
   };
-  return { board: createBillingBoard({ db }), changes, get revision() { return revision; }, get commits() { return commits; }, get rollbacks() { return rollbacks; } };
+  return {
+    board: createBillingBoard({ db }),
+    changes,
+    get revision() {
+      return revision;
+    },
+    get commits() {
+      return commits;
+    },
+    get rollbacks() {
+      return rollbacks;
+    }
+  };
 }
 
 test('all 5 Kanban statuses exist', () => {
