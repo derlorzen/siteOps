@@ -6837,10 +6837,13 @@ async function start() {
     // Durable, DB-locked maintenance rules; process overdue rules after startup as well.
     billingWorkflows.runRecurring().catch(error => console.error('recurring billing startup', error));
     billingWorkflows.notifyDue().catch(error => console.error('billing due reminder startup', error));
-    setInterval(() => {
-      billingWorkflows.runRecurring().catch(error => console.error('recurring billing worker', error));
-      billingWorkflows.notifyDue().catch(error => console.error('billing due reminder worker', error));
-    }, 15 * 60 * 1000).unref();
+    setInterval(
+      () => {
+        billingWorkflows.runRecurring().catch(error => console.error('recurring billing worker', error));
+        billingWorkflows.notifyDue().catch(error => console.error('billing due reminder worker', error));
+      },
+      15 * 60 * 1000
+    ).unref();
     startBackupWorker();
     startSyntheticWorker();
     cmsController.startWorker();
