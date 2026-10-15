@@ -6632,7 +6632,7 @@ async function start() {
   app.get('/', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/websites', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/lorzcms', async (_r, reply) =>
-    reply.type('text/html').send(page('LorzCMS', cmsDashboardBody({ ...(await cmsController.overview()), projects:(await billingController.listProjects?.() ?? []) }, esc)))
+    reply.type('text/html').send(page('LorzCMS', cmsDashboardBody({ ...(await cmsController.overview()), projects:await billingController.projects() }, esc)))
   );
   app.addHook('preHandler', async (req, reply) => {
     if (!req.url.startsWith('/api/lorzcms/') || req.method === 'GET') return;
