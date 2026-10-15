@@ -16,7 +16,7 @@ import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
 import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/crypto.mjs';
-import { createCmsController, cmsInstallSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
+import { createCmsController, cmsInstallRequestSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
 import { renderCmsWorkspace } from './lib/lorzcms-workspace.mjs';
 import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
@@ -24,6 +24,7 @@ import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
 import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
 import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
+import { websiteProvisionSchema, prepareEmptyHostingTarget } from './lib/site-provisioning.mjs';
 import { createProjectOverview, registerProjectOverviewRoutes } from './lib/project-overview.mjs';
 import { createWorkspaceActivity, registerWorkspaceActivityRoutes } from './lib/workspace-activity.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
@@ -413,6 +414,9 @@ class SftpAdapter {
     const x = await this.client.get(path);
     return Buffer.isBuffer(x) ? x : Buffer.from(x);
   }
+  async ensureDirectory(path) {
+    await this.client.mkdir(path, true);
+  }
   async write(path, content) {
     await this.client.mkdir(pathPosix.dirname(path), true);
     await this.client.put(content, path);
@@ -462,6 +466,9 @@ class FtpAdapter {
     });
     await this.client.downloadTo(w, path);
     return Buffer.concat(chunks);
+  }
+  async ensureDirectory(path) {
+    await this.client.ensureDir(path);
   }
   async write(path, content) {
     const dir = pathPosix.dirname(path);
@@ -831,6 +838,74 @@ async function createSite(x) {
   });
   return getSite(id);
 }
+async function provisionWebsite(input) {
+  const x = websiteProvisionSchema.parse(input);
+  const hosting = x.profileId
+    ? await connectionProfiles.resolve(x.profileId, x.remoteRoot)
+    : await (async () => {
+        const source = await getSite(x.existingSiteId);
+        if (source.deployment_mode !== 'webspace')
+          throw new Error('Die gewählte Website besitzt keinen FTP-/SFTP-Zugang.');
+        return {
+          protocol: source.protocol,
+          host: source.host,
+          port: source.port,
+          username: source.username,
+          ...decrypt(source.encrypted_credentials)
+        };
+      })();
+  const existing = await listSites();
+  if (existing.some(s => s.slug === x.slug || s.domain === x.domain))
+    throw new Error('Kurzname oder Domain wird bereits in SiteOps verwendet.');
+  if (
+    existing.some(
+      s =>
+        s.deployment_mode === 'webspace' &&
+        s.host === hosting.host &&
+        s.username === hosting.username &&
+        s.remote_root === x.remoteRoot
+    )
+  )
+    throw new Error('Dieses Serververzeichnis ist bereits einer SiteOps-Website zugeordnet.');
+  if (x.projectId) {
+    const [projects] = await db.query('SELECT id FROM customer_projects WHERE id=? LIMIT 1', [x.projectId]);
+    if (!projects.length) throw new Error('Kundenprojekt nicht gefunden.');
+  }
+  const remote = await connectSite({
+    deployment_mode: 'webspace',
+    ...hosting,
+    remote_root: x.remoteRoot,
+    encrypted_credentials: encrypt({
+      password: hosting.password,
+      privateKey: hosting.privateKey,
+      passphrase: hosting.passphrase
+    })
+  });
+  try {
+    await prepareEmptyHostingTarget(remote, x.remoteRoot);
+  } finally {
+    await remote.close();
+  }
+  const site = await createSite({
+    ...x,
+    ...hosting,
+    deploymentMode: 'webspace',
+    monitorUrl: 'https://' + x.domain,
+    monitorEnabled: false,
+    backupEnabled: false
+  });
+  if (x.projectId) await siteProjectService.link(site.id, { project_id: x.projectId });
+  return {
+    id: site.id,
+    slug: site.slug,
+    domain: site.domain,
+    remoteRoot: x.remoteRoot,
+    projectId: x.projectId || null,
+    state: 'empty_directory_ready',
+    nextStep: 'Upload site files via change_preview, then change_apply. Enable monitoring after deployment.'
+  };
+}
+
 async function testSiteConnection(x) {
   x = await resolveSiteProfile(x);
   const gitMode = x.deploymentMode === 'hostinger_git',
@@ -3904,6 +3979,23 @@ function mcpServer() {
       )
   );
   s.registerTool(
+    'server_profiles_list',
+    {
+      description: 'List reusable FTP/FTPS/SFTP server profiles without credentials. Use the returned profile ID for site_provision or cms_install.',
+      inputSchema: z.object({})
+    },
+    async () => toolText(await connectionProfiles.list())
+  );
+  s.registerTool(
+    'site_provision',
+    {
+      description:
+        'Create a SiteOps website with an existing FTP/SFTP connection, recursively create its dedicated empty server directory, and register the website. Never overwrites existing content. Use change_preview/change_apply to upload files afterwards; hosting domain document root must be configured separately.',
+      inputSchema: websiteProvisionSchema
+    },
+    async input => toolText(await provisionWebsite(input))
+  );
+  s.registerTool(
     'site_get',
     {
       description:
@@ -4375,7 +4467,7 @@ function mcpServer() {
     {
       description:
         'Create a managed website and queue CMS installation into an empty hosting directory. Requires the domain document root to be its public subdirectory.',
-      inputSchema: cmsInstallSchema
+      inputSchema: cmsInstallRequestSchema
     },
     async input => toolText(await cmsController.create(input))
   );
