@@ -65,6 +65,46 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
       board.saveBoard(projectId, { revision: before.revision, columns }),
       error => error.statusCode === 409
     );
+    // Execute the new search, project 360 and activity queries against real MySQL.
+    // Unit tests with mocks cannot catch incorrect table/column names.
+    const { createWorkspaceSearch } = await import('../lib/workspace-search.mjs');
+    const { createProjectOverview } = await import('../lib/project-overview.mjs');
+    const { createWorkspaceActivity } = await import('../lib/workspace-activity.mjs');
+    const search = await createWorkspaceSearch({ db }).search('Regressionsprojekt');
+    assert.ok(search.results.some(result => result.type === 'project' && result.id === projectId));
+    const overview = await createProjectOverview(db).get(projectId);
+    assert.equal(overview.project.id, projectId);
+    assert.equal(Number(overview.task_counts.total), 1);
+    assert.deepEqual(overview.sites, []);
+    const activity = await createWorkspaceActivity(db).list({ projectId, limit: 20 });
+    assert.ok(activity.entries.some(entry => entry.kind === 'task'));
+
+    // A stored server profile can be created, listed, resolved and removed
+    // without exposing credentials in the public response.
+    const { createConnectionProfiles } = await import('../lib/connection-profiles.mjs');
+    const profiles = createConnectionProfiles({
+      db,
+      encrypt: input => JSON.stringify(input),
+      decrypt: JSON.parse
+    });
+    const profile = await profiles.create({
+      name: 'CI Server ' + projectId,
+      protocol: 'sftp',
+      host: 'ci.example.invalid',
+      port: 22,
+      username: 'test',
+      password: 'test-only-secret'
+    });
+    try {
+      const listed = await profiles.list();
+      assert.ok(listed.some(item => item.id === profile.id));
+      assert.equal(listed.find(item => item.id === profile.id).password, undefined);
+      const resolved = await profiles.resolve(profile.id, '/test-website');
+      assert.equal(resolved.password, 'test-only-secret');
+      assert.equal(resolved.remoteRoot, '/test-website');
+    } finally {
+      await profiles.remove(profile.id);
+    }
   } finally {
     await db.query('DELETE FROM project_tasks WHERE id=?', [taskId]);
     await db.query('DELETE FROM customer_projects WHERE id=?', [projectId]);
