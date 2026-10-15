@@ -1,3 +1,58 @@
+## Globale Suche, Projekt-360°, Aktivitäten und Serverprofile
+
+### 1. Globale Suche
+**Strg+K** bzw. **Cmd+K** (Mobil: Suchsymbol oben) durchsucht SiteOps nach
+Kunden, Projekten, Tasks, Websites und Rechnungen. Die Treffer verlinken direkt
+auf ihre jeweilige Ansicht; bei Tasks öffnet sich nach dem Projektaufruf auch
+das Task-Detailfenster. Der SQL-Suchterm wird sicher als gebundener Parameter
+mit escaped LIKE-Wildcards verarbeitet. Pro Bereich sind Trefferzahlen begrenzt.
+
+### 2. Projekt-360°
+Jedes Kundenprojekt unter `/billing/projects/:id` zeigt nun zusätzlich:
+
+- Website-Zustand nach der letzten Monitoringprüfung und aktiven Monitoring-Fehlern.
+- Task-Anzahl und überfällige Tasks.
+- Erfasste und noch nicht abgerechnete Arbeitsstunden.
+- Wert der offenen abrechenbaren Leistungen auf Basis der tatsächlichen
+  Task-/Zeiteintragssätze.
+- Projektbezogene Rechnungen. Deren **Projektanteil** wird aus den zugehörigen
+  Rechnungspositionen berechnet, nicht aus der vollen Kundenrechnung.
+- Chronologische Projektaktivitäten.
+
+Der vorhandene Kanban-/Listen-Workflow und die Zeitbuchung bleiben erhalten.
+
+### 4. Aktivitätsprotokoll
+Unter `/billing/activity` steht ein filterbarer Verlauf für Aktivitäten aus
+Tasks und Kommentaren, Zeitbuchungen, Rechnungen, Monitoring-Vorfällen,
+Website-Änderungen/Deployments und Backups zur Verfügung. Für einzelne Projekte
+werden die letzten relevanten Ereignisse auch direkt unter dem Kanban angezeigt.
+Bestehende Ereignistabellen bleiben die Datenquelle; es werden keine Ereignisse
+doppelt angelegt. Das Protokoll ist ein Betriebsverlauf, kein unveränderliches
+Compliance-Archiv.
+
+### Wiederverwendbare Serververbindungen
+Unter `/setup` kann eine bereits eingerichtete SFTP-, FTPS- oder FTP-Verbindung
+als **Serverprofil** gespeichert und beim Hinzufügen weiterer Websites ausgewählt
+werden. Alternativ kann man die Zugangsdaten einer schon bestehenden Website
+serverseitig in ein Profil übernehmen.
+
+- Profile enthalten Protokoll, Host, Port, Benutzer und verschlüsselte
+  Zugangsdaten; Passwörter oder SSH-Schlüssel verlassen den Server nicht über
+  die Listen-API.
+- Jede Website hat ihren **eigenen Webroot** (z. B. `/kunden/website-a`
+  und `/kunden/website-b`). Mehrere Websites können dieselbe
+  Serververbindung verwenden.
+- Beim Anlegen werden die gespeicherten Zugangsdaten sicher in die Website-
+  Verbindung übernommen. Die bestehende Website-Verbindung funktioniert
+  anschließend **unabhängig** vom Profil: Das Entfernen eines Profils löscht
+  keine Website und ändert keine bereits erstellten Verbindungen.
+- Profile können über `GET /api/server-profiles`, `POST /api/server-profiles`
+  und `POST /api/server-profiles/from-site` angelegt bzw. aus bestehenden
+  Websites erstellt werden. `DELETE /api/server-profiles/:id` entfernt das
+  Profil ohne Auswirkungen auf bestehende Websites.
+- SFTP wird bevorzugt; FTP ohne Verschlüsselung ist nur als Altkompatibilität
+  vorgesehen.
+
 ## Akzentfarbe und Design anpassen
 
 Im gemeinsamen SiteOps-Workspace – auch in der Kundenverwaltung – befindet sich

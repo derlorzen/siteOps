@@ -168,3 +168,22 @@ body.ops-mode .ops-site-project button{background:var(--siteops-accent-soft);col
  .ops-site-project button{width:100%}
  .ops-toast{top:auto;bottom:100px;left:10px;right:10px;max-width:none}
 }
+
+/* Saved FTP/SFTP server credentials reuse in the website setup wizard. */
+body.ops-mode .server-profile-panel{padding:18px;background:#f7f8ff;border:1px solid #e3e5f1;
+ border-radius:12px;margin:14px 0 20px;display:grid;gap:10px}
+body.ops-mode .server-profile-panel>label{display:grid;gap:8px;font-size:13px;font-weight:800;color:#404b66}
+body.ops-mode .server-profile-panel small{display:block;color:#77849a;font-size:11px;line-height:1.5;margin-top:5px}
+body.ops-mode .server-profile-panel select{width:100%;background:#fff}
+body.ops-mode .server-profile-panel .lead{font-size:12px;margin:2px 0 6px;min-height:20px}
+body.ops-mode .server-profile-save{display:flex;align-items:end;gap:9px;flex-wrap:wrap}
+body.ops-mode .server-profile-save label{flex:1;min-width:190px;display:grid;gap:6px}
+body.ops-mode .server-profile-save button{min-height:43px;flex:1}
+body.ops-mode .server-profile-panel details{padding:10px 0 0;border-top:1px solid #e3e5ee}
+body.ops-mode .server-profile-panel details summary{cursor:pointer;font-size:12px;font-weight:800;color:var(--siteops-accent-strong)}
+body.ops-mode .server-profile-panel details .buttonrow{display:flex;gap:8px;align-items:center;margin-top:13px;flex-wrap:wrap}
+body.ops-mode .server-profile-panel details .buttonrow select{flex:1;min-width:165px}
+@media(max-width:600px){
+ body.ops-mode .server-profile-save{display:grid}
+ body.ops-mode .server-profile-save label,body.ops-mode .server-profile-save button{width:100%}
+}

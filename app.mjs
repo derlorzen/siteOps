@@ -22,6 +22,10 @@ import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
 import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-projects.mjs';
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
+import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
+import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
+import { createProjectOverview, registerProjectOverviewRoutes } from './lib/project-overview.mjs';
+import { createWorkspaceActivity, registerWorkspaceActivityRoutes } from './lib/workspace-activity.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 
 function env(name, fallback = undefined) {
@@ -181,6 +185,7 @@ async function archiveIssuedInvoice(snapshot, pdf) {
 }
 const billingController = createBillingController({ db, archive: archiveIssuedInvoice });
 const siteProjectService = createSiteProjectService(db);
+const connectionProfiles = createConnectionProfiles({ db, encrypt, decrypt });
 const billingWorkflows = createBillingWorkflows({
   db,
   billing: billingController,
@@ -752,7 +757,13 @@ async function updateSiteConnection(idOrSlug, x) {
   return getSite(site.id);
 }
 
+async function resolveSiteProfile(x) {
+  if (x.deploymentMode !== 'webspace' || !x.profileId) return x;
+  const server = await connectionProfiles.resolve(x.profileId, x.remoteRoot);
+  return { ...x, ...server, remoteRoot: x.remoteRoot || '/' };
+}
 async function createSite(x) {
+  x = await resolveSiteProfile(x);
   const id = crypto.randomUUID(),
     gitMode = x.deploymentMode === 'hostinger_git',
     sourceRoot = String(x.sourceRoot || '').replace(/^\/+|\/+$/g, '');
@@ -797,6 +808,7 @@ async function createSite(x) {
   return getSite(id);
 }
 async function testSiteConnection(x) {
+  x = await resolveSiteProfile(x);
   const gitMode = x.deploymentMode === 'hostinger_git',
     sourceRoot = String(x.sourceRoot || '').replace(/^\/+|\/+$/g, '');
   const site = gitMode
@@ -5016,7 +5028,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"> </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"> </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -5062,7 +5074,7 @@ function siteOpsTableView(cfg){
   controls.forEach(el=>el.addEventListener(el.tagName==='INPUT'?'input':'change',()=>{page=1;render();}));
   render();
 }
-</script>${title === 'Kunden & Abrechnung' ? '' : '<script defer src="/assets/ops-workspace.js"></script>'}<script defer src="/assets/siteops-theme.js"></script></body></html>`;
+</script>${title === 'Kunden & Abrechnung' ? '' : '<script defer src="/assets/ops-workspace.js"></script>'}<script defer src="/assets/siteops-theme.js"></script><script defer src="/assets/workspace-search.js"></script></body></html>`;
 }
 
 function mcpInfoPage() {
@@ -5452,6 +5464,20 @@ function setupPage() {
       <section class="form-card" id="webspaceSection">
         <div class="sectionhead"><div><span class="eyebrow">2 · Webspace</span><h2>Direkter Dateizugriff</h2></div></div>
         <div class="notice"><strong>SFTP ist die erste Wahl.</strong><span>Nutze FTPS oder unverschlüsseltes FTP nur, wenn der Hoster kein SFTP anbietet. Zugangsdaten werden verschlüsselt gespeichert.</span></div>
+        <div class="server-profile-panel">
+          <label>Gespeicherte Serververbindung <small>Bei mehreren Websites auf demselben Server: Zugangsdaten übernehmen, nur den Website-Ordner ändern.</small>
+            <select name="profileId" id="serverProfileSelect"><option value="">Neue Verbindung eingeben</option></select></label>
+          <p id="serverProfileHint" class="lead">Noch kein Profil ausgewählt. Du kannst bestehende Zugangsdaten einmalig als Serverprofil speichern.</p>
+          <div class="server-profile-save">
+            <label>Profilname <input id="serverProfileName" placeholder="z. B. Hostinger Hauptserver" maxlength="120"></label>
+            <button type="button" class="ghost" id="saveServerProfile">Aktuelle Zugangsdaten als Profil speichern</button>
+          </div>
+          <details><summary>Zugang einer bereits eingerichteten Website als Serverprofil übernehmen</summary>
+            <div class="buttonrow"><select id="serverProfileSource"><option value="">Website wählen …</option></select>
+              <button type="button" class="ghost" id="importServerProfile">Übernehmen</button></div>
+            <small>Passwort oder SSH-Schlüssel bleiben verschlüsselt auf dem Server; sie werden nicht an deinen Browser übertragen.</small>
+          </details>
+        </div>
         <div class="formgrid">
           <label>Verbindungsart <small>SFTP verschlüsselt die komplette Verbindung.</small><select name="protocol"><option value="sftp" selected>SFTP – empfohlen</option><option value="ftps">FTPS</option><option value="ftp">FTP – unverschlüsselt</option></select></label>
           <label>Port <small>SFTP meist 22, FTP/FTPS meist 21.</small><input name="port" type="number" value="22"></label>
@@ -5514,6 +5540,68 @@ function setupPage() {
     const connectionStatusEl=document.getElementById('connectionStatus');
     const connectionFilesEl=document.getElementById('connectionFiles');
     const saveSiteStatusEl=document.getElementById('saveSiteStatus');
+    const profileSelect=document.getElementById('serverProfileSelect');
+    const profileName=document.getElementById('serverProfileName');
+    const profileHint=document.getElementById('serverProfileHint');
+    const profileSource=document.getElementById('serverProfileSource');
+    let serverProfiles=[];
+    async function loadServerProfiles(selected){
+      const r=await fetch('/api/server-profiles');if(!r.ok)throw new Error('Serverprofile konnten nicht geladen werden');
+      serverProfiles=await r.json();
+      profileSelect.replaceChildren(new Option('Neue Verbindung eingeben',''));
+      for(const p of serverProfiles){
+        profileSelect.add(new Option(p.name+' · '+p.protocol.toUpperCase()+' · '+p.host,p.id));
+      }
+      if(selected)profileSelect.value=selected;
+    }
+    function selectServerProfile(){
+      const chosen=serverProfiles.find(p=>p.id===profileSelect.value);
+      if(chosen){
+        protocol.value=chosen.protocol;
+        port.value=chosen.port;
+        field('host').value=chosen.host;
+        field('username').value=chosen.username;
+        field('password').value='';
+        profileHint.textContent='Gespeicherte Zugangsdaten werden serverseitig verwendet. Passe nur den Webroot unten für diese Website an.';
+      }else{
+        profileHint.textContent='Neue Zugangsdaten eingeben und bei Bedarf als Profil speichern.';
+      }
+      for(const name of ['protocol','port','host','username','password']){
+        field(name).readOnly=!!chosen;
+      }
+    }
+    profileSelect.addEventListener('change',selectServerProfile);
+    async function setupExistingSites(){
+      try{
+        const r=await fetch('/api/sites');if(!r.ok)return;
+        const sites=await r.json();
+        for(const site of sites.filter(s=>s.deployment_mode==='webspace'))
+          profileSource.add(new Option(site.name+' · '+site.host,site.id));
+      }catch(error){profileHint.textContent=String(error.message||error);}
+    }
+    async function saveProfile(fromExisting){
+      const name=profileName.value.trim();
+      if(!name){profileHint.textContent='Bitte zuerst einen Profilnamen eingeben.';profileName.focus();return;}
+      const endpoint=fromExisting?'/api/server-profiles/from-site':'/api/server-profiles';
+      const body=fromExisting?{name,site_id:profileSource.value}:{
+        name,protocol:protocol.value,host:field('host').value,port:Number(port.value),
+        username:field('username').value,password:field('password').value
+      };
+      if(fromExisting&&!body.site_id){profileHint.textContent='Bitte eine bestehende Website auswählen.';return;}
+      const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      const result=await r.json();if(!r.ok)throw new Error(result.message||result.error||'Profil konnte nicht gespeichert werden');
+      await loadServerProfiles(result.id);
+      selectServerProfile();
+      profileHint.textContent='Serverprofil gespeichert. Das Passwort bleibt verschlüsselt auf dem Server.';
+    }
+    document.getElementById('saveServerProfile').addEventListener('click',()=>{
+      saveProfile(false).catch(e=>profileHint.textContent='Fehler: '+e.message);
+    });
+    document.getElementById('importServerProfile').addEventListener('click',()=>{
+      saveProfile(true).catch(e=>profileHint.textContent='Fehler: '+e.message);
+    });
+    loadServerProfiles().catch(e=>profileHint.textContent='Fehler: '+e.message);
+    setupExistingSites();
 
     let slugTouched=false;
     slug.addEventListener('input',()=>slugTouched=true);
@@ -5567,6 +5655,7 @@ function setupPage() {
         siteType:fd.get('siteType'),
         deploymentMode:fd.get('deploymentMode'),
         protocol:fd.get('protocol'),
+        profileId:fd.get('profileId')||undefined,
         host:String(fd.get('host')||'').trim(),
         port:Number(fd.get('port')),
         username:String(fd.get('username')||'').trim(),
@@ -6416,6 +6505,18 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/ops-workspace.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/workspace-search.css', async (_r, reply) =>
+    reply
+      .type('text/css')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/workspace-search.css', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/workspace-search.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/workspace-search.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/siteops-theme.css', async (_r, reply) =>
     reply
       .type('text/css')
@@ -6686,6 +6787,7 @@ async function start() {
     privateKey: z.string().optional(),
     passphrase: z.string().optional(),
     remoteRoot: z.string().min(1),
+    profileId: z.uuid().optional(),
     sourceRepository: z.string().optional(),
     sourceBranch: z.string().optional(),
     sourceRoot: z.string().optional(),
@@ -6712,8 +6814,12 @@ async function start() {
     return reply.code(201).send({ id: site.id, slug: site.slug });
   });
   app.post('/api/site-connection-test', async req => testSiteConnection(siteCreateSchema.parse(req.body)));
+  registerConnectionProfileRoutes(app, connectionProfiles, () => new URL(cfg.publicBaseUrl).origin);
   const themeService = createThemeService({ q, storeSetting });
   registerThemeRoutes(app, themeService, () => new URL(cfg.publicBaseUrl).origin);
+  registerWorkspaceSearchRoutes(app, createWorkspaceSearch({ db }));
+  registerProjectOverviewRoutes(app, createProjectOverview(db));
+  registerWorkspaceActivityRoutes(app, createWorkspaceActivity(db));
   app.get('/api/settings', async () => publicSettings());
   app.get('/api/oauth/connections', async () => oauthConnections());
   app.get('/api/audit-log', async req => auditLogList(req.query?.limit));
