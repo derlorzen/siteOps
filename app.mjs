@@ -6701,10 +6701,7 @@ async function start() {
     });
   });
   app.get('/api/build-info', async (_r, reply) =>
-    reply
-      .header('Cache-Control', 'no-store, max-age=0')
-      .header('Pragma', 'no-cache')
-      .send(buildInfo)
+    reply.header('Cache-Control', 'no-store, max-age=0').header('Pragma', 'no-cache').send(buildInfo)
   );
   app.get('/assets/build-footer.css', async (_r, reply) =>
     reply
