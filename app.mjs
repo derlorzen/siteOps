@@ -22,6 +22,7 @@ import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
 import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-projects.mjs';
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
+import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 
 function env(name, fallback = undefined) {
@@ -5016,7 +5017,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"> </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"> </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -5062,7 +5063,7 @@ function siteOpsTableView(cfg){
   controls.forEach(el=>el.addEventListener(el.tagName==='INPUT'?'input':'change',()=>{page=1;render();}));
   render();
 }
-</script>${title === 'Kunden & Abrechnung' ? '' : '<script defer src="/assets/ops-workspace.js"></script>'}<script defer src="/assets/siteops-theme.js"></script></body></html>`;
+</script>${title === 'Kunden & Abrechnung' ? '' : '<script defer src="/assets/ops-workspace.js"></script>'}<script defer src="/assets/siteops-theme.js"></script><script defer src="/assets/workspace-search.js"></script></body></html>`;
 }
 
 function mcpInfoPage() {
@@ -6416,6 +6417,14 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/ops-workspace.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/workspace-search.css', async (_r, reply) =>
+    reply.type('text/css').header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/workspace-search.css', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/workspace-search.js', async (_r, reply) =>
+    reply.type('text/javascript').header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/workspace-search.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/siteops-theme.css', async (_r, reply) =>
     reply
       .type('text/css')
@@ -6714,6 +6723,7 @@ async function start() {
   app.post('/api/site-connection-test', async req => testSiteConnection(siteCreateSchema.parse(req.body)));
   const themeService = createThemeService({ q, storeSetting });
   registerThemeRoutes(app, themeService, () => new URL(cfg.publicBaseUrl).origin);
+  registerWorkspaceSearchRoutes(app, createWorkspaceSearch({ db }));
   app.get('/api/settings', async () => publicSettings());
   app.get('/api/oauth/connections', async () => oauthConnections());
   app.get('/api/audit-log', async req => auditLogList(req.query?.limit));
