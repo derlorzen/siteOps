@@ -1,3 +1,26 @@
+## Akzentfarbe und Design anpassen
+
+Im gemeinsamen SiteOps-Workspace – auch in der Kundenverwaltung – befindet sich
+oben die Schaltfläche **Design**. Damit lässt sich die globale Akzentfarbe
+selbstständig ändern:
+
+- Acht Farbpaletten: Ozean, Petrol, Grün, Orange, Pink, Violett, Graphit und Blau.
+- Individuelle Farbe per Farbwähler oder als sechsstelliger HEX-Wert
+  (`#RRGGBB`).
+- Änderungen werden **sofort als Vorschau** angewendet. **Abbrechen** verwirft
+  ungespeicherte Änderungen. **Standard** stellt Violett als Vorschau wieder her
+  (erst **Speichern** macht es dauerhaft).
+- Die Einstellung gilt für CRM, Kanban, Websites, Monitoring, Backups, SEO,
+  LorzCMS und operative Einstellungen.
+- Der Wert wird unter `app_settings.ui_accent_color` in MySQL gespeichert und
+  bei jedem Seitenaufruf eingelesen. Browser-Storage dient nur als schneller
+  Zwischenspeicher; die serverseitige Farbe gilt geräteübergreifend.
+- `GET /api/ui-theme` und `PUT /api/ui-theme` ermöglichen das Abrufen und
+  Aktualisieren; die API akzeptiert nur einen validen sechsstelligen HEX-Wert.
+  Schreibzugriffe prüfen JSON-Content-Type, Origin und `Sec-Fetch-Site`.
+- Normale Statusfarben (z. B. Fehlerrot, Erfolgsgrün) bleiben unabhängig von
+  der Akzentfarbe, damit Alarme eindeutig erkennbar bleiben.
+
 ## Websites und Kundenprojekte (neue SiteOps-Oberfläche)
 
 Alle bisherigen Website-Bereiche verwenden eine gemeinsame, mobiloptimierte
