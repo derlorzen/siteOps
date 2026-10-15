@@ -4457,38 +4457,50 @@ function mcpServer() {
   );
   s.registerTool(
     'allinkl_accounts',
-    { description: 'List configured ALL-INKL KAS accounts without revealing passwords.',
-      inputSchema: z.object({}) },
+    { description: 'List configured ALL-INKL KAS accounts without revealing passwords.', inputSchema: z.object({}) },
     async () => toolText(await allInklService.list())
   );
   s.registerTool(
     'allinkl_domains',
-    { description: 'List domains managed in the selected ALL-INKL account.',
-      inputSchema: z.object({accountId:z.uuid()}) },
-    async ({accountId}) => toolText(await allInklService.domains(accountId))
+    {
+      description: 'List domains managed in the selected ALL-INKL account.',
+      inputSchema: z.object({ accountId: z.uuid() })
+    },
+    async ({ accountId }) => toolText(await allInklService.domains(accountId))
   );
   s.registerTool(
     'allinkl_dns_list',
-    { description: 'Read DNS records for an ALL-INKL zone. Never changes records.',
-      inputSchema: z.object({accountId:z.uuid(),zone:z.string()}) },
-    async ({accountId,zone}) => toolText(await allInklService.records(accountId,zone))
+    {
+      description: 'Read DNS records for an ALL-INKL zone. Never changes records.',
+      inputSchema: z.object({ accountId: z.uuid(), zone: z.string() })
+    },
+    async ({ accountId, zone }) => toolText(await allInklService.records(accountId, zone))
   );
   s.registerTool(
     'allinkl_dns_add',
-    { description: 'Create a new A/AAAA/CNAME/TXT DNS record; rejects conflicting CNAMEs. Does not modify mail or NS settings.',
-      inputSchema: allinklDnsRecordSchema.extend({accountId:z.uuid()}) },
-    async ({accountId, ...record}) => toolText(await allInklService.addRecord(accountId,record))
+    {
+      description:
+        'Create a new A/AAAA/CNAME/TXT DNS record; rejects conflicting CNAMEs. Does not modify mail or NS settings.',
+      inputSchema: allinklDnsRecordSchema.extend({ accountId: z.uuid() })
+    },
+    async ({ accountId, ...record }) => toolText(await allInklService.addRecord(accountId, record))
   );
   s.registerTool(
     'allinkl_dns_update',
-    { description: 'Explicitly modify an existing A/AAAA/CNAME/TXT record by ID; mail and NS records are protected.',
-      inputSchema: allinklDnsRecordSchema.extend({accountId:z.uuid(),recordId:z.union([z.string(),z.number()])}) },
-    async ({accountId, recordId, ...record}) => toolText(await allInklService.updateRecord(accountId,recordId,record))
+    {
+      description: 'Explicitly modify an existing A/AAAA/CNAME/TXT record by ID; mail and NS records are protected.',
+      inputSchema: allinklDnsRecordSchema.extend({ accountId: z.uuid(), recordId: z.union([z.string(), z.number()]) })
+    },
+    async ({ accountId, recordId, ...record }) =>
+      toolText(await allInklService.updateRecord(accountId, recordId, record))
   );
   s.registerTool(
     'allinkl_provision',
-    { description: 'Prepare an empty LorzCMS project directory and its public/ document root and create an ALL-INKL subdomain. Never overwrites existing files or subdomain mappings. HTTPS certificate may still require activation.',
-      inputSchema: allinklProvisionSchema },
+    {
+      description:
+        'Prepare an empty LorzCMS project directory and its public/ document root and create an ALL-INKL subdomain. Never overwrites existing files or subdomain mappings. HTTPS certificate may still require activation.',
+      inputSchema: allinklProvisionSchema
+    },
     async input => toolText(await allInklService.provision(input))
   );
   s.registerTool(
@@ -4533,14 +4545,19 @@ function mcpServer() {
         adminPassword: z.string().min(12),
         projectId: z.uuid().optional(),
         database: z.discriminatedUnion('engine', [
-          z.object({engine:z.literal('sqlite')}),
-          z.object({engine:z.literal('mysql'), host:z.string(), name:z.string(),
-            user:z.string(), password:z.string()})
+          z.object({ engine: z.literal('sqlite') }),
+          z.object({
+            engine: z.literal('mysql'),
+            host: z.string(),
+            name: z.string(),
+            user: z.string(),
+            password: z.string()
+          })
         ]),
-        runAt: z.iso.datetime({offset:true}).optional()
+        runAt: z.iso.datetime({ offset: true }).optional()
       })
     },
-    async input => toolText(await cmsController.create({...input,publicRootReady:true}))
+    async input => toolText(await cmsController.create({ ...input, publicRootReady: true }))
   );
   s.registerTool(
     'cms_attach',
@@ -6687,7 +6704,9 @@ async function start() {
       .send(await readFile(new URL('./public/ops-workspace.css', import.meta.url), 'utf8'))
   );
   app.get('/assets/allinkl.js', async (_r, reply) =>
-    reply.type('text/javascript').header('Cache-Control', 'no-store')
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/allinkl.js', import.meta.url), 'utf8'))
   );
   app.get('/assets/ops-workspace.js', async (_r, reply) =>
@@ -6825,7 +6844,12 @@ async function start() {
     ]);
     return reply
       .type('text/html')
-      .send(page('LorzCMS', renderCmsWorkspace({ ...overview, projects, siteLinks, hostingAccounts }, esc, view, installationId)));
+      .send(
+        page(
+          'LorzCMS',
+          renderCmsWorkspace({ ...overview, projects, siteLinks, hostingAccounts }, esc, view, installationId)
+        )
+      );
   }
   app.get('/lorzcms', async (_r, reply) => cmsWorkspacePage(reply));
   app.get('/lorzcms/installations/:id', async (req, reply) =>
@@ -6874,30 +6898,35 @@ async function start() {
   registerSiteProjectRoutes(app, siteProjectService);
   app.addHook('preHandler', async (req, reply) => {
     if (!req.url.startsWith('/api/hosting/allinkl/') || ['GET', 'HEAD'].includes(req.method)) return;
-    if (!String(req.headers['content-type'] || '').startsWith('application/json') &&
-        req.method !== 'DELETE')
-      return reply.code(415).send({error:'JSON erforderlich.'});
+    if (!String(req.headers['content-type'] || '').startsWith('application/json') && req.method !== 'DELETE')
+      return reply.code(415).send({ error: 'JSON erforderlich.' });
     if (req.headers.origin && req.headers.origin !== new URL(cfg.publicBaseUrl).origin)
-      return reply.code(403).send({error:'Fremde Herkunft abgelehnt.'});
+      return reply.code(403).send({ error: 'Fremde Herkunft abgelehnt.' });
   });
   app.get('/hosting', async (_req, reply) => {
     const [accounts, profiles] = await Promise.all([allInklService.list(), connectionProfiles.list()]);
-    return reply.type('text/html').send(page('Hosting & DNS',
-      renderAllInklWorkspace(accounts, profiles, esc) + '<script defer src="/assets/allinkl.js"></script>'));
+    return reply
+      .type('text/html')
+      .send(
+        page(
+          'Hosting & DNS',
+          renderAllInklWorkspace(accounts, profiles, esc) + '<script defer src="/assets/allinkl.js"></script>'
+        )
+      );
   });
   app.get('/api/hosting/allinkl/accounts', () => allInklService.list());
   app.post('/api/hosting/allinkl/accounts', req => allInklService.add(req.body));
   app.delete('/api/hosting/allinkl/accounts/:id', req => allInklService.remove(req.params.id));
   app.get('/api/hosting/allinkl/accounts/:id/domains', req => allInklService.domains(req.params.id));
   app.get('/api/hosting/allinkl/accounts/:id/subdomains', req => allInklService.subdomains(req.params.id));
-  app.get('/api/hosting/allinkl/accounts/:id/dns', req =>
-    allInklService.records(req.params.id, req.query.zone));
-  app.post('/api/hosting/allinkl/accounts/:id/dns', req =>
-    allInklService.addRecord(req.params.id, req.body));
+  app.get('/api/hosting/allinkl/accounts/:id/dns', req => allInklService.records(req.params.id, req.query.zone));
+  app.post('/api/hosting/allinkl/accounts/:id/dns', req => allInklService.addRecord(req.params.id, req.body));
   app.put('/api/hosting/allinkl/accounts/:id/dns/:recordId', req =>
-    allInklService.updateRecord(req.params.id, req.params.recordId, req.body));
+    allInklService.updateRecord(req.params.id, req.params.recordId, req.body)
+  );
   app.delete('/api/hosting/allinkl/accounts/:id/dns/:recordId', req =>
-    allInklService.removeRecord(req.params.id, req.query.zone, req.params.recordId));
+    allInklService.removeRecord(req.params.id, req.query.zone, req.params.recordId)
+  );
   app.post('/api/hosting/allinkl/provision', req => allInklService.provision(req.body));
   app.get('/api/sites', async () => listSites());
   app.get('/api/sites/:site', async req => publicSite(await getSite(req.params.site)));
