@@ -4696,7 +4696,7 @@ async function oauthAuthorizePage(req, reply) {
     return reply
       .type('text/html')
       .send(
-        '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SiteOps verbinden</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0"></head><body><main class="oauth-shell"><section class="oauth-consent"><span class="eyebrow">SITEOPS OAUTH</span><h1>' +
+        '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SiteOps verbinden</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : ''}</head><body><main class="oauth-shell"><section class="oauth-consent"><span class="eyebrow">SITEOPS OAUTH</span><h1>' +
           esc(x.client.clientName) +
           ' verbinden?</h1><p>Die Anwendung erhält Zugriff auf den SiteOps-MCP-Server und damit auf die dort verfügbaren Lese- und Änderungswerkzeuge. Änderungen bleiben weiterhin durch den SiteOps-Preview/Apply-Workflow geschützt.</p><dl class="facts compact-facts"><div><dt>Client</dt><dd>' +
           esc(x.client.clientName) +
@@ -6400,6 +6400,18 @@ async function start() {
       .header('Cache-Control', 'no-store, max-age=0')
       .type('text/css')
       .send(await readFile(new URL('./public/app.css', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/crm-app.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/crm-app.js', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/crm-app.css', async (_r, reply) =>
+    reply
+      .type('text/css')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/crm-app.css', import.meta.url), 'utf8'))
   );
   app.get('/assets/billing.js', async (_r, reply) =>
     reply
