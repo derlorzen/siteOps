@@ -1,3 +1,32 @@
+## Projekt-Workspace (mobile-first, ab Oktober 2026)
+
+Der Bereich ist bewusst **projektorientiert** gestaltet:
+
+1. **`/billing`**: Übersicht **aller Projekte über alle Kunden**, mit
+   Kundensuche, Statusfilter, Fortschritt, offenen Tasks und erfasster Zeit.
+2. **`/billing/projects/:id`**: Ein Projekt öffnen. Dort sind Board und
+   Liste verfügbar. Ein Projekt ist immer einem Kunden zugeordnet.
+3. **Task-Karte**: Status direkt ändern, Task öffnen, Timer starten/stoppen.
+   Im Detailfenster können Zeitbuchungen, Checklisten, Kommentare, Anhänge,
+   Fälligkeiten, Priorität und Beschreibung gepflegt werden.
+4. **Mobil**: Statusspalten werden **einzeln** angezeigt und über größere
+   Tabs gewechselt. Statuswechsel und ↑/↓-Sortierung sind ohne
+   Desktop-Drag-and-drop möglich; auf dem Desktop ist Drag-and-drop aktiv.
+   Die Navigation liegt mobil am unteren Bildschirmrand.
+5. Der laufende Timer bleibt oben **seitenübergreifend sichtbar** und lässt
+   sich jederzeit stoppen.
+
+Kundenstammdaten: `/billing/customers`, globale Zeiterfassung:
+`/billing/time`, Rechnungen: `/billing/invoices`, Absenderdaten:
+`/billing/settings`. Bestehende API-Endpunkte und Rechnungsdaten bleiben
+erhalten.
+
+Die neue Oberfläche lädt nicht mehr die alten vier voneinander abhängigen
+Billing-Skripte. Wenn Rechnungs-, Site- oder Einstellungen-Endpunkte
+zeitweilig Fehler melden, lassen sich Projekte und das Kanban-Board
+trotzdem öffnen. Ein sichtbarer Fehler mit Retry wird angezeigt, falls
+das projektspezifische Board selbst nicht geladen werden kann.
+
 # Kundenverwaltung, Zeiterfassung und Rechnungen
 
 Der neue Bereich ist unter /billing verfügbar und verwendet die bestehende
