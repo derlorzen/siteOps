@@ -56,8 +56,7 @@ test(
       async list(path) {
         if (path === '/') return [];
         const start = path.replace(/\/$/, '') + '/';
-        if (!directories.has(path) && ![...files.keys()].some(p => p.startsWith(start)))
-          throw new Error('not found');
+        if (!directories.has(path) && ![...files.keys()].some(p => p.startsWith(start))) throw new Error('not found');
         return [...files.keys()]
           .filter(p => p.startsWith(start))
           .map(p => ({
