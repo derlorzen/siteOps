@@ -40,10 +40,10 @@ body.ops-mode .card{padding:20px}
 body.ops-mode h2{font-size:19px;color:#272d3e;letter-spacing:-.025em}
 body.ops-mode h3{font-size:15px;letter-spacing:-.02em;color:#353b50}
 body.ops-mode .lead{font-size:12px;color:var(--ops-muted);line-height:1.65}
-body.ops-mode .button,body.ops-mode .btn,body.ops-mode button:not(.ops-assignment-dialog button){
+body.ops-mode .ops-main .button,body.ops-mode .ops-main .btn,body.ops-mode .ops-main button{
  background:var(--ops-purple);color:#fff;border-radius:9px;border:1px solid var(--ops-purple);
  font-size:12px;font-weight:760;min-height:40px;padding:10px 13px}
-body.ops-mode .button:hover,body.ops-mode .btn:hover,body.ops-mode button:hover{filter:brightness(.96)}
+body.ops-mode .ops-main .button:hover,body.ops-mode .ops-main .btn:hover,body.ops-mode .ops-main button:hover{filter:brightness(.96)}
 body.ops-mode .button.ghost,body.ops-mode .btn.ghost,body.ops-mode button.ghost{
  background:var(--siteops-accent-soft);color:var(--siteops-accent-strong);border-color:var(--siteops-accent-border)}
 body.ops-mode input:not([type=checkbox]),body.ops-mode select,body.ops-mode textarea{
