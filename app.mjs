@@ -24,6 +24,8 @@ import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
 import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
 import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
+import { createProjectOverview, registerProjectOverviewRoutes } from './lib/project-overview.mjs';
+import { createWorkspaceActivity, registerWorkspaceActivityRoutes } from './lib/workspace-activity.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 
 function env(name, fallback = undefined) {
@@ -6812,6 +6814,8 @@ async function start() {
   const themeService = createThemeService({ q, storeSetting });
   registerThemeRoutes(app, themeService, () => new URL(cfg.publicBaseUrl).origin);
   registerWorkspaceSearchRoutes(app, createWorkspaceSearch({ db }));
+  registerProjectOverviewRoutes(app, createProjectOverview(db));
+  registerWorkspaceActivityRoutes(app, createWorkspaceActivity(db));
   app.get('/api/settings', async () => publicSettings());
   app.get('/api/oauth/connections', async () => oauthConnections());
   app.get('/api/audit-log', async req => auditLogList(req.query?.limit));
