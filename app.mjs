@@ -3981,7 +3981,8 @@ function mcpServer() {
   s.registerTool(
     'server_profiles_list',
     {
-      description: 'List reusable FTP/FTPS/SFTP server profiles without credentials. Use the returned profile ID for site_provision or cms_install.',
+      description:
+        'List reusable FTP/FTPS/SFTP server profiles without credentials. Use the returned profile ID for site_provision or cms_install.',
       inputSchema: z.object({})
     },
     async () => toolText(await connectionProfiles.list())
