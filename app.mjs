@@ -24,6 +24,8 @@ import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
 import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
 import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
+import { createAllInklService, allinklProvisionSchema, allinklDnsRecordSchema } from './lib/allinkl.mjs';
+import { renderAllInklWorkspace } from './lib/allinkl-ui.mjs';
 import { websiteProvisionSchema, prepareEmptyHostingTarget } from './lib/site-provisioning.mjs';
 import { createProjectOverview, registerProjectOverviewRoutes } from './lib/project-overview.mjs';
 import { createWorkspaceActivity, registerWorkspaceActivityRoutes } from './lib/workspace-activity.mjs';
@@ -167,6 +169,8 @@ const cmsController = createCmsController({
       remoteRoot
     };
   },
+  getAllInklProfile: accountId => allInklService.profileFor(accountId),
+  prepareAllInkl: input => allInklService.provision(input),
   linkSiteToProject: async (siteId, projectId) => siteProjectService.link(siteId, { project_id: projectId })
 });
 
@@ -211,6 +215,7 @@ async function archiveIssuedInvoice(snapshot, pdf) {
 const billingController = createBillingController({ db, archive: archiveIssuedInvoice });
 const siteProjectService = createSiteProjectService(db);
 const connectionProfiles = createConnectionProfiles({ db, encrypt, decrypt });
+const allInklService = createAllInklService({ db, encrypt, decrypt, profiles: connectionProfiles, connectSite });
 const billingWorkflows = createBillingWorkflows({
   db,
   billing: billingController,
@@ -4451,6 +4456,54 @@ function mcpServer() {
     async () => toolText(publicSettings())
   );
   s.registerTool(
+    'allinkl_accounts',
+    { description: 'List configured ALL-INKL KAS accounts without revealing passwords.', inputSchema: z.object({}) },
+    async () => toolText(await allInklService.list())
+  );
+  s.registerTool(
+    'allinkl_domains',
+    {
+      description: 'List domains managed in the selected ALL-INKL account.',
+      inputSchema: z.object({ accountId: z.uuid() })
+    },
+    async ({ accountId }) => toolText(await allInklService.domains(accountId))
+  );
+  s.registerTool(
+    'allinkl_dns_list',
+    {
+      description: 'Read DNS records for an ALL-INKL zone. Never changes records.',
+      inputSchema: z.object({ accountId: z.uuid(), zone: z.string() })
+    },
+    async ({ accountId, zone }) => toolText(await allInklService.records(accountId, zone))
+  );
+  s.registerTool(
+    'allinkl_dns_add',
+    {
+      description:
+        'Create a new A/AAAA/CNAME/TXT DNS record; rejects conflicting CNAMEs. Does not modify mail or NS settings.',
+      inputSchema: allinklDnsRecordSchema.extend({ accountId: z.uuid() })
+    },
+    async ({ accountId, ...record }) => toolText(await allInklService.addRecord(accountId, record))
+  );
+  s.registerTool(
+    'allinkl_dns_update',
+    {
+      description: 'Explicitly modify an existing A/AAAA/CNAME/TXT record by ID; mail and NS records are protected.',
+      inputSchema: allinklDnsRecordSchema.extend({ accountId: z.uuid(), recordId: z.union([z.string(), z.number()]) })
+    },
+    async ({ accountId, recordId, ...record }) =>
+      toolText(await allInklService.updateRecord(accountId, recordId, record))
+  );
+  s.registerTool(
+    'allinkl_provision',
+    {
+      description:
+        'Prepare an empty LorzCMS project directory and its public/ document root and create an ALL-INKL subdomain. Never overwrites existing files or subdomain mappings. HTTPS certificate may still require activation.',
+      inputSchema: allinklProvisionSchema
+    },
+    async input => toolText(await allInklService.provision(input))
+  );
+  s.registerTool(
     'cms_overview',
     {
       description: 'LorzCMS releases, connected installations and persisted update jobs. Never returns credentials.',
@@ -4474,6 +4527,37 @@ function mcpServer() {
       inputSchema: cmsInstallRequestSchema
     },
     async input => toolText(await cmsController.create(input))
+  );
+  s.registerTool(
+    'cms_install_allinkl',
+    {
+      description:
+        'Create an ALL-INKL subdomain, prepare an empty public/ webroot using a saved FTP/SFTP profile, and queue a new LorzCMS website. Requires an existing KAS account, released CMS version and HTTPS readiness.',
+      inputSchema: z.object({
+        allinklAccountId: z.uuid(),
+        slug: z.string().regex(/^[a-z0-9-]{1,100}$/),
+        name: z.string().min(1).max(190),
+        baseUrl: z.url(),
+        version: z.string().min(1),
+        remoteRoot: z.string().min(2),
+        adminName: z.string().min(1),
+        adminEmail: z.email(),
+        adminPassword: z.string().min(12),
+        projectId: z.uuid().optional(),
+        database: z.discriminatedUnion('engine', [
+          z.object({ engine: z.literal('sqlite') }),
+          z.object({
+            engine: z.literal('mysql'),
+            host: z.string(),
+            name: z.string(),
+            user: z.string(),
+            password: z.string()
+          })
+        ]),
+        runAt: z.iso.datetime({ offset: true }).optional()
+      })
+    },
+    async input => toolText(await cmsController.create({ ...input, publicRootReady: true }))
   );
   s.registerTool(
     'cms_attach',
@@ -5148,7 +5232,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/hosting">Hosting & DNS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -6619,6 +6703,12 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/ops-workspace.css', import.meta.url), 'utf8'))
   );
+  app.get('/assets/allinkl.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/allinkl.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/ops-workspace.js', async (_r, reply) =>
     reply
       .type('text/javascript')
@@ -6746,14 +6836,20 @@ async function start() {
   app.get('/', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/websites', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   async function cmsWorkspacePage(reply, view = 'sites', installationId = null) {
-    const [overview, projects, siteLinks] = await Promise.all([
+    const [overview, projects, siteLinks, hostingAccounts] = await Promise.all([
       cmsController.overview(),
       billingController.projects(),
-      siteProjectService.list()
+      siteProjectService.list(),
+      allInklService.list()
     ]);
     return reply
       .type('text/html')
-      .send(page('LorzCMS', renderCmsWorkspace({ ...overview, projects, siteLinks }, esc, view, installationId)));
+      .send(
+        page(
+          'LorzCMS',
+          renderCmsWorkspace({ ...overview, projects, siteLinks, hostingAccounts }, esc, view, installationId)
+        )
+      );
   }
   app.get('/lorzcms', async (_r, reply) => cmsWorkspacePage(reply));
   app.get('/lorzcms/installations/:id', async (req, reply) =>
@@ -6800,6 +6896,38 @@ async function start() {
   });
   registerBillingWorkflowRoutes(app, billingWorkflows);
   registerSiteProjectRoutes(app, siteProjectService);
+  app.addHook('preHandler', async (req, reply) => {
+    if (!req.url.startsWith('/api/hosting/allinkl/') || ['GET', 'HEAD'].includes(req.method)) return;
+    if (!String(req.headers['content-type'] || '').startsWith('application/json') && req.method !== 'DELETE')
+      return reply.code(415).send({ error: 'JSON erforderlich.' });
+    if (req.headers.origin && req.headers.origin !== new URL(cfg.publicBaseUrl).origin)
+      return reply.code(403).send({ error: 'Fremde Herkunft abgelehnt.' });
+  });
+  app.get('/hosting', async (_req, reply) => {
+    const [accounts, profiles] = await Promise.all([allInklService.list(), connectionProfiles.list()]);
+    return reply
+      .type('text/html')
+      .send(
+        page(
+          'Hosting & DNS',
+          renderAllInklWorkspace(accounts, profiles, esc) + '<script defer src="/assets/allinkl.js"></script>'
+        )
+      );
+  });
+  app.get('/api/hosting/allinkl/accounts', () => allInklService.list());
+  app.post('/api/hosting/allinkl/accounts', req => allInklService.add(req.body));
+  app.delete('/api/hosting/allinkl/accounts/:id', req => allInklService.remove(req.params.id));
+  app.get('/api/hosting/allinkl/accounts/:id/domains', req => allInklService.domains(req.params.id));
+  app.get('/api/hosting/allinkl/accounts/:id/subdomains', req => allInklService.subdomains(req.params.id));
+  app.get('/api/hosting/allinkl/accounts/:id/dns', req => allInklService.records(req.params.id, req.query.zone));
+  app.post('/api/hosting/allinkl/accounts/:id/dns', req => allInklService.addRecord(req.params.id, req.body));
+  app.put('/api/hosting/allinkl/accounts/:id/dns/:recordId', req =>
+    allInklService.updateRecord(req.params.id, req.params.recordId, req.body)
+  );
+  app.delete('/api/hosting/allinkl/accounts/:id/dns/:recordId', req =>
+    allInklService.removeRecord(req.params.id, req.query.zone, req.params.recordId)
+  );
+  app.post('/api/hosting/allinkl/provision', req => allInklService.provision(req.body));
   app.get('/api/sites', async () => listSites());
   app.get('/api/sites/:site', async req => publicSite(await getSite(req.params.site)));
   app.get('/api/sites/:site/overview', async req => siteOverview(req.params.site));
