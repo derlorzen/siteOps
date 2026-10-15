@@ -7,7 +7,7 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const pages=[
-    ['/','Übersicht','▦'],['/websites','Websites','◎'],['/billing','Projekte','▤'],
+    ['/','Übersicht','▦'],['/websites','Websites','◎'],['/billing','Projekte','▤'],['/billing/activity','Aktivitäten','◷'],
     ['/lorzcms','LorzCMS','◈'],['/setup','Website hinzufügen','+'],
     ['/settings','Einstellungen','⚙'],['/mcp-info','Integrationen','⇄']
   ];
