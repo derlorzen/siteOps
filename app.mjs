@@ -6417,11 +6417,15 @@ async function start() {
       .send(await readFile(new URL('./public/ops-workspace.js', import.meta.url), 'utf8'))
   );
   app.get('/assets/siteops-theme.css', async (_r, reply) =>
-    reply.type('text/css').header('Cache-Control', 'no-store')
+    reply
+      .type('text/css')
+      .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/siteops-theme.css', import.meta.url), 'utf8'))
   );
   app.get('/assets/siteops-theme.js', async (_r, reply) =>
-    reply.type('text/javascript').header('Cache-Control', 'no-store')
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/siteops-theme.js', import.meta.url), 'utf8'))
   );
   app.get('/assets/crm-app.js', async (_r, reply) =>

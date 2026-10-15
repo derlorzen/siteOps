@@ -43,8 +43,12 @@ test('reject malformed or injected colors with no database writes', async () => 
 test('theme routes enforce JSON, same origin and same-site fetch policy', async () => {
   const handlers = {};
   const app = {
-    get(path, handler) { handlers['GET ' + path] = handler; },
-    put(path, handler) { handlers['PUT ' + path] = handler; }
+    get(path, handler) {
+      handlers['GET ' + path] = handler;
+    },
+    put(path, handler) {
+      handlers['PUT ' + path] = handler;
+    }
   };
   const { service } = fakeService();
   registerThemeRoutes(app, service, () => 'https://siteops.example');
@@ -53,35 +57,67 @@ test('theme routes enforce JSON, same origin and same-site fetch policy', async 
   const handler = handlers['PUT /api/ui-theme'];
   const makeReply = () => ({
     status: null,
-    code(value) { this.status = value; return this; },
-    send(value) { return { status: this.status, ...value }; }
+    code(value) {
+      this.status = value;
+      return this;
+    },
+    send(value) {
+      return { status: this.status, ...value };
+    }
   });
-  const wrongOrigin = await handler({
-    headers: { 'content-type': 'application/json', origin: 'https://attacker.example' },
-    body: { accent: '#1D4ED8' }
-  }, makeReply());
+  const wrongOrigin = await handler(
+    {
+      headers: { 'content-type': 'application/json', origin: 'https://attacker.example' },
+      body: { accent: '#1D4ED8' }
+    },
+    makeReply()
+  );
   assert.equal(wrongOrigin.status, 403);
-  const wrongType = await handler({
-    headers: { 'content-type': 'text/plain' },
-    body: { accent: '#1D4ED8' }
-  }, makeReply());
+  const wrongType = await handler(
+    {
+      headers: { 'content-type': 'text/plain' },
+      body: { accent: '#1D4ED8' }
+    },
+    makeReply()
+  );
   assert.equal(wrongType.status, 415);
-  const crossSite = await handler({
-    headers: { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
-    body: { accent: '#1D4ED8' }
-  }, makeReply());
+  const crossSite = await handler(
+    {
+      headers: { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
+      body: { accent: '#1D4ED8' }
+    },
+    makeReply()
+  );
   assert.equal(crossSite.status, 403);
-  assert.deepEqual(await handler({
-    headers: { 'content-type': 'application/json', origin: 'https://siteops.example', 'sec-fetch-site': 'same-origin' },
-    body: { accent: '#0F766E' }
-  }, makeReply()), { accent: '#0F766E' });
+  assert.deepEqual(
+    await handler(
+      {
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://siteops.example',
+          'sec-fetch-site': 'same-origin'
+        },
+        body: { accent: '#0F766E' }
+      },
+      makeReply()
+    ),
+    { accent: '#0F766E' }
+  );
 });
 
 test('picker script parses; offers presets, live preview, cancellation and persistence', async () => {
   const source = await readFile(new URL('../public/siteops-theme.js', import.meta.url), 'utf8');
   assert.doesNotThrow(() => new vm.Script(source));
-  for (const requirement of ['type="color"', 'siteopsThemeHex', 'preview(', 'dialog.addEventListener',
-    '/api/ui-theme', 'localStorage', '--siteops-accent', 'siteopsThemeButton']) {
+  for (const requirement of [
+    'type="color"',
+    'siteopsThemeHex',
+    'preview(',
+    'dialog.addEventListener',
+    '/api/ui-theme',
+    'localStorage',
+    '--siteops-accent',
+    'siteopsThemeButton'
+  ]) {
     assert.ok(source.includes(requirement), requirement);
   }
 });
