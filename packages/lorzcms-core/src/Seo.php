@@ -23,6 +23,7 @@ final class Seo {
         $base=rtrim((string)$configuration['base_url'],'/');
         $canonical=trim((string)($seo['canonical'] ?? '')) ?: $base.($item['path'] ?? '/');
         $image=trim((string)($seo['image'] ?? '')) ?: trim((string)($defaults['image'] ?? ''));
+        if($image===''){$image=trim((string)($site->value('appearance')['logo'] ?? ''));}
         $image=self::absolute($image,$base);
         $noindex=($configuration['environment'] ?? '')!=='production' || ($defaults['indexing'] ?? '')!=='enabled' || !empty($seo['noindex']);
         return ['title'=>$title,'description'=>$description,'canonical'=>$canonical,'image'=>$image,
