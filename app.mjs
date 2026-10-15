@@ -4473,7 +4473,8 @@ function mcpServer() {
   s.registerTool(
     'allinkl_diagnostics',
     {
-      description: 'Run read-only KAS checks for domains, subdomains and optionally DNS records in an owned zone. No hosting or DNS modifications.',
+      description:
+        'Run read-only KAS checks for domains, subdomains and optionally DNS records in an owned zone. No hosting or DNS modifications.',
       inputSchema: z.object({ accountId: z.uuid(), zone: z.string().optional() })
     },
     async ({ accountId, zone }) => toolText(await allInklService.diagnostics(accountId, zone))
