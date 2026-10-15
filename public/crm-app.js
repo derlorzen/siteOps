@@ -45,7 +45,8 @@
   }
   const findProject = id => state.projects.find(p=>p.id===id);
   const findCustomer = id => state.customers.find(c=>c.id===id);
-  const findTask = id => state.tasks.find(t=>t.id===id);
+  const findTask = id => state.tasks.find(t=>t.id===id) ||
+    statusOrder.flatMap(status => state.board?.columns[status] || []).find(t => t.id===id);
   const projectTasks = id => state.tasks.filter(t=>t.project_id===id);
   const tracked = id => state.entries.filter(e=>projectTasks(id).some(t=>t.id===e.task_id))
     .reduce((n,e)=>n+Number(e.duration_seconds||0),0);
@@ -124,11 +125,24 @@
     root.querySelectorAll('[data-running-clock]').forEach(e=>{e.textContent=hour(durationStarted(running.started_at));});
   }
   async function reload() {
-    const [customers,projects,tasks,entries,invoices,sites,settings]=await Promise.all([
-      api('/api/billing/customers'),api('/api/billing/projects'),api('/api/billing/tasks'),
-      api('/api/billing/entries'),api('/api/billing/invoices'),api('/api/sites'),api('/api/billing/settings')
-    ]);
-    Object.assign(state,{customers,projects,tasks,entries,invoices,sites,settings,loading:false});
+    // The board must remain usable even when an unrelated invoice, site or settings endpoint is unavailable.
+    const names=['customers','projects','tasks','entries','invoices','sites','settings'];
+    const urls=[
+      '/api/billing/customers','/api/billing/projects','/api/billing/tasks',
+      '/api/billing/entries','/api/billing/invoices','/api/sites','/api/billing/settings'
+    ];
+    const results=await Promise.allSettled(urls.map(url=>api(url)));
+    for (let i=0;i<names.length;i++){
+      const result=results[i];
+      if(result.status==='fulfilled') state[names[i]]=result.value;
+      else if(i<2) throw Error('Kunden und Projekte konnten nicht geladen werden: '+userError(result.reason));
+      else {
+        // Keep the most recently loaded data if an optional endpoint temporarily fails.
+        if(!state[names[i]]) state[names[i]]=names[i]==='settings'?{}:[];
+        console.error('optional CRM endpoint failed:',names[i],result.reason);
+      }
+    }
+    state.loading=false;
     updateTimer();
     render();
   }
