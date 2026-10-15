@@ -29,7 +29,7 @@
     '<div class="ops-side-footer">Monitoring · Deployments · Kundenprojekte</div></aside>'+
     '<div class="ops-content"><div class="ops-workspace-bar"><div><span class="ops-mobile-mark">S</span>'+
     '<span>SiteOps</span><span class="ops-chevron">›</span><strong>'+esc(active)+'</strong></div>'+
-    '<a href="/setup" class="ops-top-new">+ Website</a></div></div>';
+    '<div class="ops-top-actions"><a href="/setup" class="ops-top-new">+ Website</a></div></div></div>';
   const oldNav=$('.topnav');
   const main=$('body > main');
   if(!main)return;
