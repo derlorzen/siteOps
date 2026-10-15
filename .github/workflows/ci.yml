@@ -46,6 +46,10 @@ jobs:
         run: npm run check
       - name: Lint
         run: npm run lint
+      - name: Show exact Prettier fixes (temporary)
+        run: |
+          npm run format
+          git diff -- app.mjs lib/build-info.mjs
       - name: Format check
         run: npm run format:check
       - name: Install browser runner dependencies
