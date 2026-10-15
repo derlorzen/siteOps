@@ -118,6 +118,8 @@ Synthetic secrets remain encrypted and are never returned by MCP.
 
 ### Connections and configuration
 
+- `server_profiles_list` – list stored FTP/FTPS/SFTP profiles without credentials
+- `site_provision` – register a website and create a dedicated empty FTP directory
 - `site_update`
 - `site_connection_test`
 - `site_connection_update`
@@ -128,6 +130,15 @@ Synthetic secrets remain encrypted and are never returned by MCP.
 - `files_find`
 - `text_search`
 - `file_read`
+
+### Neue Website oder LorzCMS über MCP anlegen
+
+1. Mit `server_profiles_list` einen gespeicherten Server auswählen, alternativ eine vorhandene Webspace-Website aus `sites_list`.
+2. Für eine gewöhnliche Website `site_provision` mit `profileId` **oder** `existingSiteId`, `slug`, `name`, `domain`, `siteType` und neuem absolutem `remoteRoot` aufrufen. Optional `projectId` zuordnen. SiteOps legt das Zielverzeichnis rekursiv an, verweigert aber ein nicht leeres Ziel.
+3. Mit `change_preview` und anschließend `change_apply` die Website-Dateien hochladen. Damit bleiben bestehende Upload-Sicherungen und die Freigabe der Änderungen erhalten. Erst nach der Veröffentlichung Monitoring und Backups per `site_update` aktivieren.
+4. Für LorzCMS zunächst `cms_release_bundled` (falls noch kein Core freigegeben ist), dann `cms_install` mit `profileId` oder `existingSiteId` statt Zugangsdaten aufrufen. HTTPS-Domain, `publicRootReady: true`, Core-Version, Administrator und Datenbank sind weiterhin erforderlich. SiteOps erstellt das leere Verzeichnis und der persistierte CMS-Installationsauftrag lädt den Core und die Startdateien hoch. Fortschritt mit `cms_overview` prüfen.
+
+Mit FTP können weder DNS, SSL, PHP-Version, MySQL-Datenbank noch Document-Root-Einstellungen des Hosting-Anbieters verwaltet werden. Bei LorzCMS muss die Domain bereits auf **remoteRoot/public/** zeigen; bei normalen Websites üblicherweise auf **remoteRoot/**. Serverpasswörter werden nicht über MCP ausgegeben.
 
 ### Safe changes
 

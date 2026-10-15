@@ -52,14 +52,16 @@ execution times on `/lorzcms` or through the CMS MCP tools.
 
 1. Deploy this SiteOps version; its database migrations run at startup.
 2. Open **LorzCMS** and publish the bundled core version.
-3. At the hosting provider, prepare a new empty project directory and configure
-   the HTTPS domain's document root as that directory's **public/** subdirectory.
-   SiteOps cannot change registrar, domain mapping or PHP version using FTP.
+3. At the hosting provider, configure the HTTPS domain's document root as the chosen
+   project directory's **public/** subdirectory. SiteOps now creates the project
+   directory recursively using the selected FTP/FTPS/SFTP connection. It cannot
+   change registrar, domain mapping or PHP version using FTP.
 4. Enter the website address, FTP/FTPS/SFTP credentials, project directory and
    first administrator. Choose SQLite for automatic database-file creation, or
    enter a dedicated empty MySQL/MariaDB database provisioned by the host.
-5. Start the installation immediately or choose a time. SiteOps checks the empty
-   target again immediately before upload, uploads the baseline and invokes the
+5. Start the installation immediately or choose a time. SiteOps creates and checks
+   the empty target directory before queuing the job, checks it again before upload,
+   uploads the baseline and invokes the
    protected HTTPS installer. The installer checks the actual document root,
    PHP 8.3+, extensions and file hashes before creating an administrator and a
    published welcome page. The new login is at `/admin/`.
