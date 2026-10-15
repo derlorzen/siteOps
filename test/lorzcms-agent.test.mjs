@@ -8,6 +8,7 @@ import { join, dirname, resolve } from 'node:path';
 import crypto from 'node:crypto';
 import { load } from 'cheerio';
 import { bundledRelease, validateRelease } from '../lib/lorzcms.mjs';
+import { websiteBlueprint } from '../lib/website-factory.mjs';
 
 const php = process.env.SITEOPS_PHP || 'php';
 const phpArgs = process.env.SITEOPS_PHP_INI ? ['-c', process.env.SITEOPS_PHP_INI] : [];
@@ -111,7 +112,14 @@ test(
       adminName: 'Admin',
       adminEmail: 'admin@example.de',
       adminPassword: 'a-strong-test-password',
-      database: { engine: 'sqlite' }
+      database: { engine: 'sqlite' },
+      websiteBlueprint: websiteBlueprint({
+        companyName: 'Containerdienst Schartau',
+        location: 'Süderbrarup',
+        baseUrl: 'https://example.de',
+        services: ['Containerstellung', 'Bauschuttentsorgung'],
+        description: 'Containerdienst für Süderbrarup und Umgebung.'
+      })
     };
     const installed = await call(provision);
     assert.equal(installed.status, 200, JSON.stringify(installed));
@@ -129,6 +137,15 @@ test(
       /<meta name="robots" content="noindex,follow">/,
       'new websites stay out of the index until launch approval'
     );
+    assert.match(homepageHtml, /Containerdienst Schartau/, 'business landing page is generated');
+    assert.match(homepageHtml, /Containerstellung/, 'specified services appear on the homepage');
+    assert.match(homepageHtml, /page-landing/, 'mobile-ready LorzCMS landing template selected');
+    for (const pagePath of ['/leistungen', '/ueber-uns', '/kontakt']) {
+      assert.equal((await fetch(base + pagePath)).status, 200, pagePath + ' must be published');
+    }
+    const servicesHtml = await (await fetch(base + '/leistungen')).text();
+    assert.match(servicesHtml, /Bauschuttentsorgung/);
+    assert.match(homepageHtml, /href="\/leistungen"/);
     assert.match(homepageHtml, /application\/ld\+json/, 'CMS renders JSON-LD from the start');
     assert.match(homepageHtml, /"@type":"Organization"/, 'the site identity is published as organization data');
     assert.doesNotMatch(await (await fetch(base + '/sitemap.xml')).text(), /<loc>/, 'prelaunch sitemap is empty');

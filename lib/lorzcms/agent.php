@@ -157,13 +157,62 @@ try {
             $store->transaction(static function() use($store,$access,$content,$body,$email,$name,$password,$job,$agent): void {
                 if ((int)$store->query('SELECT COUNT(*) FROM users')->fetchColumn() !== 0 || (int)$store->query('SELECT COUNT(*) FROM contents')->fetchColumn() !== 0) { cmsAgentFail(409,'Diese Datenbank enthält bereits CMS-Daten.'); }
                 $id = $access->create($email,$name,$password,'admin'); $actor=$access->user($id);
+                $blueprint = $body['websiteBlueprint'] ?? null;
+                if ($blueprint !== null) {
+                    if (!is_array($blueprint) || ($blueprint['reviewRequired'] ?? false) !== true ||
+                        ($blueprint['seoIndexing'] ?? '') !== 'disabled' ||
+                        !is_array($blueprint['pages'] ?? null) || count($blueprint['pages']) < 2 ||
+                        count($blueprint['pages']) > 8 || !is_array($blueprint['menu'] ?? null) ||
+                        count($blueprint['menu']) > 8 ||
+                        !preg_match('/^#[a-fA-F0-9]{6}$/D',(string)($blueprint['accent'] ?? ''))) {
+                        cmsAgentFail(422,'Ungültiger oder nicht freigegebener Website-Bauplan.');
+                    }
+                    $paths=[];
+                    foreach ($blueprint['pages'] as $page) {
+                        if (!is_array($page) || !is_string($page['title'] ?? null) ||
+                            trim($page['title']) === '' || mb_strlen($page['title']) > 190 ||
+                            !is_string($page['path'] ?? null) ||
+                            !preg_match('~^/(?:[a-z0-9-]{1,90})?$~D',$page['path']) ||
+                            !is_string($page['body'] ?? null) ||
+                            strlen($page['body']) > 25000 || !is_array($page['seo'] ?? null) ||
+                            isset($paths[$page['path']])) {
+                            cmsAgentFail(422,'Ungültige oder doppelte Website-Seite.');
+                        }
+                        $paths[$page['path']]=true;
+                    }
+                    if (!isset($paths['/'])) { cmsAgentFail(422,'Website-Bauplan ohne Startseite.'); }
+                }
                 $settings = $content->site->value('settings'); $settings['name']=$body['siteName'] ?? 'Meine Website';
+                if ($blueprint !== null) {
+                    $settings['tagline'] = (string)($blueprint['tagline'] ?? '');
+                    $settings['contact_email'] = (string)($blueprint['contactEmail'] ?? '');
+                }
                 $content->site->save('settings',0,$settings,$actor);
-                // A new site starts as a preview until its owner deliberately enables indexing.
-                // Never change indexing when enrolling or updating an existing installation.
+                // Keep new sites noindex until legal notice, privacy, facts and SSL are reviewed.
                 $seo=$content->site->value('seo');$seo['indexing']='disabled';
+                if ($blueprint !== null) {
+                    $seo['title_suffix']=' · '.$settings['name'];
+                    $seo['description']=(string)($blueprint['tagline'] ?? '');
+                }
                 $content->site->save('seo',0,$seo,$actor);
-                $content->create('page','Willkommen','/',['body'=>'<p>Deine Website ist eingerichtet. Bearbeite die Startseite in der Verwaltung.</p>'],[],'published',$actor);
+                if ($blueprint !== null) {
+                    $appearance=$content->site->value('appearance');
+                    $appearance['engine']='shared';
+                    $appearance['page_template']='landing';
+                    $appearance['accent']=$blueprint['accent'];
+                    $appearance['text']='#18271c';
+                    $appearance['background']='#f7f8f2';
+                    $appearance['footer']='Weitere Angaben zu Kontakt, Impressum und Datenschutz vor der Indexfreigabe prüfen.';
+                    $appearance['custom_css']='.cms-page .site-container{max-width:1180px}.cms-page main{overflow-wrap:anywhere}.cms-page h2{line-height:1.18;letter-spacing:-.025em}.cms-page main p{line-height:1.75}.cms-page main a{font-weight:700}.cms-page .site-navigation{flex-wrap:wrap}@media(max-width:720px){.cms-page .header-inner{flex-wrap:wrap}.cms-page main{padding-inline:clamp(14px,4vw,28px)}}';
+                    $content->site->save('appearance',0,$appearance,$actor);
+                    $content->site->save('menus',0,$blueprint['menu'],$actor);
+                    foreach ($blueprint['pages'] as $page) {
+                        $content->create('page',$page['title'],$page['path'],
+                            ['body'=>$page['body']],$page['seo'],'published',$actor);
+                    }
+                } else {
+                    $content->create('page','Willkommen','/',['body'=>'<p>Deine Website ist eingerichtet. Bearbeite die Startseite in der Verwaltung.</p>'],[],'published',$actor);
+                }
                 $store->query('INSERT INTO site_state VALUES (?,?,?,?)',['siteops:installation',SiteCms\Store::json(['jobId'=>$job,'instanceId'=>$agent['instance_id']]),1,gmdate('c')]);
             });
         }
