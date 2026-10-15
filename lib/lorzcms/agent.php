@@ -203,7 +203,9 @@ try {
                     $appearance['text']='#18271c';
                     $appearance['background']='#f7f8f2';
                     $appearance['footer']='Weitere Angaben zu Kontakt, Impressum und Datenschutz vor der Indexfreigabe prüfen.';
-                    $appearance['custom_css']='.cms-page .site-container{max-width:1180px}.cms-page main{overflow-wrap:anywhere}.cms-page h2{line-height:1.18;letter-spacing:-.025em}.cms-page main p{line-height:1.75}.cms-page main a{font-weight:700}.cms-page .site-navigation{flex-wrap:wrap}@media(max-width:720px){.cms-page .header-inner{flex-wrap:wrap}.cms-page main{padding-inline:clamp(14px,4vw,28px)}}';
+                    $appearance['custom_css']=(isset($blueprint['themeCss']) && is_string($blueprint['themeCss']) && strlen($blueprint['themeCss'])<=10000)
+                        ? $blueprint['themeCss']
+                        : '.cms-page .site-container{max-width:1180px}.cms-page main{overflow-wrap:anywhere}.cms-page h2{line-height:1.18;letter-spacing:-.025em}.cms-page main p{line-height:1.75}.cms-page main a{font-weight:700}.cms-page .site-navigation{flex-wrap:wrap}@media(max-width:720px){.cms-page .header-inner{flex-wrap:wrap}.cms-page main{padding-inline:clamp(14px,4vw,28px)}}';
                     $content->site->save('appearance',0,$appearance,$actor);
                     $content->site->save('menus',0,$blueprint['menu'],$actor);
                     foreach ($blueprint['pages'] as $page) {
