@@ -5575,7 +5575,7 @@ function setupPage() {
       try{
         const r=await fetch('/api/sites');if(!r.ok)return;
         const sites=await r.json();
-        for(const site of sites.filter(s=>s.deployment_mode==='webspace'))
+        for(const site of sites.filter(s=>s.deploymentMode==='webspace'))
           profileSource.add(new Option(site.name+' · '+site.host,site.id));
       }catch(error){profileHint.textContent=String(error.message||error);}
     }
