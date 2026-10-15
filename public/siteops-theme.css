@@ -13,7 +13,7 @@
 #crmRoot .crm-brand-mark,#crmRoot .crm-topbar-mark{color:var(--siteops-on-accent)}
 body.ops-mode .ops-mark,body.ops-mode .ops-mobile-mark,
 body.ops-mode .ops-top-new,body.ops-mode .ops-primary-action,
-body.ops-mode button:not(.ops-assignment-dialog button):not(.ghost){
+body.ops-mode .ops-main button:not(.ghost){
   color:var(--siteops-on-accent)
 }
 body.ops-mode .ops-primary-action:hover{background:var(--siteops-accent-hover)}
