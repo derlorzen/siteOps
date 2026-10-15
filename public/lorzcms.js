@@ -1,171 +1,226 @@
 (() => {
+  'use strict';
   const byId = id => document.getElementById(id);
   const notice = byId('cmsNotice');
-  document.querySelectorAll('[data-cms-timezone]').forEach(x => {
-    x.textContent = 'Zeit auf diesem Gerät: ' + Intl.DateTimeFormat().resolvedOptions().timeZone;
-  });
-  const runAt = form => (form.get('runAt') ? new Date(form.get('runAt')).toISOString() : undefined);
-  async function send(path, body = {}) {
+  if (!notice) return;
+  const show = (message, isError = false) => {
+    notice.hidden = false;
+    notice.classList.toggle('cms-message-error', isError);
+    notice.textContent = message;
+    notice.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+  const send = async (path, body = {}, method = 'POST') => {
     const response = await fetch('/api/lorzcms/' + path, {
-      method: 'POST',
+      method, credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body)
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.message || result.error || 'Auftrag konnte nicht gespeichert werden.');
-    return result;
-  }
-  async function action(button, work) {
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw Error(payload.message || payload.error || 'HTTP ' + response.status);
+    return payload;
+  };
+  const action = async (button, task, { reload = true } = {}) => {
     button.disabled = true;
-    notice.hidden = false;
-    notice.textContent = 'Wird vorbereitet …';
+    show('Anfrage wird verarbeitet …');
     try {
-      await work();
-      location.reload();
+      const result = await task();
+      if (result?.ok === false) {
+        show((result.message || 'Die Installation ist noch nicht betriebsbereit.') +
+          (result.jobError ? '\nLetzter Fehler: ' + result.jobError : '') +
+          (result.canResume ? '\nDu kannst diesen Anschluss über „Anschluss fortsetzen“ reparieren.' : ''), false);
+      } else if (reload) window.location.reload();
+      else show(result?.message || 'Die Prüfung wurde abgeschlossen.', false);
     } catch (error) {
-      notice.textContent = error.message;
+      show(error.message, true);
+    } finally {
       button.disabled = false;
-      notice.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }
-  byId('cmsBundled').addEventListener('click', e => action(e.currentTarget, () => send('releases/bundled')));
-  byId('cmsReleaseFile').addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    await action(e.target, async () => {
-      if (file.size > 18 * 1024 * 1024) throw new Error('Versionspaket zu groß.');
-      return send('releases', JSON.parse(await file.text()));
+  };
+  document.querySelectorAll('[data-cms-timezone]').forEach(el => {
+    el.textContent = 'Zeitzone dieses Geräts: ' + Intl.DateTimeFormat().resolvedOptions().timeZone;
+  });
+  const runAt = formData => formData.get('runAt') ? new Date(formData.get('runAt')).toISOString() : undefined;
+
+  // Dedicated installation detail page: no "CMS noch nicht eingerichtet" dead end.
+  document.querySelectorAll('[data-cms-inspect]').forEach(button => {
+    button.addEventListener('click', () => action(button,
+      () => send('installations/' + encodeURIComponent(button.dataset.cmsInspect) + '/inspect'),
+      { reload: false }));
+  });
+  document.querySelectorAll('[data-cms-resume]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (!window.confirm('Den bestehenden CMS-Anschluss fortsetzen? Die vorhandene Website wird nicht neu installiert.')) return;
+      action(button, () => send('installations/' + encodeURIComponent(button.dataset.cmsResume) + '/resume'));
     });
   });
-  const create = byId('cmsCreate');
-  document.querySelectorAll('[data-cms-restart]').forEach(button =>
-    button.addEventListener('click', () => {
-      create.reset();
-      const values = JSON.parse(button.dataset.cmsRestart);
-      Object.entries(values).forEach(([name, value]) => {
-        const field = create.elements.namedItem(name);
-        if (field) field.value = value;
+
+  // Changing customer project is independent of CMS installation and preserves site data.
+  const assignment = byId('cmsProjectAssignment');
+  assignment?.addEventListener('submit', event => {
+    event.preventDefault();
+    const button = assignment.querySelector('[type=submit]');
+    const siteId = assignment.dataset.siteId;
+    const projectId = assignment.elements.namedItem('projectId').value || null;
+    action(button, async () => {
+      const response = await fetch('/api/sites/' + encodeURIComponent(siteId) + '/project', {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId })
       });
-      byId('cmsMysql').hidden = true;
-      notice.hidden = false;
-      notice.textContent =
-        'Einrichtung erneut planen: Hosting-Passwort, Datenbank und Administratorkonto wieder eintragen. Nach einer unterbrochenen Einrichtung die ursprünglichen Daten verwenden oder zuerst den CMS-Zustand prüfen.';
-      create.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    })
-  );
-  // Saved server profiles and other already-configured sites. No credentials reach the browser.
-  const savedConnection = create.elements.namedItem('savedConnection');
-  const connectionHint = byId('cmsSavedConnectionHint');
-  let connections = [];
-  async function loadSavedConnections() {
-    const [profilesRes,sitesRes]=await Promise.all([fetch('/api/server-profiles'),fetch('/api/sites')]);
-    if(!profilesRes.ok || !sitesRes.ok) throw Error('Gespeicherte Verbindungen konnten nicht geladen werden.');
-    const [profiles,sites] = await Promise.all([profilesRes.json(),sitesRes.json()]);
-    connections=[
-      ...profiles.map(p=>({id:p.id,type:'profile',label:'Serverprofil: '+p.name,protocol:p.protocol,host:p.host,port:p.port,username:p.username})),
-      ...sites.filter(site=>site.deployment_mode==='webspace').map(site=>({
-        id:site.id,type:'site',label:'Website: '+site.name,protocol:site.protocol,host:site.host,port:site.port,username:site.username
-      }))
-    ];
-    for(const item of connections){
-      const option=new Option(item.label,item.type+':'+item.id);
-      savedConnection.add(option);
-    }
-  }
-  function syncSavedConnection() {
-    const connection=connections.find(c=>c.type+':'+c.id===savedConnection.value);
-    for(const key of ['protocol','host','port','username','password']){
-      const field=create.elements.namedItem(key);
-      field.disabled=false;
-      field.required=key==='password'?!connection:key!=='password';
-      field.readOnly=!!connection;
-    }
-    if(connection){
-      for(const key of ['protocol','host','port','username'])create.elements.namedItem(key).value=connection[key];
-      create.elements.password.value='';
-      connectionHint.textContent='Verschlüsselte Zugangsdaten werden serverseitig übernommen. Das CMS-Zielverzeichnis bleibt individuell.';
-    }else{
-      connectionHint.textContent='Hostingzugang eingeben oder bereits gespeicherte Verbindung auswählen.';
-    }
-  }
-  savedConnection.addEventListener('change',syncSavedConnection);
-  loadSavedConnections().catch(error=>{connectionHint.textContent=error.message;});
-  create.elements.protocol.addEventListener('change', () => {
-    create.elements.port.value = create.elements.protocol.value === 'sftp' ? 22 : 21;
-  });
-  create.elements.databaseEngine.addEventListener('change', () => {
-    byId('cmsMysql').hidden = create.elements.databaseEngine.value !== 'mysql';
-  });
-  create.addEventListener('submit', e => {
-    e.preventDefault();
-    const f = new FormData(create);
-    const data = Object.fromEntries(f);
-    data.port = Number(f.get('port'));
-    const saved = f.get('savedConnection');
-    if(saved){
-      const [kind,id]=String(saved).split(':');
-      if(kind==='profile')data.profileId=id;
-      else if(kind==='site')data.existingSiteId=id;
-      delete data.savedConnection;
-    }else delete data.savedConnection;
-    data.runAt = runAt(f);
-    data.publicRootReady = f.has('publicRootReady');
-    data.database =
-      f.get('databaseEngine') === 'sqlite'
-        ? { engine: 'sqlite' }
-        : {
-            engine: 'mysql',
-            host: f.get('databaseHost'),
-            name: f.get('databaseName'),
-            user: f.get('databaseUser'),
-            password: f.get('databasePassword')
-          };
-    ['databaseEngine', 'databaseHost', 'databaseName', 'databaseUser', 'databasePassword'].forEach(
-      key => delete data[key]
-    );
-    action(create.querySelector('button'), async () => {
-      const result = await send('installations', data);
-      create.reset();
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw Error(result.message || result.error || 'Projektverknüpfung fehlgeschlagen.');
       return result;
     });
   });
-  const schedule = byId('cmsSchedule');
-  schedule.addEventListener('submit', e => {
-    e.preventDefault();
-    const f = new FormData(schedule);
-    action(schedule.querySelector('button'), () =>
-      send('updates', { installations: f.getAll('installation'), version: f.get('version'), runAt: runAt(f) })
-    );
-  });
-  const attach = byId('cmsAttach');
-  attach.addEventListener('submit', e => {
-    e.preventDefault();
-    const f = new FormData(attach);
-    action(attach.querySelector('button'), () =>
-      send('installations/attach', {
-        site: f.get('site'),
-        baseUrl: f.get('baseUrl'),
-        publicRootReady: f.has('publicRootReady'),
-        ...(f.get('projectId')?{projectId:f.get('projectId')}:{})
-      })
-    );
-  });
-  document.querySelectorAll('[data-cms-action]').forEach(button =>
+
+  document.querySelectorAll('[data-cms-action]').forEach(button => {
     button.addEventListener('click', () => {
       const kind = button.dataset.cmsAction;
-      if (
-        kind === 'rollback' &&
-        !confirm('Den vorherigen Core aktivieren? Aktuelle Inhalte und Medien bleiben erhalten.')
-      )
-        return;
+      if (kind === 'rollback' &&
+          !window.confirm('Vorherige Core-Version aktivieren? Aktuelle Inhalte und Medien bleiben erhalten.')) return;
       action(button, () => send('jobs/' + encodeURIComponent(button.dataset.job) + '/' + kind));
-    })
-  );
-  document
-    .querySelectorAll('[data-cms-inspect]')
-    .forEach(button =>
-      button.addEventListener('click', () =>
-        action(button, () => send('installations/' + encodeURIComponent(button.dataset.cmsInspect) + '/inspect'))
-      )
-    );
+    });
+  });
+
+  byId('cmsBundled')?.addEventListener('click', event =>
+    action(event.currentTarget, () => send('releases/bundled')));
+  byId('cmsReleaseFile')?.addEventListener('change', event => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    action(event.currentTarget, async () => {
+      if (file.size > 18 * 1024 * 1024) throw Error('Versionspaket ist zu groß.');
+      return send('releases', JSON.parse(await file.text()));
+    });
+  });
+
+  const schedule = byId('cmsSchedule');
+  schedule?.addEventListener('submit', event => {
+    event.preventDefault();
+    const form = new FormData(schedule);
+    action(schedule.querySelector('[type=submit]'), () =>
+      send('updates', { installations: form.getAll('installation'),
+        version: form.get('version'), runAt: runAt(form) }));
+  });
+
+  const attach = byId('cmsAttach');
+  if (attach) {
+    const selection = attach.elements.namedItem('site');
+    const updateAddress = () => {
+      const url = selection.selectedOptions?.[0]?.dataset?.url;
+      if (url) attach.elements.namedItem('baseUrl').value = url;
+    };
+    selection.addEventListener('change', updateAddress);
+    updateAddress();
+    attach.addEventListener('submit', event => {
+      event.preventDefault();
+      const form = new FormData(attach);
+      action(attach.querySelector('[type=submit]'), () => send('installations/attach', {
+        site: form.get('site'), baseUrl: form.get('baseUrl'),
+        publicRootReady: form.has('publicRootReady'),
+        ...(form.get('projectId') ? { projectId: form.get('projectId') } : {})
+      }));
+    });
+  }
+
+  const create = byId('cmsCreate');
+  if (!create) return;
+  const stored = create.elements.namedItem('savedConnection');
+  const hint = byId('cmsSavedConnectionHint');
+  const fields = ['protocol', 'host', 'port', 'username', 'password'];
+  let connections = [];
+
+  async function fetchConnections() {
+    const [profilesResponse,sitesResponse] = await Promise.all([
+      fetch('/api/server-profiles', { credentials: 'same-origin' }),
+      fetch('/api/sites', { credentials: 'same-origin' })
+    ]);
+    if (!profilesResponse.ok || !sitesResponse.ok) throw Error('Serverprofile konnten nicht geladen werden.');
+    const [profiles,sites] = await Promise.all([profilesResponse.json(),sitesResponse.json()]);
+    connections = [
+      ...profiles.map(item => ({ kind:'profile',id:item.id,label:'Serverprofil · '+item.name,
+        protocol:item.protocol,host:item.host,port:item.port,username:item.username })),
+      ...sites.filter(item => item.deployment_mode === 'webspace').map(item => ({
+        kind:'site',id:item.id,label:'Website · '+item.name,
+        protocol:item.protocol,host:item.host,port:item.port,username:item.username }))
+    ];
+    for (const item of connections) stored.add(new Option(item.label, item.kind + ':' + item.id));
+  }
+  function syncConnection() {
+    const selected = connections.find(item => item.kind + ':' + item.id === stored.value);
+    for (const key of fields) {
+      const field = create.elements.namedItem(key);
+      field.readOnly = !!selected && key !== 'protocol';
+      if (key === 'protocol') field.disabled = !!selected;
+      field.required = key === 'password' ? !selected : true;
+    }
+    if (selected) {
+      for (const key of fields.filter(key => key !== 'password'))
+        create.elements.namedItem(key).value = selected[key];
+      create.elements.namedItem('password').value = '';
+    }
+    hint.textContent = selected
+      ? 'Zugangsdaten werden ausschließlich auf dem Server übernommen. Gib nur das Zielverzeichnis ein.'
+      : 'Hosting-Daten eingeben oder eine gespeicherte Verbindung auswählen.';
+  }
+  stored.addEventListener('change', syncConnection);
+  fetchConnections().then(syncConnection).catch(error => hint.textContent = error.message);
+  create.elements.namedItem('protocol').addEventListener('change', () => {
+    create.elements.namedItem('port').value = create.elements.namedItem('protocol').value === 'sftp' ? 22 : 21;
+  });
+  create.elements.namedItem('databaseEngine').addEventListener('change', () => {
+    byId('cmsMysql').hidden = create.elements.namedItem('databaseEngine').value !== 'mysql';
+  });
+
+  // Cancelled initial installations have discarded setup passwords. Restore only public site
+  // metadata; require the operator to re-enter credentials and administrator password.
+  const resumeId = new URLSearchParams(window.location.search).get('resume');
+  if (resumeId) {
+    Promise.all([
+      fetch('/api/lorzcms/overview').then(r=>r.ok?r.json():Promise.reject(Error('CMS-Übersicht nicht verfügbar'))),
+      fetch('/api/sites').then(r=>r.ok?r.json():Promise.reject(Error('Website-Liste nicht verfügbar')))
+    ]).then(([overview,sites]) => {
+      const installation = overview.installations.find(i=>i.id===resumeId);
+      const job = overview.jobs.find(j=>j.installationId===resumeId);
+      const site = sites.find(i=>i.id===installation?.siteId);
+      if (!installation || !site || installation.version || job?.kind!=='install' || job.state!=='cancelled') return;
+      for (const [name,value] of Object.entries({
+        name:site.name,slug:site.slug,baseUrl:installation.baseUrl,version:job.version,
+        protocol:site.protocol,host:site.host,port:site.port,username:site.username,
+        remoteRoot:site.remote_root
+      })) {
+        const field=create.elements.namedItem(name);
+        if (field && value != null) field.value=String(value);
+      }
+      show('Bisherige Einrichtungsdaten wurden übernommen. Bitte Hosting-Passwort, Datenbank und Administratorzugang erneut angeben.');
+    }).catch(error=>show(error.message,true));
+  }
+
+  create.addEventListener('submit', event => {
+    event.preventDefault();
+    const form = new FormData(create);
+    const values = Object.fromEntries(form.entries());
+    const selection = form.get('savedConnection');
+    delete values.savedConnection;
+    if (selection) {
+      const [kind,id] = String(selection).split(':');
+      if (kind === 'profile') values.profileId=id;
+      if (kind === 'site') values.existingSiteId=id;
+      // Disabled protocol select does not appear in FormData, but the server supplies it.
+    } else if (!values.password) {
+      show('Bitte ein Hosting-Passwort eingeben oder eine gespeicherte Verbindung auswählen.', true);
+      return;
+    }
+    if (!values.projectId) delete values.projectId;
+    values.port = Number(form.get('port'));
+    values.publicRootReady = form.has('publicRootReady');
+    values.runAt = runAt(form);
+    values.database = form.get('databaseEngine')==='sqlite' ? {engine:'sqlite'} : {
+      engine:'mysql',host:form.get('databaseHost'),
+      name:form.get('databaseName'),user:form.get('databaseUser'),
+      password:form.get('databasePassword')
+    };
+    for (const name of ['databaseEngine','databaseHost','databaseName','databaseUser','databasePassword'])
+      delete values[name];
+    action(create.querySelector('[type=submit]'), () => send('installations', values));
+  });
 })();

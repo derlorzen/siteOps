@@ -17,7 +17,7 @@ import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
 import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/crypto.mjs';
 import { createCmsController, cmsInstallSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
-import { cmsDashboardBody } from './lib/lorzcms-ui.mjs';
+import { renderCmsWorkspace } from './lib/lorzcms-workspace.mjs';
 import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
 import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-projects.mjs';
@@ -5052,7 +5052,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"> </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -6589,6 +6589,12 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/billing-workflows.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/lorzcms-workspace.css', async (_r, reply) =>
+    reply
+      .type('text/css')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/lorzcms-workspace.css', import.meta.url), 'utf8'))
+  );
   app.get('/assets/lorzcms.js', async (_r, reply) =>
     reply
       .type('text/javascript')
@@ -6643,16 +6649,23 @@ async function start() {
   app.all('/mcp', async (req, reply) => nodeHandler(req.raw, reply.raw, req.body));
   app.get('/', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/websites', async (_r, reply) => reply.type('text/html').send(await dashboard()));
-  app.get('/lorzcms', async (_r, reply) =>
-    reply
+  async function cmsWorkspacePage(reply, view = 'sites', installationId = null) {
+    const [overview, projects, siteLinks] = await Promise.all([
+      cmsController.overview(),
+      billingController.projects(),
+      siteProjectService.list()
+    ]);
+    return reply
       .type('text/html')
-      .send(
-        page(
-          'LorzCMS',
-          cmsDashboardBody({ ...(await cmsController.overview()), projects: await billingController.projects() }, esc)
-        )
-      )
+      .send(page('LorzCMS', renderCmsWorkspace({ ...overview, projects, siteLinks }, esc, view, installationId)));
+  }
+  app.get('/lorzcms', async (_r, reply) => cmsWorkspacePage(reply));
+  app.get('/lorzcms/installations/:id', async (req, reply) =>
+    cmsWorkspacePage(reply, 'installation', z.uuid().parse(req.params.id))
   );
+  for (const view of ['new', 'connect', 'updates', 'releases', 'jobs']) {
+    app.get('/lorzcms/' + view, async (_r, reply) => cmsWorkspacePage(reply, view));
+  }
   app.addHook('preHandler', async (req, reply) => {
     if (!req.url.startsWith('/api/lorzcms/') || req.method === 'GET') return;
     if (!String(req.headers['content-type'] || '').startsWith('application/json'))
@@ -6673,6 +6686,9 @@ async function start() {
   );
   app.post('/api/lorzcms/updates', async (req, reply) => reply.code(202).send(await cmsController.schedule(req.body)));
   app.post('/api/lorzcms/installations/:id/inspect', async req => cmsController.inspect(z.uuid().parse(req.params.id)));
+  app.post('/api/lorzcms/installations/:id/resume', async (req, reply) =>
+    reply.code(202).send(await cmsController.resumeIncomplete(z.uuid().parse(req.params.id)))
+  );
   app.post('/api/lorzcms/jobs/:id/rollback', async req =>
     cmsController.rollback(
       z.uuid().parse(req.params.id),

@@ -1,5 +1,48 @@
 # LorzCMS in SiteOps
 
+## LorzCMS-Workspace: getrennte Ansichten und unterbrochene Anschlüsse
+
+Die Verwaltung ist in eigenständige Seiten aufgeteilt:
+
+- `/lorzcms`: Website-Karten mit aktuellem Zustand, Core-Version und Projekt
+- `/lorzcms/installations/:id`: einzelne Website verwalten, Projekt ändern,
+  Verbindung in SiteOps öffnen, den Zustand prüfen oder den Anschluss fortsetzen
+- `/lorzcms/new`: neue Website einrichten und optional Kundenprojekt auswählen
+- `/lorzcms/connect`: bestehendes CMS erstmals anschließen
+- `/lorzcms/updates`: ausgewählte betriebsbereite Websites aktualisieren
+- `/lorzcms/releases`: Core-Releases freigeben oder importieren
+- `/lorzcms/jobs`: Auftragsverlauf, Fehler, Neustart und Rollback
+
+Bei `Zustand prüfen` liefert eine noch nicht aktivierte Installation jetzt eine
+verständliche Statusmeldung mit ihrer letzten Auftragsphase, statt ausschließlich
+`CMS noch nicht eingerichtet` als Fehler zu melden. Die jeweilige Detailansicht
+enthält den Button **Anschluss fortsetzen**, sofern das sicher möglich ist.
+
+`POST /api/lorzcms/installations/:id/resume` verwendet vorhandene Jobs:
+
+- `needs_attention`: den vorhandenen Auftrag unter derselben ID erneut einplanen.
+- `cancelled` bei einem **bereits bestehenden CMS** (`adopt`): den ursprünglichen
+  Anschlussauftrag fortsetzen.
+- Kein Auftrag oder abgeschlossener, aber nicht aktivierter früherer Anschluss:
+  einen neuen `adopt`-Auftrag einplanen.
+- `queued` oder `running`: kein zweiter Auftrag.
+- Bereits aktiver Core: kein erneutes Enrollment.
+- Abgebrochene **Erstinstallation** (`install`): Zugangsdaten und Admin-Passwort
+  aus Sicherheitsgründen erneut im Einrichtungsformular eingeben.
+
+Ein `resume`-Aufruf startet keine WordPress- oder CMS-Neuinstallation; er setzt
+den bestehenden Anschlussprozess fort. Das Backend prüft weiterhin den
+Eigentümer-Marker, die unveränderten Startdateien und den Release-Hash, bevor
+es Dateien austauscht. Der Seitenaufruf allein führt keine Änderungen aus.
+Alle Aktionen werden als bestehende `cms_jobs` gespeichert und können unter
+`Aufträge` verfolgt werden. Die Installation wird erst nach erfolgreicher
+Website-Prüfung als `ready` geführt.
+
+Bei jeder CMS-Website kann die Verknüpfung mit einem Kundenprojekt nachträglich
+geändert werden. Die eigentlichen Hosting-Zugangsdaten werden weiter über die
+bestehende Website-Konfiguration verwaltet, nicht in CMS-Seiten ausgegeben.
+
+
 SiteOps manages independent CMS installations. The common MIT-licensed core lives
 in `packages/lorzcms-core/`; SiteOps and the core have separate versions. Publishing
 a release never updates websites automatically. Operators choose websites and
