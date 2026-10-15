@@ -6404,11 +6404,15 @@ async function start() {
       .send(await readFile(new URL('./public/app.css', import.meta.url), 'utf8'))
   );
   app.get('/assets/ops-workspace.css', async (_r, reply) =>
-    reply.type('text/css').header('Cache-Control', 'no-store')
+    reply
+      .type('text/css')
+      .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/ops-workspace.css', import.meta.url), 'utf8'))
   );
   app.get('/assets/ops-workspace.js', async (_r, reply) =>
-    reply.type('text/javascript').header('Cache-Control', 'no-store')
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/ops-workspace.js', import.meta.url), 'utf8'))
   );
   app.get('/assets/crm-app.js', async (_r, reply) =>

@@ -14,22 +14,38 @@ function mockDatabase({ site = true, project = true } = {}) {
     query: async (sql, params = []) => {
       queries.push({ sql, params });
       if (sql.startsWith('SELECT id FROM sites')) return [site ? [{ id: params[0] }] : []];
-      if (sql.startsWith('SELECT id FROM customer_projects'))
-        return [project ? [{ id: params[0] }] : []];
+      if (sql.startsWith('SELECT id FROM customer_projects')) return [project ? [{ id: params[0] }] : []];
       return [[]];
     },
     async getConnection() {
       return {
         query: database.query,
         beginTransaction: async () => {},
-        commit: async () => { committed++; },
-        rollback: async () => { rolledBack++; },
-        release: () => { released++; }
+        commit: async () => {
+          committed++;
+        },
+        rollback: async () => {
+          rolledBack++;
+        },
+        release: () => {
+          released++;
+        }
       };
     }
   };
-  return { database, queries, get committed() { return committed; },
-    get rolledBack() { return rolledBack; }, get released() { return released; } };
+  return {
+    database,
+    queries,
+    get committed() {
+      return committed;
+    },
+    get rolledBack() {
+      return rolledBack;
+    },
+    get released() {
+      return released;
+    }
+  };
 }
 
 test('standalone website can be linked to a project transactionally', async () => {
@@ -37,8 +53,7 @@ test('standalone website can be linked to a project transactionally', async () =
   const service = createSiteProjectService(fake.database);
   const siteId = randomUUID();
   const projectId = randomUUID();
-  assert.deepEqual(await service.link(siteId, { project_id: projectId }),
-    { site_id: siteId, project_id: projectId });
+  assert.deepEqual(await service.link(siteId, { project_id: projectId }), { site_id: siteId, project_id: projectId });
   assert.equal(fake.committed, 1);
   assert.equal(fake.rolledBack, 0);
   assert.equal(fake.released, 1);
@@ -52,9 +67,18 @@ test('unlinking leaves the site and its monitoring data intact', async () => {
   const siteId = randomUUID();
   await service.link(siteId, { project_id: null });
   assert.equal(fake.committed, 1);
-  assert.equal(fake.queries.some(q => q.sql.startsWith('DELETE FROM sites')), false);
-  assert.equal(fake.queries.some(q => q.sql.startsWith('DELETE FROM project_sites')), true);
-  assert.equal(fake.queries.some(q => q.sql.startsWith('INSERT INTO project_sites')), false);
+  assert.equal(
+    fake.queries.some(q => q.sql.startsWith('DELETE FROM sites')),
+    false
+  );
+  assert.equal(
+    fake.queries.some(q => q.sql.startsWith('DELETE FROM project_sites')),
+    true
+  );
+  assert.equal(
+    fake.queries.some(q => q.sql.startsWith('INSERT INTO project_sites')),
+    false
+  );
 });
 
 test('missing site or missing project causes rollback', async () => {
@@ -62,8 +86,10 @@ test('missing site or missing project causes rollback', async () => {
   const projectId = randomUUID();
   for (const mode of [{ site: false }, { project: false }]) {
     const fake = mockDatabase(mode);
-    await assert.rejects(createSiteProjectService(fake.database).link(siteId, { project_id: projectId }),
-      error => error.statusCode === 404);
+    await assert.rejects(
+      createSiteProjectService(fake.database).link(siteId, { project_id: projectId }),
+      error => error.statusCode === 404
+    );
     assert.equal(fake.committed, 0);
     assert.equal(fake.rolledBack, 1);
     assert.equal(fake.released, 1);
@@ -72,9 +98,11 @@ test('missing site or missing project causes rollback', async () => {
 
 test('site assignment rejects invalid UUIDs and does not change database', async () => {
   const fake = mockDatabase();
-  await assert.rejects(createSiteProjectService(fake.database).link(randomUUID(), {
-    project_id: 'incorrect'
-  }));
+  await assert.rejects(
+    createSiteProjectService(fake.database).link(randomUUID(), {
+      project_id: 'incorrect'
+    })
+  );
   assert.equal(fake.queries.length, 0);
 });
 
