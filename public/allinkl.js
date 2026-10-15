@@ -75,7 +75,7 @@
       const names=[...new Set(data.map(row=>
         typeof row==='string'?row:row?.domain_name??row?.domain??row?.hostname
       ).filter(name=>typeof name==='string' && name.length>0)
-        .map(name=>name.trim().replace(/\\.$/,'').toLowerCase()))].sort();
+        .map(name=>name.trim().replace(/\.$/,'').toLowerCase()))].sort();
       domainSelect.replaceChildren(new Option(names.length?'Domain wählen …':'Keine Domains in diesem KAS-Konto',''));
       for(const name of names) {
         domainSelect.add(new Option(name,name));
