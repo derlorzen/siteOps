@@ -71,6 +71,17 @@ final class Seo {
         if(trim((string)($seo['description'] ?? ''))==='' && self::excerpt($item)===''){$issues[]='Individuelle Seitenbeschreibung ergänzen';}
         if(!empty($seo['noindex'])){$issues[]='Seite ist bewusst auf noindex gesetzt';}
         if(!empty($seo['nofollow'])){$issues[]='Links werden nicht verfolgt (nofollow)';}
+        $missingAlt=0;
+        foreach($item['fields'] ?? [] as $field){
+            if(!is_string($field)){continue;}
+            preg_match_all('~<img\\b[^>]*>~i',$field,$images);
+            foreach($images[0] as $tag){if(!preg_match('~\\balt\\s*=~i',$tag)){$missingAlt++;}}
+            if(str_contains($field,'Deine Website ist eingerichtet.')){$issues[]='Platzhaltertext der Startseite ersetzen';}
+        }
+        foreach($item['options']['blocks'] ?? [] as $block){
+            if(is_array($block) && ($block['kind'] ?? '')==='image' && !empty($block['image']) && trim((string)($block['alt'] ?? ''))===''){$missingAlt++;}
+        }
+        if($missingAlt){$issues[]=$missingAlt.' Bild(er) ohne Alternativtext – dekorative Bilder prüfen';}
         if($site && $configuration){
             $m=self::metadata($item,$site,$configuration);
             if(($item['path'] ?? '') && $m['canonical']!==rtrim((string)$configuration['base_url'],'/').$item['path']){$issues[]='Canonical verweist auf eine andere URL – Absicht prüfen';}
