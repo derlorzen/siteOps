@@ -482,3 +482,369 @@
       '<label class="crm-checkbox"><input type="checkbox" name="billable" '+(e&&!e.billable?'':'checked')+'> Abrechenbar</label>'+
       '<button class="crm-btn crm-btn-primary">Zeit speichern</button></form>'),'time');
   }
+
+  async function startOrStop(taskId=''){
+    const active=timer();
+    if(active&&taskId&&active.task_id!==taskId)
+      throw Error('Es läuft bereits ein Timer für „'+active.task_name+'“. Bitte zuerst stoppen.');
+    if(active){
+      await api('/api/billing/timer/'+active.id+'/stop','POST',{});
+      notice('Zeitbuchung gespeichert.');
+    } else {
+      const current=findTask(taskId);
+      if(!current)throw Error('Task nicht gefunden.');
+      await api('/api/billing/timer/start','POST',{
+        task_id:taskId,kind:'work',description:current.name,billable:true
+      });
+      notice('Timer läuft für „'+current.name+'“.');
+    }
+    await reloadAfterChange(currentRoute().section==='project');
+    if(state.dialog==='task'&&state.taskId){
+      const id=state.taskId;
+      taskModal(id);
+    }
+  }
+  async function persistMove(taskId,status,referenceId='',after=false){
+    if(state.saving||!state.board) return;
+    if(!statusOrder.includes(status))return;
+    const previous=state.board;
+    const columns=Object.fromEntries(statusOrder.map(key=>[key,[...(previous.columns[key]||[])]]));
+    let moving;
+    for(const key of statusOrder){
+      const i=columns[key].findIndex(t=>t.id===taskId);
+      if(i>=0)moving=columns[key].splice(i,1)[0];
+    }
+    if(!moving)return;
+    moving={...moving,status};
+    const insertion=referenceId?columns[status].findIndex(t=>t.id===referenceId):-1;
+    if(insertion<0)columns[status].push(moving);
+    else columns[status].splice(insertion+(after?1:0),0,moving);
+    state.board={...previous,columns};
+    state.saving=true;
+    render();
+    try{
+      const saved=await api('/api/billing/boards/'+encodeURIComponent(previous.project.id),'PUT',{
+        revision:previous.revision,
+        columns:Object.fromEntries(statusOrder.map(key=>[key,columns[key].map(t=>t.id)]))
+      });
+      if(state.projectId===previous.project.id){
+        state.board=saved;
+        const task=findTask(taskId);
+        if(task)task.status=status;
+        notice('Task verschoben.');
+      }
+    }catch(error){
+      notice('Verschieben nicht gespeichert: '+userError(error)+'. Board wird neu geladen.',true);
+      if(state.projectId===previous.project.id)await loadBoard(previous.project.id);
+    }finally{
+      state.saving=false;
+      render();
+    }
+  }
+  function moveByStep(taskId,step) {
+    if(!state.board)return;
+    for(const column of statusOrder){
+      const tasks=state.board.columns[column]||[];
+      const at=tasks.findIndex(t=>t.id===taskId);
+      if(at<0)continue;
+      const target=at+step;
+      if(target<0||target>=tasks.length)return;
+      void persistMove(taskId,column,tasks[target].id,step>0);
+      return;
+    }
+  }
+  async function refreshCurrentProject(){
+    if(state.projectId)await loadBoard(state.projectId);
+  }
+  async function action(actionName,source){
+    const id=source.dataset.id;
+    const taskId=source.dataset.taskId;
+    const project=currentRoute().id;
+    switch(actionName){
+      case 'new-customer':customerModal();break;
+      case 'edit-customer':customerModal(id);break;
+      case 'new-project':projectModal('',source.dataset.customerId);break;
+      case 'edit-project':projectModal(project);break;
+      case 'new-task':taskModal('',source.dataset.status||'open');break;
+      case 'open-task':taskModal(taskId);break;
+      case 'manual-time':manualTimeModal();break;
+      case 'edit-time':manualTimeModal(id);break;
+      case 'close-modal':closeModal();break;
+      case 'task-timer':case 'stop-timer':await startOrStop(taskId);break;
+      case 'view-board':state.view='board';render();break;
+      case 'view-list':state.view='list';render();break;
+      case 'column':state.mobileColumn=source.dataset.column;render();break;
+      case 'task-up':moveByStep(taskId,-1);break;
+      case 'task-down':moveByStep(taskId,1);break;
+      case 'retry-board':await refreshCurrentProject();break;
+      case 'apply-template':{
+        if(!project)return;
+        const key=$('crmTemplateKey').value;
+        if(!confirm('Die Tasks der gewählten Vorlage in diesem Projekt anlegen?'))return;
+        const result=await api('/api/billing/projects/'+project+'/template','POST',{key});
+        notice(result.created.length+' Tasks erstellt.');
+        await reloadAfterChange(true);
+        break;
+      }
+      case 'toggle-recurring':{
+        await api('/api/billing/recurring/'+id,'PATCH',{enabled:source.dataset.enabled!=='1'});
+        await refreshCurrentProject();break;
+      }
+      case 'submit-recurring':{
+        const form=source.closest('form');
+        if(!form.reportValidity())return;
+        await api('/api/billing/projects/'+project+'/recurring','POST',{
+          task_name:formVal(form,'task_name'),every_days:Number(formVal(form,'every_days')),
+          description:'Regelmäßige Wartung'
+        });
+        notice('Wartungsregel gespeichert.');await refreshCurrentProject();break;
+      }
+      case 'delete-time':{
+        if(!confirm('Diesen noch nicht abgerechneten Eintrag löschen?'))return;
+        await api('/api/billing/entries/'+id,'DELETE',{});
+        await reloadAfterChange(currentRoute().section==='project');notice('Zeitbuchung gelöscht.');break;
+      }
+      case 'draft-invoice':{
+        const ids=[...document.querySelectorAll('[data-bill-entry]:checked')].map(i=>i.dataset.billEntry);
+        if(!ids.length)throw Error('Bitte mindestens eine abrechenbare Zeit auswählen.');
+        const customerId=state.invoiceCustomer||state.customers[0]?.id;
+        await api('/api/billing/invoices','POST',{
+          customer_id:customerId,service_from:state.invoiceFrom||today().slice(0,8)+'01',
+          service_to:state.invoiceTo||today(),entry_ids:ids
+        });
+        await reload();notice('Rechnungsentwurf erstellt.');break;
+      }
+      case 'issue-invoice':{
+        if(!confirm('Rechnung verbindlich ausstellen und im GitHub-Archiv ablegen?'))return;
+        await api('/api/billing/invoices/'+id+'/issue','POST',{});
+        await reload();notice('Rechnung ausgestellt und archiviert.');break;
+      }
+      case 'pay-invoice':{
+        if(!confirm('Zahlungseingang wirklich bestätigen?'))return;
+        await api('/api/billing/invoices/'+id+'/pay','POST',{});await reload();
+        notice('Rechnung als bezahlt markiert.');break;
+      }
+      case 'send-invoice':case 'remind-invoice':{
+        const kind=actionName==='send-invoice'?'invoice':'reminder';
+        if(!confirm(kind==='invoice'?'Rechnung mit PDF wirklich per E-Mail senden?':'Zahlungserinnerung senden?'))return;
+        await api('/api/billing/invoices/'+id+'/send','POST',{kind});
+        notice(kind==='invoice'?'Rechnung per E-Mail verschickt.':'Erinnerung verschickt.');break;
+      }
+      case 'cancel-invoice':{
+        const reason=prompt('Grund für die Stornierung (mindestens 5 Zeichen):');
+        if(!reason)return;
+        if(!confirm('Nummerierten Stornobeleg ausstellen?'))return;
+        await api('/api/billing/invoices/'+id+'/cancel','POST',{reason});
+        await reload();notice('Rechnung storniert.');break;
+      }
+      case 'discard-invoice':{
+        if(!confirm('Rechnungsentwurf löschen?'))return;
+        await api('/api/billing/invoices/'+id,'DELETE',{});
+        await reload();notice('Entwurf gelöscht.');break;
+      }
+      case 'toggle-check':{
+        const item=state.taskDetail?.checklist.find(t=>t.id===id);
+        const completed=source.checked;
+        await api('/api/billing/tasks/'+state.taskId+'/checklist/'+id,'PATCH',{completed});
+        await loadTaskExtras(state.taskId);
+        break;
+      }
+      case 'remove-check':{
+        await api('/api/billing/tasks/'+state.taskId+'/checklist/'+id,'DELETE',{});
+        await loadTaskExtras(state.taskId);break;
+      }
+      case 'remove-file':{
+        if(!confirm('Anhang löschen?'))return;
+        await api('/api/billing/tasks/'+state.taskId+'/files/'+id,'DELETE',{});
+        await loadTaskExtras(state.taskId);break;
+      }
+    }
+  }
+  async function submit(form) {
+    const kind=form.dataset.form;
+    const id=form.dataset.id||'';
+    switch(kind){
+      case 'customer':{
+        const payload={
+          name:formVal(form,'name'),contact_name:formVal(form,'contact_name'),
+          email:formVal(form,'email'),street:formVal(form,'street'),
+          postal_code:formVal(form,'postal_code'),city:formVal(form,'city'),
+          default_hourly_cents:Math.round(Number(formVal(form,'rate_eur'))*100)
+        };
+        await api('/api/billing/customers'+(id?'/'+id:''),id?'PATCH':'POST',payload);
+        closeModal();await reload();notice('Kunde gespeichert.');break;
+      }
+      case 'project':{
+        const value=formVal(form,'rate_eur');
+        const payload={
+          name:formVal(form,'name'),description:formVal(form,'description'),
+          site_id:formVal(form,'site_id')||null,
+          hourly_cents:value===''?null:Math.round(Number(value)*100)
+        };
+        if(!id)payload.customer_id=formVal(form,'customer_id');
+        else payload.status=formVal(form,'project_status');
+        const saved=await api('/api/billing/projects'+(id?'/'+id:''),id?'PATCH':'POST',payload);
+        closeModal();
+        await reload();
+        navigate('/billing/projects/'+(id||saved.id));
+        notice('Projekt gespeichert.');break;
+      }
+      case 'task':{
+        const raw=formVal(form,'rate_eur');
+        const payload={
+          name:formVal(form,'name'),description:formVal(form,'description'),
+          due_date:formVal(form,'due_date')||null,priority:formVal(form,'priority'),
+          status:formVal(form,'status'),hourly_cents:raw===''?null:Math.round(Number(raw)*100)
+        };
+        if(!id)payload.project_id=form.dataset.projectId;
+        await api('/api/billing/tasks'+(id?'/'+id:''),id?'PATCH':'POST',payload);
+        closeModal();await reloadAfterChange(true);notice('Task gespeichert.');break;
+      }
+      case 'time':{
+        const entry=state.entries.find(e=>e.id===id);
+        const payload={
+          entry_date:formVal(form,'entry_date'),
+          duration_minutes:Number(formVal(form,'duration_minutes')),
+          description:formVal(form,'description'),
+          billable:form.elements.namedItem('billable').checked
+        };
+        if(!id){payload.task_id=formVal(form,'task_id');payload.kind='work';}
+        if(!entry&&!payload.task_id)throw Error('Bitte einen Task auswählen.');
+        await api('/api/billing/entries'+(id?'/'+id:''),id?'PATCH':'POST',payload);
+        closeModal();await reloadAfterChange(currentRoute().section==='project');
+        notice('Zeit gespeichert.');break;
+      }
+      case 'quick-time':{
+        await api('/api/billing/entries','POST',{
+          task_id:state.taskId,entry_date:today(),kind:'work',
+          description:formVal(form,'description'),
+          duration_minutes:Number(formVal(form,'duration_minutes')),
+          billable:form.elements.namedItem('billable').checked
+        });
+        form.reset();await reloadAfterChange(true);notice('Zeit am Task gebucht.');break;
+      }
+      case 'settings':{
+        const values=Object.fromEntries(new FormData(form));
+        await api('/api/billing/settings','POST',values);
+        await reload();notice('Einstellungen gespeichert.');break;
+      }
+      case 'checklist':{
+        await api('/api/billing/tasks/'+state.taskId+'/checklist','POST',{text:formVal(form,'text')});
+        await loadTaskExtras(state.taskId);notice('Checklistenpunkt ergänzt.');break;
+      }
+      case 'comment':{
+        await api('/api/billing/tasks/'+state.taskId+'/comments','POST',{text:formVal(form,'text')});
+        await loadTaskExtras(state.taskId);notice('Kommentar gespeichert.');break;
+      }
+      case 'attachment':{
+        const file=form.elements.namedItem('file').files[0];
+        if(!file)throw Error('Bitte Datei auswählen.');
+        if(file.size>2*1024*1024)throw Error('Maximal 2 MB pro Anhang.');
+        const bytes=new Uint8Array(await file.arrayBuffer());
+        let binary='';
+        for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+        await api('/api/billing/tasks/'+state.taskId+'/files','POST',{
+          filename:file.name,mime_type:file.type||'application/octet-stream',data_base64:btoa(binary)
+        });
+        await loadTaskExtras(state.taskId);notice('Datei angehängt.');break;
+      }
+    }
+  }
+  root.addEventListener('click',event=>{
+    const link=event.target.closest('a[data-route]');
+    if(link&&event.button===0&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.altKey){
+      event.preventDefault();navigate(link.getAttribute('href'));return;
+    }
+    const actionEl=event.target.closest('[data-action]');
+    if(!actionEl)return;
+    // Checkboxes have their own change event, not a click handler.
+    if(actionEl.dataset.action==='toggle-check')return;
+    event.preventDefault();
+    void action(actionEl.dataset.action,actionEl).catch(error=>notice(userError(error),true));
+  });
+  root.addEventListener('submit',event=>{
+    const form=event.target.closest('form[data-form]');
+    if(!form)return;
+    event.preventDefault();
+    if(form.dataset.submitting)return;
+    form.dataset.submitting='1';
+    form.querySelector('button[type=submit],button:not([type])')?.setAttribute('disabled','');
+    void submit(form).catch(error=>notice(userError(error),true)).finally(()=>{
+      delete form.dataset.submitting;
+      form.querySelector('button[type=submit],button:not([type])')?.removeAttribute('disabled');
+    });
+  });
+  root.addEventListener('change',event=>{
+    const target=event.target;
+    if(target.matches('[data-status-select]')){
+      const card=target.closest('[data-task-id]');
+      if(card)void persistMove(card.dataset.taskId,target.value);
+      return;
+    }
+    if(target.matches('[data-action="toggle-check"]')){
+      void action('toggle-check',target).catch(error=>notice(userError(error),true));return;
+    }
+    if(target.id==='crmCustomerFilter'){state.customerFilter=target.value;render();}
+    if(target.id==='crmStatusFilter'){state.statusFilter=target.value;render();}
+    if(target.id==='crmInvoiceCustomer'){state.invoiceCustomer=target.value;render();}
+    if(target.id==='crmInvoiceFrom'){state.invoiceFrom=target.value;render();}
+    if(target.id==='crmInvoiceTo'){state.invoiceTo=target.value;render();}
+    if(target.id==='crmExportYear'){
+      $('crmExportDatev').href='/api/billing/datev/'+Number(target.value)+'.csv';
+      $('crmExportArchive').href='/api/billing/archive-manifest/'+Number(target.value);
+    }
+  });
+  root.addEventListener('input',event=>{
+    if(event.target.id==='crmProjectSearch'){
+      const cursor=event.target.selectionStart;
+      state.search=event.target.value;render();
+      const input=$('crmProjectSearch');
+      if(input){input.focus();if(cursor!==null)input.setSelectionRange(cursor,cursor);}
+    }
+  });
+  let dragging='';
+  root.addEventListener('dragstart',event=>{
+    const card=event.target.closest('.crm-task-card');
+    if(!card||state.saving){event.preventDefault();return;}
+    dragging=card.dataset.taskId;
+    event.dataTransfer.effectAllowed='move';
+    event.dataTransfer.setData('text/plain',dragging);
+    card.classList.add('is-dragging');
+  });
+  root.addEventListener('dragend',()=>{
+    dragging='';
+    root.querySelectorAll('.is-dragging').forEach(card=>card.classList.remove('is-dragging'));
+  });
+  root.addEventListener('dragover',event=>{
+    if(dragging&&event.target.closest('[data-lane]')){
+      event.preventDefault();event.dataTransfer.dropEffect='move';
+    }
+  });
+  root.addEventListener('drop',event=>{
+    const lane=event.target.closest('[data-lane]');
+    if(!dragging||!lane)return;
+    event.preventDefault();
+    const moved=dragging;dragging='';
+    const nearest=event.target.closest('.crm-task-card');
+    if(nearest&&nearest.dataset.taskId!==moved){
+      const after=event.clientY>nearest.getBoundingClientRect().top+nearest.getBoundingClientRect().height/2;
+      void persistMove(moved,lane.dataset.lane,nearest.dataset.taskId,after);
+    }else void persistMove(moved,lane.dataset.lane);
+  });
+  $('crmDialog').addEventListener('close',()=>{
+    state.dialog='';state.taskId='';state.taskDetail=null;
+  });
+  window.addEventListener('popstate',()=>{
+    render();const route=currentRoute();
+    if(route.section==='project'&&route.id!==state.projectId)void loadBoard(route.id);
+  });
+  const route=currentRoute();
+  void reload().then(async()=>{
+    if(route.section==='project')await loadBoard(route.id);
+  }).catch(error=>{
+    state.loading=false;
+    dom('<div class="crm-empty is-error"><h2>Workspace konnte nicht geladen werden</h2><p>'+esc(userError(error))+'</p>'+
+    button('Erneut versuchen','reload-workspace','','crm-btn-primary')+'</div>');
+  });
+  setInterval(updateTimer,1000);
+})();
