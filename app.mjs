@@ -5793,12 +5793,24 @@ function setupPage() {
     }
     profileSelect.addEventListener('change',selectServerProfile);
     async function setupExistingSites(){
+      profileSource.replaceChildren(new Option('Websites werden geladen …',''));
+      profileSource.disabled=true;
       try{
-        const r=await fetch('/api/sites');if(!r.ok)return;
+        const r=await fetch('/api/server-profiles/source-sites');
+        if(!r.ok)throw new Error('HTTP '+r.status);
         const sites=await r.json();
-        for(const site of sites.filter(s=>s.deploymentMode==='webspace'))
-          profileSource.add(new Option(site.name+' · '+site.host,site.id));
-      }catch(error){profileHint.textContent=String(error.message||error);}
+        if(!Array.isArray(sites))throw new Error('Ungültige Antwort der Website-Liste');
+        profileSource.replaceChildren(new Option(
+          sites.length?'Website wählen …':'Keine Website mit FTP-/SFTP-Zugang vorhanden',''));
+        for(const site of sites){
+          profileSource.add(new Option(site.name+' · '+site.domain+' ('+site.protocol.toUpperCase()+')',site.id));
+        }
+        profileSource.disabled=!sites.length;
+      }catch(error){
+        profileSource.replaceChildren(new Option('Websites konnten nicht geladen werden',''));
+        profileSource.disabled=true;
+        profileHint.textContent='Fehler beim Laden bestehender Websites: '+String(error.message||error);
+      }
     }
     async function saveProfile(fromExisting){
       const name=profileName.value.trim();
