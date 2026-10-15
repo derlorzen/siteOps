@@ -17,7 +17,6 @@ import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
 import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/crypto.mjs';
 import { createCmsController, cmsInstallSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
-import { cmsDashboardBody } from './lib/lorzcms-ui.mjs';
 import { renderCmsWorkspace } from './lib/lorzcms-workspace.mjs';
 import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
