@@ -23,6 +23,7 @@ import { createBillingController, registerBillingRoutes } from './lib/billing.mj
 import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-projects.mjs';
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
 import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
+import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 
 function env(name, fallback = undefined) {
@@ -182,6 +183,7 @@ async function archiveIssuedInvoice(snapshot, pdf) {
 }
 const billingController = createBillingController({ db, archive: archiveIssuedInvoice });
 const siteProjectService = createSiteProjectService(db);
+const connectionProfiles = createConnectionProfiles({ db, encrypt, decrypt });
 const billingWorkflows = createBillingWorkflows({
   db,
   billing: billingController,
@@ -753,7 +755,13 @@ async function updateSiteConnection(idOrSlug, x) {
   return getSite(site.id);
 }
 
+async function resolveSiteProfile(x) {
+  if (x.deploymentMode !== 'webspace' || !x.profileId) return x;
+  const server = await connectionProfiles.resolve(x.profileId, x.remoteRoot);
+  return { ...x, ...server, remoteRoot: x.remoteRoot || '/' };
+}
 async function createSite(x) {
+  x = await resolveSiteProfile(x);
   const id = crypto.randomUUID(),
     gitMode = x.deploymentMode === 'hostinger_git',
     sourceRoot = String(x.sourceRoot || '').replace(/^\/+|\/+$/g, '');
@@ -798,6 +806,7 @@ async function createSite(x) {
   return getSite(id);
 }
 async function testSiteConnection(x) {
+  x = await resolveSiteProfile(x);
   const gitMode = x.deploymentMode === 'hostinger_git',
     sourceRoot = String(x.sourceRoot || '').replace(/^\/+|\/+$/g, '');
   const site = gitMode
@@ -6695,6 +6704,7 @@ async function start() {
     privateKey: z.string().optional(),
     passphrase: z.string().optional(),
     remoteRoot: z.string().min(1),
+    profileId: z.uuid().optional(),
     sourceRepository: z.string().optional(),
     sourceBranch: z.string().optional(),
     sourceRoot: z.string().optional(),
@@ -6721,6 +6731,7 @@ async function start() {
     return reply.code(201).send({ id: site.id, slug: site.slug });
   });
   app.post('/api/site-connection-test', async req => testSiteConnection(siteCreateSchema.parse(req.body)));
+  registerConnectionProfileRoutes(app, connectionProfiles, () => new URL(cfg.publicBaseUrl).origin);
   const themeService = createThemeService({ q, storeSetting });
   registerThemeRoutes(app, themeService, () => new URL(cfg.publicBaseUrl).origin);
   registerWorkspaceSearchRoutes(app, createWorkspaceSearch({ db }));
