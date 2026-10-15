@@ -46,6 +46,10 @@ jobs:
         run: npm run check
       - name: Lint
         run: npm run lint
+      - name: Show required formatting fixes (temporary)
+        run: |
+          npm run format
+          git diff -- app.mjs lib/lorzcms.mjs lib/site-provisioning.mjs test/lorzcms-coordinator.test.mjs test/site-provisioning.test.mjs test/lorzcms-mcp-provision.test.mjs
       - name: Format check
         run: npm run format:check
       - name: Install browser runner dependencies
