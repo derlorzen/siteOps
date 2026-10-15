@@ -44,15 +44,20 @@ test(
     for (const statement of migration.split(/;\s*(?:\n|$)/).filter(x => x.trim())) await q(statement);
     const key = crypto.randomBytes(32),
       files = new Map(),
+      directories = new Set(['/']),
       live = new Map(),
       calls = [];
     let unhealthy = false,
       activationConflict = false;
     const remote = {
+      async ensureDirectory(path) {
+        directories.add(path);
+      },
       async list(path) {
         if (path === '/') return [];
         const start = path.replace(/\/$/, '') + '/';
-        if (![...files.keys()].some(p => p.startsWith(start))) throw new Error('not found');
+        if (!directories.has(path) && ![...files.keys()].some(p => p.startsWith(start)))
+          throw new Error('not found');
         return [...files.keys()]
           .filter(p => p.startsWith(start))
           .map(p => ({
