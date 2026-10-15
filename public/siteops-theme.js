@@ -50,25 +50,7 @@
   applyColor(saved);
   let editing = false;
 
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.id = 'siteopsThemeButton';
-  button.title = 'Farben und Design anpassen';
-  button.setAttribute('aria-label', 'Farben und Design anpassen');
-  button.innerHTML = '<span class="siteops-theme-button-dot" aria-hidden="true"></span>' +
-    '<span class="siteops-theme-button-label">Design</span>';
-
-  const topbar = document.querySelector('.crm-topbar') || document.querySelector('.ops-workspace-bar');
-  if (topbar) {
-    if (topbar.classList.contains('crm-topbar')) {
-      const actions = topbar.querySelector('.crm-top-actions');
-      topbar.insertBefore(button, actions || null);
-    } else {
-      topbar.insertBefore(button, topbar.lastElementChild || null);
-    }
-  } else {
-    document.body.appendChild(button);
-  }
+  // Appearance controls live in the settings views; the saved color still applies globally.
 
   const dialog = document.createElement('dialog');
   dialog.className = 'siteops-theme-dialog';
@@ -135,7 +117,13 @@
     updateControls();
     dialog.showModal();
   }
-  button.addEventListener('click', openDialog);
+  // CRM routes are client-rendered, so the trigger may be inserted after this script runs.
+  document.addEventListener('click', event => {
+    const trigger = event.target.closest('[data-siteops-theme-open]');
+    if (!trigger) return;
+    event.preventDefault();
+    openDialog();
+  });
   dialog.querySelectorAll('[data-close],.siteops-theme-cancel').forEach(entry =>
     entry.addEventListener('click', () => dialog.close())
   );
