@@ -88,3 +88,52 @@ es wird nicht als Klartext in SiteOps-Jobstatus gespeichert.
 
 Eine Vorschau kann jederzeit über `website_create_plan` ohne Domain-,
 Datei- oder Datenbankänderung erzeugt werden.
+
+
+## Themenwebsite: Unfallversicherung mit vier Sport-Landingpages
+
+Auch dieser vollständige Auftrag kann über `website_create` ausgeführt werden:
+
+> Erstelle mir mit LorzCMS eine Website unter unfall.lorzen.de über die
+> Notwendigkeit einer privaten Unfallversicherung, mit Praxisbeispielen,
+> gesetzlich-vs-privat-Vergleich und vier Landingpages für die Sportarten
+> mit den meisten gemeldeten Unfällen.
+
+Dafür `preset: "accident-insurance"` und `baseUrl: "https://unfall.lorzen.de"`
+übergeben. Anders als bei `preset: "business"` sind **kein Firmenname und
+kein Ort erforderlich**. SiteOps verwendet unverändert die gleiche
+ALL-INKL-/FTP-Subdomain-Erkennung, neue Datenbank, CMS-Installation, Warteschlange,
+Schutzprüfungen und Admin-Passwortvergabe.
+
+Das Inhalts-Preset erzeugt sechs Seiten: die Startseite, einen ausführlichen
+Vergleich gesetzlicher und privater Unfallversicherung sowie vier
+themenspezifische Landingpages:
+- `/unfallversicherung-fussball`
+- `/unfallversicherung-skisport`
+- `/unfallversicherung-radfahren`
+- `/unfallversicherung-handball`
+
+**Statistikmethodik:** Die zugrunde liegende ERGO-Unfallstatistik 2025 wurde
+am **10.06.2026** veröffentlicht:
+https://www.ergo.com/de/newsroom-ergo/reports-dossiers/sportunfaelle .
+Die vier Sportarten sind die mit den meisten *bei ERGO gemeldeten
+Versicherungsfällen*, nicht die mit dem höchsten Verletzungsrisiko je
+Sportler oder Sportstunde. Angaben: Fußball 2.308 (35,6 %), Skisport
+1.001 (15,4 %), Fahrrad 579 (8,9 %), Handball 189 (2,9 %).
+Der Hinweis auf die fehlende Repräsentativität steht sichtbar auf den Seiten.
+
+Rechtsgrundlagen zum Vergleich:
+- https://www.dguv.de/de/ihr_partner/arbeitnehmer/gesetzliche-uv/index.jsp
+- https://www.dguv.de/de/versicherung/versicherte_personen/faq_leistungen/index.jsp
+- https://www.bmas.de/DE/Soziales/Gesetzliche-Unfallversicherung/Fragen-und-Antworten/faq-gesetzliche-unfallversicherung.html
+
+Die Angaben sind allgemeine Information, keine Leistungszusage und
+keine individuelle Beratung. Sie zeigen unter anderem die Leistungen der
+gesetzlichen Krankenversicherung und die mögliche Einkommensabsicherung
+durch Berufsunfähigkeitsversicherung, statt eine private Unfallversicherung
+als universelle Lösung darzustellen. Der Vertrag entscheidet über
+versicherte Sportarten, Leistungsarten und Invaliditätsleistungen.
+
+**Vor Freigabe prüfen:** verantwortlicher Website-Betreiber, Anbieterkennzeichnung,
+Datenschutz, mögliche Vermittlerpflichtangaben, Beratungskontakt sowie das
+SSL-Zertifikat. Bis zur Freigabe bleibt die Site `noindex`.
