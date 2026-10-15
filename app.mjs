@@ -144,17 +144,29 @@ function key() {
 const encrypt = value => encryptWithKey(value, key());
 const decrypt = value => decryptWithKey(value, key());
 const cmsController = createCmsController({
-  q, db, getSite, createSite, listSites, connectSite, encrypt, decrypt,
+  q,
+  db,
+  getSite,
+  createSite,
+  listSites,
+  connectSite,
+  encrypt,
+  decrypt,
   resolveHostingConnection: async ({ profileId, existingSiteId, remoteRoot }) => {
     if (profileId) return connectionProfiles.resolve(profileId, remoteRoot);
     if (!existingSiteId) throw new Error('Gespeicherte Hosting-Verbindung fehlt.');
     const site = await getSite(existingSiteId);
     if (site.deployment_mode !== 'webspace') throw new Error('Diese Website besitzt keinen FTP-/SFTP-Zugang.');
-    return { protocol:site.protocol,host:site.host,port:site.port,username:site.username,
-      ...decrypt(site.encrypted_credentials),remoteRoot };
+    return {
+      protocol: site.protocol,
+      host: site.host,
+      port: site.port,
+      username: site.username,
+      ...decrypt(site.encrypted_credentials),
+      remoteRoot
+    };
   },
-  linkSiteToProject: async (siteId, projectId) =>
-    siteProjectService.link(siteId,{ project_id:projectId })
+  linkSiteToProject: async (siteId, projectId) => siteProjectService.link(siteId, { project_id: projectId })
 });
 
 async function archiveIssuedInvoice(snapshot, pdf) {
@@ -6632,7 +6644,14 @@ async function start() {
   app.get('/', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/websites', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/lorzcms', async (_r, reply) =>
-    reply.type('text/html').send(page('LorzCMS', cmsDashboardBody({ ...(await cmsController.overview()), projects:await billingController.projects() }, esc)))
+    reply
+      .type('text/html')
+      .send(
+        page(
+          'LorzCMS',
+          cmsDashboardBody({ ...(await cmsController.overview()), projects: await billingController.projects() }, esc)
+        )
+      )
   );
   app.addHook('preHandler', async (req, reply) => {
     if (!req.url.startsWith('/api/lorzcms/') || req.method === 'GET') return;
