@@ -415,6 +415,9 @@ class SftpAdapter {
     return Buffer.isBuffer(x) ? x : Buffer.from(x);
   }
   async ensureDirectory(path) {
+    const type = await this.client.exists(path);
+    if (type === 'd') return;
+    if (type) throw new Error('Das Ziel ist kein Verzeichnis.');
     await this.client.mkdir(path, true);
   }
   async write(path, content) {
