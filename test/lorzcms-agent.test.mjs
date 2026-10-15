@@ -124,7 +124,11 @@ test(
     const homepage = await fetch(base + '/');
     assert.equal(homepage.status, 200);
     const homepageHtml = await homepage.text();
-    assert.match(homepageHtml, /<meta name="robots" content="noindex,follow">/, 'new websites stay out of the index until launch approval');
+    assert.match(
+      homepageHtml,
+      /<meta name="robots" content="noindex,follow">/,
+      'new websites stay out of the index until launch approval'
+    );
     assert.match(homepageHtml, /application\/ld\+json/, 'CMS renders JSON-LD from the start');
     assert.match(homepageHtml, /"@type":"Organization"/, 'the site identity is published as organization data');
     assert.doesNotMatch(await (await fetch(base + '/sitemap.xml')).text(), /<loc>/, 'prelaunch sitemap is empty');
