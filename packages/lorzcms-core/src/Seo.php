@@ -12,7 +12,7 @@ final class Seo {
         $parts=[];
         foreach($item['fields'] ?? [] as $value){if(is_string($value)){$parts[]=$value;}}
         foreach($item['options']['blocks'] ?? [] as $block){if(is_array($block)){foreach(['title','body'] as $key){if(is_string($block[$key] ?? null)){$parts[]=$block[$key];}}}}
-        $text=trim(preg_replace('/\s+/u',' ',html_entity_decode(strip_tags(implode(' ',$parts)),ENT_QUOTES | ENT_HTML5,'UTF-8')) ?? '');
+        $text=trim(preg_replace('/\s+/u',' ',html_entity_decode(strip_tags(preg_replace('~</?(?:p|div|h[1-6]|li|section|article|br|tr|td|th|blockquote)\\b[^>]*>~i',' ',implode(' ',$parts)) ?? ''),ENT_QUOTES | ENT_HTML5,'UTF-8')) ?? '');
         if(mb_strlen($text)>165){$text=rtrim(mb_substr($text,0,162));$last=mb_strrpos($text,' ');if($last!==false && $last>105){$text=mb_substr($text,0,$last);} $text.='…';}
         return $text;
     }
@@ -72,7 +72,6 @@ final class Seo {
         if(!empty($seo['nofollow'])){$issues[]='Links werden nicht verfolgt (nofollow)';}
         if($site && $configuration){
             $m=self::metadata($item,$site,$configuration);
-            if(($configuration['environment'] ?? '')==='production' && ($site->value('seo')['indexing'] ?? '')!=='enabled'){$issues[]='Globale Indexierung ist deaktiviert';}
             if(($item['path'] ?? '') && $m['canonical']!==rtrim((string)$configuration['base_url'],'/').$item['path']){$issues[]='Canonical verweist auf eine andere URL – Absicht prüfen';}
             if($m['image']===''){$issues[]='Vorschaubild für soziale Netzwerke ergänzen';}
         }
