@@ -38,7 +38,7 @@ test('sports are the top four by reported ERGO claims in 2025, without asserting
     assert.match(home, new RegExp(sport.name));
     assert.ok(site.pages.some(p => p.path === '/unfallversicherung-' + sport.key));
   }
-  assert.match(home, /keine individuelle Unfallwahrscheinlichkeit/);
+  assert.match(home, /nicht das Unfallrisiko pro Sportstunde/);
   assert.match(all, /keine individuelle Unfallwahrscheinlichkeit|keine bundesweit repräsentative|keine individuelle Unfallwahrscheinlichkeit/i);
   assert.match(all, /www\.ergo\.com\/de\/newsroom-ergo\/reports-dossiers\/sportunfaelle/);
   assert.match(all, /www\.dguv\.de/);
@@ -93,5 +93,5 @@ test('a source link is provided for every page and the comparison does not misst
   assert.match(comparison, /Schulsport/);
   assert.match(comparison, /Freizeitsport/);
   assert.match(comparison, /Krankenversicherung/);
-  assert.match(comparison, /nicht automatisch/i);
+  assert.match(comparison, /Nicht jeder Unfall/);
 });
