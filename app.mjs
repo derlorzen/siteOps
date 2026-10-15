@@ -179,13 +179,6 @@ const cmsController = createCmsController({
   linkSiteToProject: async (siteId, projectId) => siteProjectService.link(siteId, { project_id: projectId })
 });
 
-const websiteFactory = createWebsiteFactory({
-  allInklService,
-  cmsController,
-  defaultAdminEmail: cfg.websiteAdminEmail,
-  hostingRootBase: cfg.websiteRootBase
-});
-
 async function archiveIssuedInvoice(snapshot, pdf) {
   return withBackupLock(async () => {
     const state = await branchState();
@@ -228,6 +221,13 @@ const billingController = createBillingController({ db, archive: archiveIssuedIn
 const siteProjectService = createSiteProjectService(db);
 const connectionProfiles = createConnectionProfiles({ db, encrypt, decrypt });
 const allInklService = createAllInklService({ db, encrypt, decrypt, profiles: connectionProfiles, connectSite });
+const websiteFactory = createWebsiteFactory({
+  allInklService,
+  cmsController,
+  defaultAdminEmail: cfg.websiteAdminEmail,
+  hostingRootBase: cfg.websiteRootBase
+});
+
 const billingWorkflows = createBillingWorkflows({
   db,
   billing: billingController,
