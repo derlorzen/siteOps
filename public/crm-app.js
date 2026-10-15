@@ -286,3 +286,199 @@
       '<div class="crm-rule"><span><strong>'+esc(r.task_name)+'</strong><small>Alle '+r.every_days+' Tage</small></span>'+
       button(r.enabled?'Pausieren':'Aktivieren','toggle-recurring','data-id="'+r.id+'" data-enabled="'+(r.enabled?'1':'0')+'"','crm-btn-ghost')+'</div>').join('')+'</div></div></div>';
   }
+
+  function customerPage(){
+    return heading('CRM','Kunden','Kontakte und Stammdaten pflegen. Projekte findest du im Arbeitsbereich.',
+      button('+ Kunde','new-customer','','crm-btn-primary'))+
+      '<div class="crm-customer-grid">'+state.customers.map(c=>{
+        const projects=state.projects.filter(p=>p.customer_id===c.id);
+        return '<section class="crm-customer-card"><div class="crm-customer-heading"><div class="crm-avatar">'+
+          esc(c.name.slice(0,1).toUpperCase())+'</div><div><h3>'+esc(c.name)+'</h3><p>'+esc(c.contact_name||c.email||'')+'</p></div>'+
+          button('Bearbeiten','edit-customer','data-id="'+c.id+'"','crm-btn-ghost')+'</div>'+
+          '<div class="crm-customer-projects"><strong>'+projects.length+' Projekte</strong>'+
+          projects.slice(0,7).map(p=>'<a data-route="/billing/projects/'+p.id+'" href="/billing/projects/'+p.id+'">'+esc(p.name)+' <span>→</span></a>').join('')+
+          '</div>'+button('Neues Projekt','new-project','data-customer-id="'+c.id+'"','crm-btn-primary')+'</section>';
+      }).join('')+'</div>';
+  }
+  function timePage(){
+    const entries=state.entries;
+    return heading('ZEITERFASSUNG','Meine Zeiten','Alle Zeitbuchungen und der aktuell laufende Timer.',
+      button('+ Zeit erfassen','manual-time','','crm-btn-primary'))+
+      '<div class="crm-table-wrap"><table class="crm-table"><thead><tr><th>Datum</th><th>Kunde / Projekt</th><th>Task & Leistung</th><th>Dauer</th><th>Status</th><th></th></tr></thead><tbody>'+
+      entries.map(e=>'<tr><td>'+day(e.entry_date)+'</td><td><strong>'+esc(e.customer_name)+'</strong><small>'+esc(e.project_name)+'</small></td>'+
+        '<td>'+esc(e.task_name)+'<small>'+esc(e.description)+'</small></td><td>'+hour(e.duration_seconds)+
+        (e.started_at?' <span class="crm-live-dot"></span>':'')+'</td><td>'+
+        badge(e.invoice_id?'Abgerechnet':e.billable?'Abrechenbar':'Intern',e.invoice_id?'positive':'')+'</td><td>'+
+        (!e.invoice_id&&!e.started_at?button('Bearbeiten','edit-time','data-id="'+e.id+'"','crm-btn-ghost'):'' )+
+        (!e.invoice_id&&!e.started_at?button('✕','delete-time','data-id="'+e.id+'" aria-label="Eintrag löschen"','crm-btn-text'):'')+'</td></tr>').join('')+
+      '</tbody></table></div>'+(entries.length?'':'<div class="crm-empty">Noch keine Zeitbuchungen.</div>');
+  }
+  function invoicePage(){
+    const customerId=state.invoiceCustomer||state.customers[0]?.id||'';
+    const from=state.invoiceFrom||today().slice(0,8)+'01';
+    const to=state.invoiceTo||today();
+    const available=state.entries.filter(e=>e.customer_id===customerId&&e.billable&&!e.invoice_id&&!e.started_at&&Number(e.duration_seconds)>0&&day(e.entry_date)>=from&&day(e.entry_date)<=to);
+    const invoices=state.invoices.filter(i=>!state.invoiceCustomer||i.customer_id===state.invoiceCustomer);
+    const options=customerOptions();
+    return heading('ABRECHNUNG','Rechnungen','Zeitbuchungen abrechnen, versenden und Zahlungseingänge nachhalten.')+
+      '<section class="crm-panel"><div class="crm-panel-head"><h2>Rechnung vorbereiten</h2><p>Wähle Kunde, Zeitraum und die abrechenbaren Zeiten aus.</p></div>'+
+      '<div class="crm-form-cols"><label class="crm-field"><span>Kunde</span>'+select('customer_id',options,customerId,'id="crmInvoiceCustomer"')+'</label>'+
+      field('Von','from',from,'id="crmInvoiceFrom" type="date"')+
+      field('Bis','to',to,'id="crmInvoiceTo" type="date"')+'</div>'+
+      '<div class="crm-invoice-candidates">'+(available.length?available.map(e=>
+      '<label class="crm-candidate"><input type="checkbox" data-bill-entry="'+esc(e.id)+'" checked><span><strong>'+
+        esc(e.task_name)+'</strong><small>'+day(e.entry_date)+' · '+hour(e.duration_seconds)+' · '+esc(e.description)+'</small></span>'+
+        '<b>'+eur(Math.round(Number(e.duration_seconds)*Number(e.hourly_cents)/3600))+'</b></label>'
+      ).join(''):'<p class="crm-muted">Keine offenen abrechenbaren Zeiten in diesem Zeitraum.</p>')+'</div>'+
+      '<div class="crm-panel-foot"><span id="crmInvoiceDraftTotal">'+available.length+' Einträge</span>'+
+      button('Entwurf erstellen','draft-invoice',available.length?'':'disabled','crm-btn-primary')+'</div></section>'+
+      '<section class="crm-panel"><div class="crm-panel-head"><h2>Rechnungsübersicht</h2><p>Bereits ausgestellte Rechnungen bleiben unverändert archiviert.</p></div>'+
+      '<div class="crm-table-wrap"><table class="crm-table"><thead><tr><th>Rechnung</th><th>Kunde</th><th>Brutto</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>'+
+      invoices.map(i=>'<tr><td><strong>'+esc(i.invoice_number||'Entwurf')+'</strong><small>'+day(i.service_from)+' – '+day(i.service_to)+'</small></td>'+
+      '<td>'+esc(i.customer_name)+'</td><td>'+eur(i.gross_cents)+'</td><td>'+
+      badge({draft:'Entwurf',archiving:'Archivierung',issued:'Offen',paid:'Bezahlt',cancelled:'Storniert'}[i.status]||i.status,
+        i.status==='paid'?'positive':i.status==='issued'?'warning':'')+'</td><td class="crm-actions">'+
+      (['draft','archiving'].includes(i.status)?button(i.status==='archiving'?'Archivierung erneut versuchen':'Ausstellen','issue-invoice','data-id="'+i.id+'"','crm-btn-primary'):'')+
+      (['issued','paid','cancelled'].includes(i.status)?'<a class="crm-btn crm-btn-ghost" href="/api/billing/invoices/'+i.id+'/pdf">PDF</a>':'')+
+      (['issued','paid'].includes(i.status)?button('E-Mail','send-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
+      (i.status==='issued'?button('Bezahlt','pay-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
+      (i.status==='issued'&&day(i.due_at)<today()?button('Erinnern','remind-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
+      (['issued','paid'].includes(i.status)?button('Storno','cancel-invoice','data-id="'+i.id+'"','crm-btn-text'):'')+
+      (i.cancellation_status==='issued'?'<a class="crm-btn crm-btn-ghost" href="/api/billing/invoices/'+i.id+'/cancellation-pdf">Stornobeleg</a>':'')+
+      (i.status==='draft'?button('Löschen','discard-invoice','data-id="'+i.id+'"','crm-btn-text'):'')+
+      '</td></tr>').join('')+'</tbody></table></div></section>'+
+      '<section class="crm-panel"><div class="crm-panel-head"><h2>Exporte</h2><p>Prüfbare Unterlagen für die Buchhaltung herunterladen.</p></div>'+
+      '<div class="crm-inline-row">'+field('Jahr','year',String(new Date().getFullYear()),'type="number" min="2000" max="2100" id="crmExportYear"')+
+      '<a id="crmExportDatev" class="crm-btn crm-btn-ghost" href="/api/billing/datev/'+new Date().getFullYear()+'.csv">DATEV-CSV</a>'+
+      '<a id="crmExportArchive" class="crm-btn crm-btn-ghost" href="/api/billing/archive-manifest/'+new Date().getFullYear()+'">Archiv-Manifest</a></div>'+
+      '<p class="crm-muted">DATEV-Datei vor der Übernahme prüfen. Das GitHub-Archiv ersetzt kein unveränderliches Langzeitarchiv.</p></section>';
+  }
+  function settingsPage(){
+    const keys=[
+      ['name','Firma / Name'],['street','Straße'],['postal_code','PLZ'],['city','Ort'],['email','E-Mail'],
+      ['tax_id','Steuernummer'],['vat_id','USt-ID'],['iban','IBAN'],['bic','BIC'],['payment_note','Zahlungshinweise']
+    ];
+    return heading('VERWALTUNG','Rechnungseinstellungen','Absenderdaten, Bankverbindung und Rechnungsangaben.')+
+      '<section class="crm-panel"><form data-form="settings"><div class="crm-form-cols">'+
+      keys.map(([name,label])=>field(label,name,state.settings[name]||'','maxlength="500"')).join('')+
+      '</div><div class="crm-form-footer"><button class="crm-btn crm-btn-primary">Einstellungen speichern</button></div></form></section>'+
+      '<section class="crm-panel"><h2>Archivierung</h2><p>Ausgestellte Rechnungen werden in SiteOps und im GitHub-Rechnungsarchiv gespeichert. Für die langfristige revisionssichere Aufbewahrung wird ein zusätzliches externes Archiv benötigt.</p></section>';
+  }
+  function modal(html,kind){
+    state.dialog=kind;
+    $('crmDialogContent').innerHTML=html;
+    const dialog=$('crmDialog');
+    if(!dialog.open)dialog.showModal();
+    dialog.querySelector('input:not([type=hidden]),select,textarea')?.focus();
+  }
+  function closeModal(){
+    if($('crmDialog').open)$('crmDialog').close();
+    state.dialog='';state.taskId='';state.taskDetail=null;
+  }
+  function modalFrame(title,sub,content,buttonText='Speichern'){
+    return '<div class="crm-modal-top"><div><h2>'+esc(title)+'</h2><p>'+esc(sub||'')+'</p></div>'+
+      button('×','close-modal','aria-label="Schließen"','crm-close')+'</div>'+
+      '<div class="crm-modal-main">'+content+'</div>';
+  }
+  function customerModal(id=''){
+    const c=findCustomer(id);
+    modal(modalFrame(c?'Kunde bearbeiten':'Neuer Kunde','Kundenstammdaten für Projekte und Rechnungen.',
+      '<form class="crm-stack" data-form="customer" data-id="'+esc(id)+'">'+
+      field('Name / Firma','name',c?.name,'required maxlength="255"')+
+      '<div class="crm-form-cols">'+field('Kontakt','contact_name',c?.contact_name)+
+      field('E-Mail','email',c?.email,'type="email"')+
+      field('Straße','street',c?.street)+field('PLZ','postal_code',c?.postal_code)+
+      field('Ort','city',c?.city)+field('Stundensatz €','rate_eur',c?Number(c.default_hourly_cents)/100:75,'type="number" min="0" step=".01"')+
+      '</div><button class="crm-btn crm-btn-primary">Kunde speichern</button></form>'
+    ),'customer');
+  }
+  function projectModal(id='',customerPref=''){
+    const p=findProject(id);
+    const customerId=p?.customer_id||customerPref||state.customers[0]?.id||'';
+    const sites=[['','Keine Website'],...state.sites.map(s=>[s.id,s.domain||s.name])];
+    if(!state.customers.length){notice('Bitte zuerst einen Kunden anlegen.',true);customerModal();return;}
+    modal(modalFrame(p?'Projekt bearbeiten':'Neues Projekt','Projekte gehören immer zu einem Kunden.',
+      '<form class="crm-stack" data-form="project" data-id="'+esc(id)+'"><label class="crm-field"><span>Kunde</span>'+
+      select('customer_id',customerOptions(),customerId,p?'disabled':'required')+'</label>'+
+      field('Projektname','name',p?.name,'required maxlength="255"')+
+      '<label class="crm-field"><span>Beschreibung</span><textarea name="description" rows="3" maxlength="5000">'+esc(p?.description||'')+'</textarea></label>'+
+      '<div class="crm-form-cols"><label class="crm-field"><span>Überwachte Website (optional)</span>'+
+      select('site_id',sites,p?.site_id||'')+'</label>'+
+      field('Stundensatz € (optional)','rate_eur',p?.hourly_cents==null?'':Number(p.hourly_cents)/100,'type="number" min="0" step=".01"')+'</div>'+
+      (p?'<label class="crm-field"><span>Projektstatus</span>'+select('project_status',[['active','Aktiv'],['paused','Pausiert'],['completed','Abgeschlossen']],p.status)+'</label>':'')+
+      '<button class="crm-btn crm-btn-primary">Projekt speichern</button></form>'
+    ),'project');
+  }
+  function taskModal(id='',status='open'){
+    const t=findTask(id);
+    const projectId=t?.project_id||currentRoute().id;
+    if(!projectId){notice('Bitte zuerst ein Projekt öffnen.',true);return;}
+    state.taskId=id;
+    const running=timer();
+    const isRunning=running?.task_id===id;
+    const header=modalFrame(t?'Task bearbeiten':'Neuer Task',
+      esc(findProject(projectId)?.name||'Projekt')+' · Status, Details und Zeit an einer Stelle.',
+      '<form class="crm-stack" data-form="task" data-id="'+esc(id)+'" data-project-id="'+esc(projectId)+'">'+
+      field('Titel','name',t?.name,'required maxlength="255"')+
+      '<label class="crm-field"><span>Beschreibung</span><textarea name="description" rows="4" maxlength="3000">'+esc(t?.description||'')+'</textarea></label>'+
+      '<div class="crm-form-cols"><label class="crm-field"><span>Status</span>'+statusOptions(t?.status||status)+'</label>'+
+      '<label class="crm-field"><span>Priorität</span>'+
+      select('priority',[['low','Niedrig'],['normal','Normal'],['high','Hoch'],['urgent','Dringend']],t?.priority||'normal')+'</label>'+
+      field('Fällig am','due_date',day(t?.due_date),'type="date"')+
+      field('Stundensatz € (optional)','rate_eur',t?.hourly_cents==null?'':Number(t.hourly_cents)/100,'type="number" step=".01" min="0"')+
+      '</div><button class="crm-btn crm-btn-primary">Task speichern</button></form>'+
+      (t?'<div class="crm-task-timebox"><div><strong>Zeit direkt am Task erfassen</strong><p>Erfasste Zeit bleibt mit dem Projekt und der Rechnung verknüpft.</p></div>'+
+      button(isRunning?'■ Timer stoppen':'▶ Timer starten','task-timer','data-task-id="'+esc(id)+'"',isRunning?'crm-btn-danger':'crm-btn-primary')+
+      '<form data-form="quick-time" class="crm-inline-time">'+
+      field('Minuten','duration_minutes','','type="number" min="0.01" step="0.01" required')+
+      field('Tätigkeit','description','','placeholder="Was wurde erledigt?" maxlength="1000"')+
+      '<label class="crm-checkbox"><input type="checkbox" name="billable" checked> Abrechenbar</label>'+
+      '<button class="crm-btn crm-btn-ghost">Zeit buchen</button></form></div>'+
+      '<div class="crm-detail-extra" id="crmTaskDetailExtra"><p class="crm-muted">Details werden geladen …</p></div>':''));
+    modal(header,'task');
+    if(id)void loadTaskExtras(id);
+  }
+  async function loadTaskExtras(id){
+    try {
+      const details=await api('/api/billing/tasks/'+id+'/detail');
+      if(state.dialog!=='task'||state.taskId!==id)return;
+      state.taskDetail=details;
+      const extra=$('crmTaskDetailExtra');
+      if(!extra)return;
+      extra.innerHTML=[
+        '<section class="crm-detail-section"><h3>Checkliste <span>'+details.checklist.filter(x=>x.completed).length+'/'+details.checklist.length+'</span></h3>',
+        details.checklist.map(x=>'<label class="crm-check-item"><input type="checkbox" data-action="toggle-check" data-id="'+x.id+'"'+(x.completed?' checked':'')+'><span>'+esc(x.text)+'</span>'+
+          button('×','remove-check','data-id="'+x.id+'" aria-label="Eintrag entfernen"','crm-btn-text')+'</label>').join(''),
+        '<form class="crm-inline-row" data-form="checklist">'+field('Neuer Punkt','text','','required maxlength="500" placeholder="Aufgabe ergänzen"')+
+        '<button class="crm-btn crm-btn-ghost">Hinzufügen</button></form></section>',
+        '<section class="crm-detail-section"><h3>Kommentare</h3>'+
+        details.comments.map(c=>'<div class="crm-comment"><strong>'+esc(c.actor)+'</strong><small>'+esc(day(c.created_at))+'</small><p>'+esc(c.text)+'</p></div>').join('')+
+        '<form data-form="comment" class="crm-stack"><label class="crm-field"><span>Kommentar</span><textarea name="text" maxlength="4000" rows="2" required></textarea></label>'+
+        '<button class="crm-btn crm-btn-ghost">Kommentar hinzufügen</button></form></section>',
+        '<section class="crm-detail-section"><h3>Anhänge</h3>'+
+        details.files.map(f=>'<div class="crm-file"><a href="/api/billing/tasks/'+id+'/files/'+f.id+'">'+esc(f.filename)+'</a>'+
+        button('×','remove-file','data-id="'+f.id+'"','crm-btn-text')+'</div>').join('')+
+        '<form data-form="attachment" class="crm-inline-row"><input type="file" name="file" aria-label="Datei (maximal 2 MB)" required>'+
+        '<button class="crm-btn crm-btn-ghost">Hochladen</button></form><small>Maximal 2 MB je Datei.</small></section>',
+        '<section class="crm-detail-section"><h3>Aktivität</h3>'+
+        details.events.map(e=>'<div class="crm-comment"><small>'+esc(day(e.created_at))+'</small><p>'+esc(e.details||e.event_type)+'</p></div>').join('')+
+        '</section>'
+      ].join('');
+    } catch(error){
+      if(state.dialog==='task'&&state.taskId===id){
+        $('crmTaskDetailExtra').innerHTML='<p class="crm-error">Details konnten nicht geladen werden: '+esc(userError(error))+'</p>';
+      }
+    }
+  }
+  function manualTimeModal(entryId=''){
+    const e=state.entries.find(x=>x.id===entryId);
+    const taskOptions=state.tasks.map(t=>[t.id,(findProject(t.project_id)?.name||'Projekt')+' / '+t.name]);
+    modal(modalFrame(e?'Zeit korrigieren':'Zeit erfassen','Arbeitszeit einem Task zuordnen.',
+      '<form class="crm-stack" data-form="time" data-id="'+esc(entryId)+'">'+
+      (e?'<p><strong>'+esc(e.task_name)+'</strong></p>':'<label class="crm-field"><span>Task</span>'+select('task_id',taskOptions,taskOptions[0]?.[0])+'</label>')+
+      '<div class="crm-form-cols">'+field('Datum','entry_date',day(e?.entry_date)||today(),'type="date" required')+
+      field('Dauer (Min.)','duration_minutes',e?Number(e.duration_seconds)/60:'','type="number" min="0.01" step="0.01" required')+'</div>'+
+      field('Leistung','description',e?.description||'','maxlength="1000"')+
+      '<label class="crm-checkbox"><input type="checkbox" name="billable" '+(e&&!e.billable?'':'checked')+'> Abrechenbar</label>'+
+      '<button class="crm-btn crm-btn-primary">Zeit speichern</button></form>'),'time');
+  }
