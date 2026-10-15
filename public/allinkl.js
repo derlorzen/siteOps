@@ -164,12 +164,19 @@
     const tbody = document.createElement('tbody');
     for (const r of state.records) {
       const tr = document.createElement('tr');
-      for (const value of [r.type, r.name, r.value, r.priority]) {
+      for (const [label, value] of [
+        ['Typ', r.type],
+        ['Name', r.name],
+        ['Wert', r.value],
+        ['Prio', r.priority]
+      ]) {
         const td = document.createElement('td');
+        td.dataset.label = label;
         td.textContent = String(value ?? '');
         tr.append(td);
       }
       const td = document.createElement('td');
+      td.dataset.label = 'Aktionen';
       if (
         ['A', 'AAAA', 'CNAME', 'TXT'].includes(r.type) &&
         r.id &&
@@ -223,6 +230,7 @@
           td.append(del);
         }
       }
+      if (!td.children.length) td.textContent = 'Nur lesen';
       tr.append(td);
       tbody.append(tr);
     }
