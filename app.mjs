@@ -5234,7 +5234,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/hosting">Hosting & DNS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -5300,6 +5300,10 @@ function mcpInfoPage() {
       'synthetics_list, synthetic_create, synthetic_update, synthetic_run, synthetic_run_get, fix_prompt'
     ],
     ['Konfiguration', 'site_update, site_connection_test, site_connection_update'],
+    [
+      'Hosting / ALL-INKL',
+      'allinkl_accounts, allinkl_domains, allinkl_dns_list, allinkl_dns_add, allinkl_dns_update, allinkl_provision, cms_install_allinkl'
+    ],
     ['Dateien', 'files_list, files_find, text_search, file_read'],
     ['Änderungen', 'change_preview, change_apply, history_list, history_diff, rollback_preview'],
     ['Backups', 'site_backup, backup_status, backups_list, backup_restore_preview']
@@ -5317,6 +5321,12 @@ function mcpInfoPage() {
       '</p></div>';
   let html =
     '<header><div><span class="eyebrow">AI / AUTOMATION</span><h1>MCP & OAuth</h1><p>SiteOps als geschützter Remote-MCP für ChatGPT, Claude und andere MCP-Clients.</p></div><span class="pill ok">OAUTH 2.1 AKTIV</span></header>';
+  html +=
+    '<section aria-labelledby="integrationsHostingHeading"><div class="sectionhead"><div>' +
+    '<span class="eyebrow">Hosting-Anbieter</span><h2 id="integrationsHostingHeading">ALL-INKL – Hosting & DNS</h2></div>' +
+    '<a class="btn" href="/hosting">Hosting & DNS verwalten →</a></div>' +
+    '<p class="lead">KAS-Zugänge hinterlegen, gespeicherte FTP-/SFTP-Profile zuordnen, ' +
+    'Subdomains für LorzCMS vorbereiten und DNS-Einträge verwalten.</p></section>';
   html +=
     '<div class="metrics big mcp-metrics"><span>Streamable HTTP<em>Transport</em></span><span>OAuth 2.1<em>Primäre Auth</em></span><span>CIMD + DCR<em>Client Registration</em></span><span>PKCE S256<em>Authorization Code</em></span><span>' +
     (cfg.mcpToken ? 'aktiv' : 'aus') +
