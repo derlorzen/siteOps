@@ -48,6 +48,19 @@ in `packages/lorzcms-core/`; SiteOps and the core have separate versions. Publis
 a release never updates websites automatically. Operators choose websites and
 execution times on `/lorzcms` or through the CMS MCP tools.
 
+## Neue Website auf ALL-INKL
+
+Mit einem zentral gespeicherten KAS-Konto kann SiteOps das leere Hosting-Verzeichnis,
+die Subdomain und den `public/`-Webroot automatisch vorbereiten. Die Anbindung
+erfolgt über **SiteOps → Hosting & DNS**; im Formular **LorzCMS → Neue Website**
+wird danach das KAS-Konto ausgewählt. Das zum KAS-Konto gehörende FTP-/SFTP-Profil
+wird serverseitig übernommen. Siehe [ALL-INKL-Integration](ALLINKL.md).
+
+**Wichtig:** HTTPS/Let's Encrypt kann nach der Subdomain-Erstellung noch eine
+Aktivierung im KAS benötigen. LorzCMS installiert erst auf einer erreichbaren
+HTTPS-Website mit PHP 8.3+. Die automatische Einrichtung ist daher für diesen
+Anbieter noch nicht in jedem Tarif vollständig ohne Nacharbeit möglich.
+
 ## New website
 
 1. Deploy this SiteOps version; its database migrations run at startup.
