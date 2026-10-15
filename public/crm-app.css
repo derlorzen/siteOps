@@ -323,3 +323,13 @@ body:has(#crmRoot) .navinner{max-width:1620px}
  #crmRoot .crm-nav{display:flex;overflow-x:auto;scrollbar-width:none}
  #crmRoot .crm-nav-link{min-width:57px;flex:1}
 }
+
+/* Global search stays at the right edge of the CRM topbar on narrow screens. */
+#crmRoot .crm-topbar-label{min-width:0}
+#crmRoot .crm-topbar-label strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#crmRoot .crm-top-actions{margin-left:auto;flex-shrink:0}
+@media(max-width:720px){
+ #crmRoot .crm-topbar{flex-direction:row;flex-wrap:nowrap;justify-content:space-between;gap:8px}
+ #crmRoot .crm-topbar-label{flex:1;overflow:hidden}
+ #crmRoot .crm-top-actions{min-width:42px}
+}
