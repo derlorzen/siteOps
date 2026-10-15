@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createKasClient, parseKasSoap, kasRows, normalizeHost, splitSubdomain } from '../lib/allinkl.mjs';
+import { allinklAccountSchema, createKasClient, parseKasSoap, kasRows, normalizeHost, splitSubdomain } from '../lib/allinkl.mjs';
 
 const map = entries =>
   '<item xsi:type="ns2:Map">' +
@@ -49,6 +49,41 @@ test('KAS SOAP faults do not include raw XML or auth payload', () => {
     assert.ok(!error.message.includes(secret));
   }
 });
+test('KAS logins accept letters after the w prefix and reject invalid characters', () => {
+  const account = {
+    name: 'Test',
+    password: 'not-a-live-password',
+    profileId: '11111111-1111-4111-8111-111111111111'
+  };
+  for (const login of ['w0123456', 'w0137d60', 'W01ABC56']) {
+    assert.equal(allinklAccountSchema.safeParse({ ...account, login }).success, true, login);
+    assert.doesNotThrow(() =>
+      createKasClient({ login, password: account.password, request: async () => ({}) })
+    );
+  }
+  for (const login of ['w1234', 'w12-456', 'w012 456', 'w01234/6', 'x0137d60', 'w12345678901']) {
+    assert.equal(allinklAccountSchema.safeParse({ ...account, login }).success, false, login);
+    assert.throws(() =>
+      createKasClient({ login, password: account.password, request: async () => ({}) })
+    );
+  }
+});
+
+test('alphanumeric KAS login reaches the API request without local rejection', async () => {
+  let requestBody = '';
+  const kas = createKasClient({
+    login: 'w0137d60',
+    password: 'test-password',
+    delayMs: 0,
+    request: async (_url, options) => {
+      requestBody = options.body;
+      return { ok: true, text: async () => envelope('') };
+    }
+  });
+  await kas.call('get_domains');
+  assert.match(requestBody, /w0137d60/);
+});
+
 test('host names are validated and only account subdomains are accepted', () => {
   assert.deepEqual(splitSubdomain('test.example.de', [{ domain_name: 'example.de' }]), {
     parent: 'example.de',
