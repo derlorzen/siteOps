@@ -248,6 +248,8 @@
       '<div class="crm-task-actions">'+
       '<label class="crm-task-status-label">Status '+statusOptions(task.status)+'</label>'+
       '<button type="button" class="crm-icon-action '+(isRunning?'recording':'')+'" data-action="task-timer" data-task-id="'+esc(task.id)+'" title="'+(isRunning?'Timer stoppen':'Timer starten')+'" aria-label="'+(isRunning?'Timer stoppen':'Timer starten')+'">'+(isRunning?'■':'▶')+'</button>'+
+      '<button type="button" class="crm-icon-action crm-order-action" data-action="task-up" data-task-id="'+esc(task.id)+'" title="Innerhalb der Spalte nach oben" aria-label="Nach oben">↑</button>'+
+      '<button type="button" class="crm-icon-action crm-order-action" data-action="task-down" data-task-id="'+esc(task.id)+'" title="Innerhalb der Spalte nach unten" aria-label="Nach unten">↓</button>'+
       '<button type="button" class="crm-icon-action" data-action="open-task" data-task-id="'+esc(task.id)+'" title="Task öffnen" aria-label="Task öffnen">↗</button>'+
       '</div></article>';
   }
@@ -561,6 +563,7 @@
     const taskId=source.dataset.taskId;
     const project=currentRoute().id;
     switch(actionName){
+      case 'reload-workspace':await reload();if(currentRoute().section==='project')await loadBoard(currentRoute().id);break;
       case 'new-customer':customerModal();break;
       case 'edit-customer':customerModal(id);break;
       case 'new-project':projectModal('',source.dataset.customerId);break;
