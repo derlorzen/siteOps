@@ -189,7 +189,16 @@
     if(window.location.pathname!==path)history.pushState({},'',path);
     render();
     const route=currentRoute();
-    if(route.section==='project'&&route.id!==state.projectId)void loadBoard(route.id);
+    if(route.section==='project'){
+      if(route.id!==state.projectId || !state.board) void loadBoard(route.id);
+      else {
+        const requestedTask=new URLSearchParams(window.location.search).get('task');
+        if(requestedTask && statusOrder.some(key=>(state.board.columns[key]||[]).some(t=>t.id===requestedTask))){
+          history.replaceState({},'',window.location.pathname);
+          taskModal(requestedTask);
+        }
+      }
+    }
     if(route.section==='activity')void loadWorkspaceActivity();
     window.scrollTo(0,0);
   }
