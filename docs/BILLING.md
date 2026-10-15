@@ -1,3 +1,33 @@
+## Websites und Kundenprojekte (neue SiteOps-Oberfläche)
+
+Alle bisherigen Website-Bereiche verwenden eine gemeinsame, mobiloptimierte
+Workspace-Navigation im Stil der Projektverwaltung: Website-Übersicht,
+Monitoring, Verbindungen/Deployments, Backups, SEO, Browser-Tests,
+LorzCMS, System-Einstellungen und MCP/Integrationen.
+
+Die neue Website-Übersicht unter `/websites` (ebenso unter `/`) führt alle
+Sites inklusive Monitoring-Status und Projektzuordnung auf. Eine Website kann:
+
+- **eigenständig bleiben:** weiterhin eigenständige Monitoring-, Backup-,
+  SEO- und Deployment-Funktionen, auch ohne Kundenprojekt;
+- **einem Kundenprojekt zugeordnet werden:** eine Website gehört zu maximal
+  einem Projekt, ein Kundenprojekt darf mehrere Websites enthalten. In der
+  Projektansicht unter `/billing/projects/:id` sind diese Websites mit
+  Direktlinks sichtbar. Unverknüpfte Websites stehen als eigenständige Karten
+  auch in der CRM-Projektübersicht unter `/billing`.
+
+Die Zuordnung kann auf der Website-Seite oder innerhalb eines Kundenprojekts
+geändert werden. **Entfernen der Verknüpfung löscht weder die Website noch deren
+Monitoring-, Backup-, SEO- oder Deploymentdaten.** Das Zuordnen/Entfernen ist
+transaktional. Monitoring-Vorfälle erzeugen einen Kanban-Task nur für die
+explizit verknüpfte Website und das zugehörige Kundenprojekt.
+
+Die Migration `0009_project_sites.sql` übernimmt eindeutige Altzuordnungen
+aus `customer_projects.site_id`. Bereits zuvor mehrdeutig zugeordnete Websites
+werden nicht automatisch geraten oder zwischen Kunden verschoben; sie müssen
+manuell geprüft und verknüpft werden. Die alte Spalte bleibt als
+Kompatibilitätsfeld vorerst erhalten.
+
 ## Projekt-Workspace (mobile-first, ab Oktober 2026)
 
 Der Bereich ist bewusst **projektorientiert** gestaltet:
