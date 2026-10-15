@@ -4471,6 +4471,15 @@ function mcpServer() {
     async ({ accountId }) => toolText(await allInklService.domains(accountId))
   );
   s.registerTool(
+    'allinkl_diagnostics',
+    {
+      description:
+        'Run read-only KAS checks for domains, subdomains and optionally DNS records in an owned zone. No hosting or DNS modifications.',
+      inputSchema: z.object({ accountId: z.uuid(), zone: z.string().optional() })
+    },
+    async ({ accountId, zone }) => toolText(await allInklService.diagnostics(accountId, zone))
+  );
+  s.registerTool(
     'allinkl_dns_list',
     {
       description: 'Read DNS records for an ALL-INKL zone. Never changes records.',
@@ -5302,7 +5311,7 @@ function mcpInfoPage() {
     ['Konfiguration', 'site_update, site_connection_test, site_connection_update'],
     [
       'Hosting / ALL-INKL',
-      'allinkl_accounts, allinkl_domains, allinkl_dns_list, allinkl_dns_add, allinkl_dns_update, allinkl_provision, cms_install_allinkl'
+      'allinkl_accounts, allinkl_domains, allinkl_diagnostics, allinkl_dns_list, allinkl_dns_add, allinkl_dns_update, allinkl_provision, cms_install_allinkl'
     ],
     ['Dateien', 'files_list, files_find, text_search, file_read'],
     ['Änderungen', 'change_preview, change_apply, history_list, history_diff, rollback_preview'],
@@ -6964,6 +6973,9 @@ async function start() {
   app.post('/api/hosting/allinkl/accounts', req => allInklService.add(req.body));
   app.delete('/api/hosting/allinkl/accounts/:id', req => allInklService.remove(req.params.id));
   app.get('/api/hosting/allinkl/accounts/:id/domains', req => allInklService.domains(req.params.id));
+  app.get('/api/hosting/allinkl/accounts/:id/diagnostics', req =>
+    allInklService.diagnostics(req.params.id, req.query?.zone)
+  );
   app.get('/api/hosting/allinkl/accounts/:id/subdomains', req => allInklService.subdomains(req.params.id));
   app.get('/api/hosting/allinkl/accounts/:id/dns', req => allInklService.records(req.params.id, req.query.zone));
   app.post('/api/hosting/allinkl/accounts/:id/dns', req => allInklService.addRecord(req.params.id, req.body));
