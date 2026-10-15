@@ -32,10 +32,16 @@ const dns = row({
 
 test('KAS SOAP response nested in Response returns domain rows, not KasFloodDelay', () => {
   let floodDelay = null;
-  assert.deepEqual(kasRows(parseKasSoap(envelope('TRUE', domains), { onFloodDelay: ms => { floodDelay = ms; } })), [
-    { domain_name: 'example.de' },
-    { domain_name: 'second.example' }
-  ]);
+  assert.deepEqual(
+    kasRows(
+      parseKasSoap(envelope('TRUE', domains), {
+        onFloodDelay: ms => {
+          floodDelay = ms;
+        }
+      })
+    ),
+    [{ domain_name: 'example.de' }, { domain_name: 'second.example' }]
+  );
   assert.equal(floodDelay, 5000);
   assert.deepEqual(kasRows(parseKasSoap(envelope('TRUE'))), []);
   assert.throws(() => parseKasSoap(envelope('FALSE', 'invalid_credentials')), /abgelehnt/);
