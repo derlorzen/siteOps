@@ -6590,7 +6590,9 @@ async function start() {
       .send(await readFile(new URL('./public/billing-workflows.js', import.meta.url), 'utf8'))
   );
   app.get('/assets/lorzcms-workspace.css', async (_r, reply) =>
-    reply.type('text/css').header('Cache-Control', 'no-store')
+    reply
+      .type('text/css')
+      .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/lorzcms-workspace.css', import.meta.url), 'utf8'))
   );
   app.get('/assets/lorzcms.js', async (_r, reply) =>
@@ -6649,14 +6651,18 @@ async function start() {
   app.get('/websites', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   async function cmsWorkspacePage(reply, view = 'sites', installationId = null) {
     const [overview, projects, siteLinks] = await Promise.all([
-      cmsController.overview(), billingController.projects(), siteProjectService.list()
+      cmsController.overview(),
+      billingController.projects(),
+      siteProjectService.list()
     ]);
-    return reply.type('text/html').send(page('LorzCMS',
-      renderCmsWorkspace({ ...overview, projects, siteLinks }, esc, view, installationId)));
+    return reply
+      .type('text/html')
+      .send(page('LorzCMS', renderCmsWorkspace({ ...overview, projects, siteLinks }, esc, view, installationId)));
   }
   app.get('/lorzcms', async (_r, reply) => cmsWorkspacePage(reply));
   app.get('/lorzcms/installations/:id', async (req, reply) =>
-    cmsWorkspacePage(reply, 'installation', z.uuid().parse(req.params.id)));
+    cmsWorkspacePage(reply, 'installation', z.uuid().parse(req.params.id))
+  );
   for (const view of ['new', 'connect', 'updates', 'releases', 'jobs']) {
     app.get('/lorzcms/' + view, async (_r, reply) => cmsWorkspacePage(reply, view));
   }
