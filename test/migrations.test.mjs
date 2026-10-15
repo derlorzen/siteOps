@@ -38,25 +38,33 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
   try {
     await db.query('INSERT INTO customers(id,name) VALUES(?,?)', [customerId, 'Board Regression Kunde']);
     await db.query('INSERT INTO customer_projects(id,customer_id,name) VALUES(?,?,?)', [
-      projectId,customerId,'Regressionsprojekt'
+      projectId,
+      customerId,
+      'Regressionsprojekt'
     ]);
     await db.query('INSERT INTO project_tasks(id,project_id,name,status) VALUES(?,?,?,?)', [
-      taskId,projectId,'Testtask','open'
+      taskId,
+      projectId,
+      'Testtask',
+      'open'
     ]);
     const board = createBillingBoard({ db });
     const before = await board.getBoard(projectId);
-    assert.equal(before.project.customer_id,customerId);
-    assert.equal(before.columns.open.length,1);
-    assert.equal(before.columns.open[0].id,taskId);
-    const columns = Object.fromEntries(['backlog','open','in_progress','review','done'].map(key=>[key,[]]));
+    assert.equal(before.project.customer_id, customerId);
+    assert.equal(before.columns.open.length, 1);
+    assert.equal(before.columns.open[0].id, taskId);
+    const columns = Object.fromEntries(['backlog', 'open', 'in_progress', 'review', 'done'].map(key => [key, []]));
     columns.in_progress.push(taskId);
-    const after = await board.saveBoard(projectId,{revision:before.revision,columns});
-    assert.equal(after.revision,before.revision+1);
-    assert.equal(after.columns.open.length,0);
-    assert.equal(after.columns.in_progress[0].id,taskId);
+    const after = await board.saveBoard(projectId, { revision: before.revision, columns });
+    assert.equal(after.revision, before.revision + 1);
+    assert.equal(after.columns.open.length, 0);
+    assert.equal(after.columns.in_progress[0].id, taskId);
     const [events] = await db.query('SELECT event_type FROM billing_task_events WHERE task_id=?', [taskId]);
-    assert.ok(events.some(event=>event.event_type==='kanban_moved'));
-    await assert.rejects(board.saveBoard(projectId,{revision:before.revision,columns}),error=>error.statusCode===409);
+    assert.ok(events.some(event => event.event_type === 'kanban_moved'));
+    await assert.rejects(
+      board.saveBoard(projectId, { revision: before.revision, columns }),
+      error => error.statusCode === 409
+    );
   } finally {
     await db.query('DELETE FROM project_tasks WHERE id=?', [taskId]);
     await db.query('DELETE FROM customer_projects WHERE id=?', [projectId]);
