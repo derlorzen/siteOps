@@ -53,6 +53,43 @@
       create.scrollIntoView({ behavior: 'smooth', block: 'start' });
     })
   );
+  // Saved server profiles and other already-configured sites. No credentials reach the browser.
+  const savedConnection = create.elements.namedItem('savedConnection');
+  const connectionHint = byId('cmsSavedConnectionHint');
+  let connections = [];
+  async function loadSavedConnections() {
+    const [profilesRes,sitesRes]=await Promise.all([fetch('/api/server-profiles'),fetch('/api/sites')]);
+    if(!profilesRes.ok || !sitesRes.ok) throw Error('Gespeicherte Verbindungen konnten nicht geladen werden.');
+    const [profiles,sites] = await Promise.all([profilesRes.json(),sitesRes.json()]);
+    connections=[
+      ...profiles.map(p=>({id:p.id,type:'profile',label:'Serverprofil: '+p.name,protocol:p.protocol,host:p.host,port:p.port,username:p.username})),
+      ...sites.filter(site=>site.deployment_mode==='webspace').map(site=>({
+        id:site.id,type:'site',label:'Website: '+site.name,protocol:site.protocol,host:site.host,port:site.port,username:site.username
+      }))
+    ];
+    for(const item of connections){
+      const option=new Option(item.label,item.type+':'+item.id);
+      savedConnection.add(option);
+    }
+  }
+  function syncSavedConnection() {
+    const connection=connections.find(c=>c.type+':'+c.id===savedConnection.value);
+    for(const key of ['protocol','host','port','username','password']){
+      const field=create.elements.namedItem(key);
+      field.disabled=false;
+      field.required=key==='password'?!connection:key!=='password';
+      field.readOnly=!!connection;
+    }
+    if(connection){
+      for(const key of ['protocol','host','port','username'])create.elements.namedItem(key).value=connection[key];
+      create.elements.password.value='';
+      connectionHint.textContent='Verschlüsselte Zugangsdaten werden serverseitig übernommen. Das CMS-Zielverzeichnis bleibt individuell.';
+    }else{
+      connectionHint.textContent='Hostingzugang eingeben oder bereits gespeicherte Verbindung auswählen.';
+    }
+  }
+  savedConnection.addEventListener('change',syncSavedConnection);
+  loadSavedConnections().catch(error=>{connectionHint.textContent=error.message;});
   create.elements.protocol.addEventListener('change', () => {
     create.elements.port.value = create.elements.protocol.value === 'sftp' ? 22 : 21;
   });
@@ -64,6 +101,13 @@
     const f = new FormData(create);
     const data = Object.fromEntries(f);
     data.port = Number(f.get('port'));
+    const saved = f.get('savedConnection');
+    if(saved){
+      const [kind,id]=String(saved).split(':');
+      if(kind==='profile')data.profileId=id;
+      else if(kind==='site')data.existingSiteId=id;
+      delete data.savedConnection;
+    }else delete data.savedConnection;
     data.runAt = runAt(f);
     data.publicRootReady = f.has('publicRootReady');
     data.database =
@@ -101,7 +145,8 @@
       send('installations/attach', {
         site: f.get('site'),
         baseUrl: f.get('baseUrl'),
-        publicRootReady: f.has('publicRootReady')
+        publicRootReady: f.has('publicRootReady'),
+        ...(f.get('projectId')?{projectId:f.get('projectId')}:{})
       })
     );
   });
