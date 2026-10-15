@@ -30,6 +30,7 @@ import { websiteProvisionSchema, prepareEmptyHostingTarget } from './lib/site-pr
 import { createProjectOverview, registerProjectOverviewRoutes } from './lib/project-overview.mjs';
 import { createWorkspaceActivity, registerWorkspaceActivityRoutes } from './lib/workspace-activity.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
+import { resolveBuildInfo } from './lib/build-info.mjs';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -80,6 +81,7 @@ const cfg = {
   oauthRefreshTokenTtlSeconds: Number(env('OAUTH_REFRESH_TOKEN_TTL_SECONDS', '2592000')),
   oauthCodeTtlSeconds: Number(env('OAUTH_CODE_TTL_SECONDS', '600'))
 };
+const buildInfo = await resolveBuildInfo();
 const db = mysql.createPool(
   cfg.databaseUrl || {
     host: cfg.dbHost,
@@ -5232,7 +5234,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/hosting">Hosting & DNS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/hosting">Hosting & DNS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -5278,7 +5280,7 @@ function siteOpsTableView(cfg){
   controls.forEach(el=>el.addEventListener(el.tagName==='INPUT'?'input':'change',()=>{page=1;render();}));
   render();
 }
-</script>${title === 'Kunden & Abrechnung' ? '' : '<script defer src="/assets/ops-workspace.js"></script>'}<script defer src="/assets/siteops-theme.js"></script><script defer src="/assets/workspace-search.js"></script></body></html>`;
+</script>${title === 'Kunden & Abrechnung' ? '' : '<script defer src="/assets/ops-workspace.js"></script>'}<script defer src="/assets/siteops-theme.js"></script><script defer src="/assets/workspace-search.js"></script><script defer src="/assets/build-footer.js"></script></body></html>`;
 }
 
 function mcpInfoPage() {
@@ -6682,7 +6684,9 @@ async function start() {
       ok = databaseReady && missing.length === 0;
     return reply.code(ok ? 200 : 503).send({
       status: ok ? 'ok' : 'degraded',
-      version: '1.2.0',
+      version: buildInfo.version,
+      build: buildInfo.build,
+      commit: buildInfo.commitShort,
       port: cfg.port,
       database: { engine: 'mysql', ready: databaseReady, error: databaseError },
       backup: {
@@ -6696,6 +6700,24 @@ async function start() {
       time: new Date().toISOString()
     });
   });
+  app.get('/api/build-info', async (_r, reply) =>
+    reply
+      .header('Cache-Control', 'no-store, max-age=0')
+      .header('Pragma', 'no-cache')
+      .send(buildInfo)
+  );
+  app.get('/assets/build-footer.css', async (_r, reply) =>
+    reply
+      .type('text/css')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/build-footer.css', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/build-footer.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/build-footer.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/app.css', async (_r, reply) =>
     reply
       .header('Cache-Control', 'no-store, max-age=0')
