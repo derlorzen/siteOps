@@ -187,3 +187,35 @@ body.ops-mode .server-profile-panel details .buttonrow select{flex:1;min-width:1
  body.ops-mode .server-profile-save{display:grid}
  body.ops-mode .server-profile-save label,body.ops-mode .server-profile-save button{width:100%}
 }
+
+/* LorzCMS: workspace sections, shortcuts and setup wizard */
+body.ops-mode .cms-section-tabs{display:flex;gap:8px;overflow-x:auto;position:sticky;top:0;z-index:15;background:#f8f9fcee;
+ backdrop-filter:blur(12px);padding:10px 0 13px;margin-bottom:15px;scrollbar-width:thin}
+body.ops-mode .cms-section-tabs a{flex:none;display:inline-flex;align-items:center;min-height:41px;padding:10px 15px;
+ color:var(--siteops-accent-strong);background:#fff;border:1px solid var(--siteops-accent-border);border-radius:9px;
+ font-size:12px;font-weight:800}
+body.ops-mode .cms-section-tabs a:hover{background:var(--siteops-accent-soft)}
+body.ops-mode .cms-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:17px}
+body.ops-mode .cms-summary-grid>div{display:grid;gap:8px;border:1px solid #e5e9f1;padding:18px;background:#fff;border-radius:12px}
+body.ops-mode .cms-summary-grid strong{font-size:27px;letter-spacing:-.04em}
+body.ops-mode .cms-summary-grid small{font-size:11px;color:#8691a3;font-weight:750}
+body.ops-mode #cmsInstallations,body.ops-mode #cmsCreateSection,body.ops-mode #cmsAttachSection,
+body.ops-mode #cmsUpdates,body.ops-mode #cmsJobs{scroll-margin-top:75px;margin-bottom:16px}
+body.ops-mode #cmsCreateSection .inner-form,
+body.ops-mode #cmsAttachSection .inner-form{max-width:870px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+body.ops-mode #cmsCreateSection .inner-form fieldset,
+body.ops-mode #cmsAttachSection .inner-form fieldset{grid-column:1/-1;border:1px solid #e5e9f1;border-radius:11px;padding:18px}
+body.ops-mode #cmsCreateSection .inner-form fieldset>label,
+body.ops-mode #cmsAttachSection .inner-form fieldset>label{margin:10px 0}
+body.ops-mode #cmsCreateSection .inner-form>button,
+body.ops-mode #cmsAttachSection .inner-form>button{grid-column:1/-1}
+body.ops-mode #cmsSavedConnectionHint{grid-column:1/-1}
+body.ops-mode #cmsCreateSection form label{display:grid;gap:8px}
+body.ops-mode #cmsCreateSection form label.check{display:flex;align-items:flex-start}
+@media(max-width:750px){
+ body.ops-mode .cms-section-tabs{top:0}
+ body.ops-mode .cms-summary-grid{gap:8px}
+ body.ops-mode .cms-summary-grid>div{padding:12px}
+ body.ops-mode .cms-summary-grid strong{font-size:23px}
+ body.ops-mode #cmsCreateSection .inner-form,body.ops-mode #cmsAttachSection .inner-form{grid-template-columns:1fr}
+}

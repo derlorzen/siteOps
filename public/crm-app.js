@@ -18,7 +18,7 @@
   const statusName = {backlog:'Ideen',open:'Offen',in_progress:'In Arbeit',review:'Abnahme',done:'Erledigt'};
   const priorityName = {low:'Niedrig',normal:'Normal',high:'Hoch',urgent:'Dringend'};
   const state = {
-    customers:[],projects:[],tasks:[],entries:[],invoices:[],sites:[],siteLinks:[],settings:{},
+    customers:[],projects:[],tasks:[],entries:[],invoices:[],sites:[],siteLinks:[],cmsInstallations:{installations:[]},settings:{},
     board:null,boardLoading:false,boardError:'',projectId:'',token:0,saving:false,
     search:'',customerFilter:'',statusFilter:'all',view:'board',mobileColumn:'open',
     dialog:'',taskId:'',taskDetail:null,loading:true,recurring:[],
@@ -130,10 +130,10 @@
   }
   async function reload() {
     // The board must remain usable even when an unrelated invoice, site or settings endpoint is unavailable.
-    const names=['customers','projects','tasks','entries','invoices','sites','settings','siteLinks'];
+    const names=['customers','projects','tasks','entries','invoices','sites','settings','siteLinks','cmsInstallations'];
     const urls=[
       '/api/billing/customers','/api/billing/projects','/api/billing/tasks',
-      '/api/billing/entries','/api/billing/invoices','/api/sites','/api/billing/settings','/api/site-projects'
+      '/api/billing/entries','/api/billing/invoices','/api/sites','/api/billing/settings','/api/site-projects','/api/lorzcms/overview'
     ];
     const results=await Promise.allSettled(urls.map(url=>api(url)));
     for (let i=0;i<names.length;i++){
@@ -357,6 +357,21 @@
     const totalSeconds=tracked(id),progress=taskList.length?Math.round(100*complete/taskList.length):0;
     const linkedSites=state.siteLinks.filter(link=>link.project_id===id);
     const availableSites=state.sites.filter(site=>!state.siteLinks.some(link=>link.site_id===site.id));
+    const cmsBySite=new Map((state.cmsInstallations.installations||[]).map(c=>[c.siteId,c]));
+    const cmsSites=linkedSites.filter(link=>cmsBySite.has(link.site_id));
+    const cmsPanel='<section class="crm-project-websites crm-project-cms">'+
+      '<div class="crm-panel-head"><div><h2>LorzCMS in diesem Projekt</h2>'+
+      '<p>Installation, CMS-Core und Redaktionszugriff direkt im Projekt verwalten.</p></div>'+
+      '<a class="crm-btn crm-btn-ghost" href="/lorzcms">CMS-Zentrale →</a></div>'+
+      (cmsSites.length?cmsSites.map(link=>{
+        const installation=cmsBySite.get(link.site_id);
+        return '<div class="crm-linked-site"><span class="crm-project-icon">◈</span><div>'+
+          '<strong>'+esc(link.site_name)+'</strong><small>'+esc(installation.version||'Installation in Vorbereitung')+
+          ' · '+esc(installation.state)+'</small></div>'+
+          '<a class="crm-btn crm-btn-ghost" href="'+esc(installation.baseUrl)+'/admin/" target="_blank" rel="noopener">Redaktion ↗</a>'+
+          '<a class="crm-btn crm-btn-ghost" href="/lorzcms">Verwalten →</a></div>';
+      }).join(''):'<p class="crm-muted">Noch kein LorzCMS in diesem Projekt. Eine Installation kann in der CMS-Zentrale zugeordnet werden.</p>')+
+      '<a class="crm-btn crm-btn-primary" href="/lorzcms#cmsCreateSection">+ LorzCMS-Website anlegen</a></section>';
     const sitePanel='<section class="crm-project-websites"><div class="crm-panel-head"><div><h2>Websites im Projekt</h2>'+
       '<p>Monitoring, SEO, Backups und Deployments direkt mit diesem Projekt verbinden.</p></div></div>'+
       '<div class="crm-linked-site-list">'+(linkedSites.map(link=>
@@ -383,7 +398,7 @@
     return '<div class="crm-breadcrumb"><a href="/billing" data-route="/billing">Projekte</a><span>›</span><span>'+esc(customer?.name||'')+'</span></div>'+
       heading('PROJEKT',project.name,customer?.name||'',
         button('+ Task','new-task','','crm-btn-primary')+button('Projekt bearbeiten','edit-project','','crm-btn-ghost'))+
-      stats+project360Panel()+sitePanel+'<div class="crm-project-toolbar"><div>'+tabs+'</div><div class="crm-project-tools">'+
+      stats+project360Panel()+sitePanel+cmsPanel+'<div class="crm-project-toolbar"><div>'+tabs+'</div><div class="crm-project-tools">'+
       button('↻','retry-board','aria-label="Board neu laden"','crm-btn-ghost')+'</div></div>'+
       board+'<details class="crm-project-maintenance"><summary>Wartungsaufgaben & Vorlagen</summary>'+maintenanceView()+'</details>'+
       '<section class="crm-activity-panel"><div class="crm-panel-head"><h2>Letzte Projektaktivitäten</h2>'+
