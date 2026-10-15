@@ -13,8 +13,10 @@
   trigger.className = 'workspace-search-trigger';
   trigger.innerHTML = '<span class="workspace-search-icon" aria-hidden="true">⌕</span><span>Alles durchsuchen</span><kbd>Ctrl K</kbd>';
   trigger.setAttribute('aria-label', 'Globale Suche öffnen (Strg+K)');
-  const actions = header.querySelector('.crm-top-actions');
-  header.insertBefore(trigger, actions || header.lastElementChild || null);
+  // Keep search inside the right-hand topbar actions on both mobile and desktop.
+  const actions = header.querySelector('.crm-top-actions, .ops-top-actions');
+  if (actions) actions.prepend(trigger);
+  else header.appendChild(trigger);
 
   const dialog = document.createElement('dialog');
   dialog.className = 'workspace-search-dialog';
