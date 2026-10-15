@@ -1,0 +1,30 @@
+name: Temporary ALL-INKL Mobile Formatter
+on:
+  push:
+    branches:
+      - fix/allinkl-mobile-stacked-rows
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.repository == 'derlorzen/siteOps'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/allinkl-mobile-stacked-rows
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --write test/allinkl-mobile-layout.test.mjs
+      - name: Commit formatting
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "SiteOps CI Formatter"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add test/allinkl-mobile-layout.test.mjs
+            git commit -m "style: format ALL-INKL mobile layout tests"
+            git push origin HEAD:fix/allinkl-mobile-stacked-rows
+          fi
