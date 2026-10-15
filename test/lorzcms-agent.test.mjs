@@ -121,7 +121,13 @@ test(
       409,
       'different install request cannot reuse the job'
     );
-    assert.equal((await fetch(base + '/')).status, 200);
+    const homepage = await fetch(base + '/');
+    assert.equal(homepage.status, 200);
+    const homepageHtml = await homepage.text();
+    assert.match(homepageHtml, /<meta name="robots" content="noindex,follow">/, 'new websites stay out of the index until launch approval');
+    assert.match(homepageHtml, /application\/ld\+json/, 'CMS renders JSON-LD from the start');
+    assert.match(homepageHtml, /"@type":"Organization"/, 'the site identity is published as organization data');
+    assert.doesNotMatch(await (await fetch(base + '/sitemap.xml')).text(), /<loc>/, 'prelaunch sitemap is empty');
     const login = await fetch(base + '/admin/login/');
     assert.equal(login.status, 200);
     const loginHtml = await login.text();
