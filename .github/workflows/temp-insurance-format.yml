@@ -1,0 +1,30 @@
+name: Temporary Insurance Preset Formatter
+on:
+  push:
+    branches:
+      - feat/unfallversicherung-multilandingpages
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.repository == 'derlorzen/siteOps'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/unfallversicherung-multilandingpages
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --write lib/website-factory.mjs lib/website-presets.mjs test/website-insurance.test.mjs test/lorzcms-insurance-agent.test.mjs
+      - name: Commit formatting
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "SiteOps CI Formatter"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add lib/website-factory.mjs lib/website-presets.mjs test/website-insurance.test.mjs test/lorzcms-insurance-agent.test.mjs
+            git commit -m "style: format accident insurance landing-page generator"
+            git push origin HEAD:feat/unfallversicherung-multilandingpages
+          fi
