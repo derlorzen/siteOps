@@ -219,3 +219,12 @@ body.ops-mode #cmsCreateSection form label.check{display:flex;align-items:flex-s
  body.ops-mode .cms-summary-grid strong{font-size:23px}
  body.ops-mode #cmsCreateSection .inner-form,body.ops-mode #cmsAttachSection .inner-form{grid-template-columns:1fr}
 }
+
+/* Keep the quick search beside the page breadcrumb, never on its own row. */
+.ops-workspace-bar>div:first-child{flex:1;min-width:0}
+.ops-workspace-bar>div:first-child strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ops-workspace-bar .ops-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex:none;margin-left:auto}
+@media(max-width:480px){
+ .ops-workspace-bar{flex-wrap:nowrap}
+ .ops-workspace-bar .ops-top-new{display:none}
+}

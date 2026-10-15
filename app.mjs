@@ -5367,6 +5367,11 @@ function settingsPage() {
     'Einstellungen',
     `
     <header><div><span class="eyebrow">System</span><h1>Einstellungen</h1><p>Zentrale Konfiguration für Backups, Standardwerte neuer Websites und Benachrichtigungen.</p></div><span class="pill ok">MySQL verbunden</span></header>
+    <section class="form-card siteops-appearance-section" aria-labelledby="siteopsAppearanceHeading">
+      <div class="sectionhead"><div><span class="eyebrow">Darstellung</span><h2 id="siteopsAppearanceHeading">Design & Farben</h2></div></div>
+      <p class="lead">Passe die Akzentfarbe des gesamten SiteOps-Workspaces an. Die Einstellung gilt auch für die Kundenverwaltung.</p>
+      <button type="button" class="siteops-theme-settings-button" data-siteops-theme-open aria-label="Design und Farben anpassen"><span class="siteops-theme-button-dot" aria-hidden="true"></span>Design anpassen</button>
+    </section>
     <form id="configForm" class="config-form">
       <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Backup-Ziel</span><h2>GitHub</h2></div><span class="pill ${s.githubBackupTokenConfigured && s.githubBackupRepo ? 'ok' : ''}">${s.githubBackupTokenConfigured && s.githubBackupRepo ? 'KONFIGURIERT' : 'OFFEN'}</span></div>
         <p class="lead">SiteOps legt Versionsstände aller verwalteten Websites in einem separaten privaten GitHub-Repository ab. Der Token wird verschlüsselt in MySQL gespeichert.</p>

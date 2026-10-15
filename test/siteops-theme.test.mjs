@@ -108,6 +108,8 @@ test('theme routes enforce JSON, same origin and same-site fetch policy', async 
 test('picker script parses; offers presets, live preview, cancellation and persistence', async () => {
   const source = await readFile(new URL('../public/siteops-theme.js', import.meta.url), 'utf8');
   assert.doesNotThrow(() => new vm.Script(source));
+  assert.doesNotMatch(source, /querySelector\('\.crm-topbar'\)/);
+  assert.match(source, /document\.addEventListener\('click'/);
   for (const requirement of [
     'type="color"',
     'siteopsThemeHex',
@@ -116,7 +118,7 @@ test('picker script parses; offers presets, live preview, cancellation and persi
     '/api/ui-theme',
     'localStorage',
     '--siteops-accent',
-    'siteopsThemeButton'
+    '[data-siteops-theme-open]'
   ]) {
     assert.ok(source.includes(requirement), requirement);
   }

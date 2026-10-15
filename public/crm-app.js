@@ -535,7 +535,11 @@
       '<section class="crm-panel"><form data-form="settings"><div class="crm-form-cols">'+
       keys.map(([name,label])=>field(label,name,state.settings[name]||'','maxlength="500"')).join('')+
       '</div><div class="crm-form-footer"><button class="crm-btn crm-btn-primary">Einstellungen speichern</button></div></form></section>'+
-      '<section class="crm-panel"><h2>Archivierung</h2><p>Ausgestellte Rechnungen werden in SiteOps und im GitHub-Rechnungsarchiv gespeichert. Für die langfristige revisionssichere Aufbewahrung wird ein zusätzliches externes Archiv benötigt.</p></section>';
+      '<section class="crm-panel"><h2>Archivierung</h2><p>Ausgestellte Rechnungen werden in SiteOps und im GitHub-Rechnungsarchiv gespeichert. Für die langfristige revisionssichere Aufbewahrung wird ein zusätzliches externes Archiv benötigt.</p></section>'+
+      '<section class="crm-panel siteops-appearance-section"><h2>Design & Farben</h2>'+
+      '<p>Die Akzentfarbe gilt für die Kundenverwaltung und alle weiteren SiteOps-Bereiche.</p>'+
+      '<button type="button" class="siteops-theme-settings-button" data-siteops-theme-open aria-label="Design und Farben anpassen">'+
+      '<span class="siteops-theme-button-dot" aria-hidden="true"></span>Design anpassen</button></section>';
   }
   function modal(html,kind){
     state.dialog=kind;

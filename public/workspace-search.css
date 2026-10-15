@@ -30,7 +30,7 @@
 .workspace-search-footer{display:flex;gap:15px;padding:10px 17px;border-top:1px solid #e8eaf1;font-size:10px;color:#9097a6}
 .workspace-search-dialog :focus-visible,.workspace-search-trigger:focus-visible{outline:3px solid var(--siteops-accent-border);outline-offset:2px}
 @media(max-width:720px){
- .workspace-search-trigger{min-width:40px;min-height:40px;padding:8px 11px;flex:none}
+ .workspace-search-trigger{width:42px;min-width:42px;height:42px;min-height:42px;padding:0;flex:none;justify-content:center}
  .workspace-search-trigger>span:nth-child(2),.workspace-search-trigger kbd{display:none}
  .workspace-search-dialog{top:5dvh;max-height:85dvh}
  .workspace-search-results{max-height:66dvh}
