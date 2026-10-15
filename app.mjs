@@ -20,6 +20,7 @@ import { createCmsController, cmsInstallSchema, cmsScheduleSchema } from './lib/
 import { cmsDashboardBody } from './lib/lorzcms-ui.mjs';
 import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
+import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-projects.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 
 function env(name, fallback = undefined) {
@@ -178,6 +179,7 @@ async function archiveIssuedInvoice(snapshot, pdf) {
   });
 }
 const billingController = createBillingController({ db, archive: archiveIssuedInvoice });
+const siteProjectService = createSiteProjectService(db);
 const billingWorkflows = createBillingWorkflows({
   db,
   billing: billingController,
@@ -5013,7 +5015,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : ''}</head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -5059,7 +5061,7 @@ function siteOpsTableView(cfg){
   controls.forEach(el=>el.addEventListener(el.tagName==='INPUT'?'input':'change',()=>{page=1;render();}));
   render();
 }
-</script></body></html>`;
+</script>${title === 'Kunden & Abrechnung' ? '' : '<script defer src="/assets/ops-workspace.js"></script>'}</body></html>`;
 }
 
 function mcpInfoPage() {
@@ -6401,6 +6403,14 @@ async function start() {
       .type('text/css')
       .send(await readFile(new URL('./public/app.css', import.meta.url), 'utf8'))
   );
+  app.get('/assets/ops-workspace.css', async (_r, reply) =>
+    reply.type('text/css').header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/ops-workspace.css', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/ops-workspace.js', async (_r, reply) =>
+    reply.type('text/javascript').header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/ops-workspace.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/crm-app.js', async (_r, reply) =>
     reply
       .type('text/javascript')
@@ -6490,6 +6500,7 @@ async function start() {
     nodeHandler = toNodeHandler(handler);
   app.all('/mcp', async (req, reply) => nodeHandler(req.raw, reply.raw, req.body));
   app.get('/', async (_r, reply) => reply.type('text/html').send(await dashboard()));
+  app.get('/websites', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/lorzcms', async (_r, reply) =>
     reply.type('text/html').send(page('LorzCMS', cmsDashboardBody(await cmsController.overview(), esc)))
   );
@@ -6527,6 +6538,7 @@ async function start() {
     dashboardBody: billingDashboardBody
   });
   registerBillingWorkflowRoutes(app, billingWorkflows);
+  registerSiteProjectRoutes(app, siteProjectService);
   app.get('/api/sites', async () => listSites());
   app.get('/api/sites/:site', async req => publicSite(await getSite(req.params.site)));
   app.get('/api/sites/:site/overview', async req => siteOverview(req.params.site));
