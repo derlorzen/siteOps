@@ -166,7 +166,15 @@
       if(token!==state.token)return;
       state.boardError=userError(error);
     } finally {
-      if(token===state.token){state.boardLoading=false;render();}
+      if(token===state.token){
+        state.boardLoading=false;render();
+        const requestedTask=new URLSearchParams(window.location.search).get('task');
+        if(requestedTask && state.board && statusOrder.some(key=>
+            (state.board.columns[key]||[]).some(item=>item.id===requestedTask))){
+          history.replaceState({},'',window.location.pathname);
+          taskModal(requestedTask);
+        }
+      }
     }
   }
   function navigate(path) {
