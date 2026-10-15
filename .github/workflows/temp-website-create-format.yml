@@ -1,0 +1,30 @@
+name: Temporary Website Creator Formatter
+on:
+  push:
+    branches:
+      - feat/website-create-one-request
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.repository == 'derlorzen/siteOps'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/website-create-one-request
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --write app.mjs lib/lorzcms.mjs lib/website-factory.mjs test/website-factory.test.mjs test/lorzcms-agent.test.mjs
+      - name: Commit formatting
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "SiteOps CI Formatter"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add app.mjs lib/lorzcms.mjs lib/website-factory.mjs test/website-factory.test.mjs test/lorzcms-agent.test.mjs
+            git commit -m "style: format one-request website creation"
+            git push origin HEAD:feat/website-create-one-request
+          fi
