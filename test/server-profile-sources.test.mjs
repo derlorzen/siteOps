@@ -42,7 +42,10 @@ test('a dedicated endpoint serves existing websites to the profile selector', as
 
 test('website setup loads hosting sources from the dedicated endpoint and handles errors', async () => {
   const appSource = await readFile(new URL('../app.mjs', import.meta.url), 'utf8');
-  const setup = appSource.slice(appSource.indexOf('function setupPage()'), appSource.indexOf('function setupPage()') + 22000);
+  const setup = appSource.slice(
+    appSource.indexOf('function setupPage()'),
+    appSource.indexOf('function setupPage()') + 22000
+  );
   assert.match(setup, /fetch\('\/api\/server-profiles\/source-sites'\)/);
   assert.match(setup, /sites\.length\?'Website wählen/);
   assert.match(setup, /profileSource\.disabled=!sites\.length/);
