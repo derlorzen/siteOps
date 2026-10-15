@@ -14,23 +14,35 @@ test('one request for insurance website needs no fictional business name or city
   assert.equal(site.companyName, 'Unfallversicherung verständlich erklärt');
   assert.equal(site.pages.length, 6);
   assert.equal(site.menu.length, 6);
-  assert.deepEqual(site.pages.map(x => x.path), [
-    '/',
-    '/gesetzlich-privat',
-    '/unfallversicherung-fussball',
-    '/unfallversicherung-skisport',
-    '/unfallversicherung-radfahren',
-    '/unfallversicherung-handball'
-  ]);
+  assert.deepEqual(
+    site.pages.map(x => x.path),
+    [
+      '/',
+      '/gesetzlich-privat',
+      '/unfallversicherung-fussball',
+      '/unfallversicherung-skisport',
+      '/unfallversicherung-radfahren',
+      '/unfallversicherung-handball'
+    ]
+  );
   assert.equal(site.seoIndexing, 'disabled');
   assert.equal(site.reviewRequired, true);
   assert.match(site.themeCss, /max-width:720px/);
 });
 
 test('sports are the top four by reported ERGO claims in 2025, without asserting person-hour risk', () => {
-  assert.deepEqual(accidentInsuranceSports.map(x => x.name), ['Fußball', 'Skisport', 'Radfahren', 'Handball']);
-  assert.deepEqual(accidentInsuranceSports.map(x => x.count), ['2.308', '1.001', '579', '189']);
-  assert.deepEqual(accidentInsuranceSports.map(x => x.share), ['35,6', '15,4', '8,9', '2,9']);
+  assert.deepEqual(
+    accidentInsuranceSports.map(x => x.name),
+    ['Fußball', 'Skisport', 'Radfahren', 'Handball']
+  );
+  assert.deepEqual(
+    accidentInsuranceSports.map(x => x.count),
+    ['2.308', '1.001', '579', '189']
+  );
+  assert.deepEqual(
+    accidentInsuranceSports.map(x => x.share),
+    ['35,6', '15,4', '8,9', '2,9']
+  );
   const site = accidentInsuranceBlueprint({ origin: input.baseUrl });
   const home = site.pages[0].body;
   const all = site.pages.map(p => p.body).join('\n');
@@ -39,7 +51,10 @@ test('sports are the top four by reported ERGO claims in 2025, without asserting
     assert.ok(site.pages.some(p => p.path === '/unfallversicherung-' + sport.key));
   }
   assert.match(home, /nicht das Unfallrisiko pro Sportstunde/);
-  assert.match(all, /keine individuelle Unfallwahrscheinlichkeit|keine bundesweit repräsentative|keine individuelle Unfallwahrscheinlichkeit/i);
+  assert.match(
+    all,
+    /keine individuelle Unfallwahrscheinlichkeit|keine bundesweit repräsentative|keine individuelle Unfallwahrscheinlichkeit/i
+  );
   assert.match(all, /www\.ergo\.com\/de\/newsroom-ergo\/reports-dossiers\/sportunfaelle/);
   assert.match(all, /www\.dguv\.de/);
   assert.match(home, /Berufsunfähigkeitsversicherung/);
@@ -69,7 +84,10 @@ test('website_create passes insurance preset to the same CMS installation worker
       publishBundled: async () => ({ version: '3.5.0' }),
       create: async details => {
         submitted = details;
-        return { installationId: '22222222-2222-4222-8222-222222222222', jobId: '33333333-3333-4333-8333-333333333333' };
+        return {
+          installationId: '22222222-2222-4222-8222-222222222222',
+          jobId: '33333333-3333-4333-8333-333333333333'
+        };
       }
     },
     defaultAdminEmail: 'admin@example.de',
