@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { allinklAccountSchema, createKasClient, parseKasSoap, kasRows, normalizeHost, splitSubdomain } from '../lib/allinkl.mjs';
+import {
+  allinklAccountSchema,
+  createKasClient,
+  parseKasSoap,
+  kasRows,
+  normalizeHost,
+  splitSubdomain
+} from '../lib/allinkl.mjs';
 
 const map = entries =>
   '<item xsi:type="ns2:Map">' +
@@ -57,15 +64,11 @@ test('KAS logins accept letters after the w prefix and reject invalid characters
   };
   for (const login of ['w0123456', 'w0137d60', 'W01ABC56']) {
     assert.equal(allinklAccountSchema.safeParse({ ...account, login }).success, true, login);
-    assert.doesNotThrow(() =>
-      createKasClient({ login, password: account.password, request: async () => ({}) })
-    );
+    assert.doesNotThrow(() => createKasClient({ login, password: account.password, request: async () => ({}) }));
   }
   for (const login of ['w1234', 'w12-456', 'w012 456', 'w01234/6', 'x0137d60', 'w12345678901']) {
     assert.equal(allinklAccountSchema.safeParse({ ...account, login }).success, false, login);
-    assert.throws(() =>
-      createKasClient({ login, password: account.password, request: async () => ({}) })
-    );
+    assert.throws(() => createKasClient({ login, password: account.password, request: async () => ({}) }));
   }
 });
 
