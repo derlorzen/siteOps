@@ -5,77 +5,59 @@ import vm from 'node:vm';
 import { registerBillingRoutes } from '../lib/billing.mjs';
 import { billingDashboardBody } from '../lib/billing-ui.mjs';
 
-const viewPaths = [
-  '/billing',
-  '/billing/customers',
-  '/billing/board',
-  '/billing/time',
-  '/billing/invoices',
-  '/billing/settings'
+const routes = [
+  '/billing', '/billing/projects', '/billing/projects/123e4567-e89b-12d3-a456-426614174000',
+  '/billing/customers', '/billing/time', '/billing/invoices', '/billing/settings'
 ];
 
-test('every billing subpage has a direct GET route that renders the existing dashboard', async () => {
-  const routes = new Map();
+test('project overview and project detail have deep-linkable HTML routes', async () => {
+  const map = new Map();
   const app = { addHook() {} };
   for (const method of ['get', 'post', 'patch', 'put', 'delete'])
-    app[method] = (path, callback) => {
-      routes.set(method.toUpperCase() + ' ' + path, callback);
-    };
-  registerBillingRoutes(
-    app,
-    {},
-    {
-      baseUrl: () => 'https://example.invalid',
-      page: (title, body) => '<html><title>' + title + '</title>' + body + '</html>',
-      dashboardBody: billingDashboardBody
-    }
-  );
-  for (const path of viewPaths) {
-    const handler = routes.get('GET ' + path);
-    assert.equal(typeof handler, 'function', 'missing route ' + path);
-    let output = '';
-    const reply = {
-      type: () => reply,
-      send: value => {
-        output = value;
-        return value;
-      }
-    };
-    await handler({}, reply);
-    assert.match(output, /billingRoot/);
-    assert.match(output, /billing-navigation\.js/);
+    app[method] = (url, handler) => map.set(method.toUpperCase() + ' ' + url, handler);
+  registerBillingRoutes(app, {}, {
+    baseUrl: () => 'https://siteops.invalid',
+    page: (title, content) => '<html><title>' + title + '</title>' + content + '</html>',
+    dashboardBody: billingDashboardBody
+  });
+  for (const route of routes) {
+    const key=route.includes('/projects/123e') ? 'GET /billing/projects/:id' : 'GET '+route;
+    const handler=map.get(key);
+    assert.equal(typeof handler, 'function', key);
+    let value='';
+    const reply={type:()=>reply,send:data=>(value=data)};
+    await handler({},reply);
+    assert.match(value,/crmRoot/);
+    assert.match(value,/crm-app\.js/);
   }
-  assert.equal(routes.has('GET /billing/wrong-section'), false);
 });
 
-test('browser scripts parse and are loaded in the correct dependency order', async () => {
-  for (const name of ['billing.js', 'billing-navigation.js', 'billing-board.js', 'billing-workflows.js']) {
-    const code = await readFile(new URL('../public/' + name, import.meta.url), 'utf8');
-    assert.doesNotThrow(() => new vm.Script(code), name + ' must parse');
-  }
-  const template = billingDashboardBody();
-  const scripts = ['billing.js', 'billing-navigation.js', 'billing-board.js', 'billing-workflows.js'];
-  const order = scripts.map(name => template.indexOf('/assets/' + name));
-  assert.ok(order.every(position => position >= 0));
-  assert.deepEqual(
-    order,
-    [...order].sort((a, b) => a - b)
-  );
+test('CRM replaces all four fragile legacy browser scripts with a single entrypoint', () => {
+  const body=billingDashboardBody();
+  assert.match(body,/crm-app\.js/);
+  assert.doesNotMatch(body,/billing-navigation\.js|billing-board\.js|billing-workflows\.js|\/assets\/billing\.js/);
 });
 
-test('workspace has focused pages, contextual selectors and a shared modal host', async () => {
-  const navigation = await readFile(new URL('../public/billing-navigation.js', import.meta.url), 'utf8');
-  for (const view of ['overview', 'customers', 'board', 'time', 'invoices', 'settings'])
-    assert.match(navigation, new RegExp('data-billing-page="' + view + '"'));
-  assert.match(navigation, /billingModalHost/);
-  assert.match(navigation, /billingContextSlot/);
-  assert.match(navigation, /data-billing-link/);
-  assert.match(navigation, /aria-current/);
-  assert.match(navigation, /popstate/);
-  const billing = await readFile(new URL('../public/billing.js', import.meta.url), 'utf8');
-  assert.match(billing, /siteopsBillingSelection/);
-  assert.match(billing, /siteops:billing-data/);
-  const workflows = await readFile(new URL('../public/billing-workflows.js', import.meta.url), 'utf8');
-  assert.match(workflows, /billingModalHost/);
-  assert.equal(workflows.includes('<div id="billingDueList"'), false, 'duplicate due task list outside overview');
+test('new mobile CRM entrypoint has valid JavaScript and offers end-to-end navigation',async()=>{
+  const js=await readFile(new URL('../public/crm-app.js',import.meta.url),'utf8');
+  assert.doesNotThrow(()=>new vm.Script(js));
+  for(const text of [
+    'projectListPage','projectPage','boardView','persistMove',
+    'startOrStop','taskModal','loadTaskExtras','manualTimeModal',
+    'customerPage','invoicePage','settingsPage','popstate','crm-mobile-columns'
+  ])assert.ok(js.includes(text),'missing workflow '+text);
+  assert.match(js,/\/api\/billing\/boards\//);
+  assert.match(js,/\/api\/billing\/timer\/start/);
+  assert.match(js,/\/api\/billing\/entries/);
+  assert.match(js,/data-status-select/);
+  assert.match(js,/getBoundingClientRect/);
+});
+
+test('mobile board uses one selected column and visible large touch targets',async()=>{
+  const css=await readFile(new URL('../public/crm-app.css',import.meta.url),'utf8');
+  assert.match(css,/max-width:720px/);
+  assert.match(css,/\.crm-kanban-lane\.mobile-active/);
+  assert.match(css,/\.crm-mobile-columns/);
+  assert.match(css,/min-height:44px/);
+  assert.match(css,/\.crm-nav-link\.is-active/);
 });
