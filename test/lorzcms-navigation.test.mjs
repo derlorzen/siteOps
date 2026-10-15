@@ -88,6 +88,13 @@ test('broken, already-registered installation exposes repair and original task e
   assert.match(html, new RegExp('value="' + projectId + '" selected'));
   assert.doesNotMatch(html, /CMS noch nicht eingerichtet/);
 });
+test('CMS installations link to the existing SiteOps live SEO audit', () => {
+  const f = fixture();
+  f.installations[0].state = 'ready';
+  f.installations[0].version = '3.5.0';
+  assert.match(renderCmsWorkspace(f, esc, 'sites'), /\/sites\/test-hsgangeln-de\/seo/);
+  assert.match(renderCmsWorkspace(f, esc, 'installation', installationId), /SEO-Audit & Empfehlungen/);
+});
 test('no second recovery button while an enrollment is already queued', () => {
   const f = fixture();
   f.jobs[0].state = 'queued';
