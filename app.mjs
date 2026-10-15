@@ -5462,6 +5462,20 @@ function setupPage() {
       <section class="form-card" id="webspaceSection">
         <div class="sectionhead"><div><span class="eyebrow">2 · Webspace</span><h2>Direkter Dateizugriff</h2></div></div>
         <div class="notice"><strong>SFTP ist die erste Wahl.</strong><span>Nutze FTPS oder unverschlüsseltes FTP nur, wenn der Hoster kein SFTP anbietet. Zugangsdaten werden verschlüsselt gespeichert.</span></div>
+        <div class="server-profile-panel">
+          <label>Gespeicherte Serververbindung <small>Bei mehreren Websites auf demselben Server: Zugangsdaten übernehmen, nur den Website-Ordner ändern.</small>
+            <select name="profileId" id="serverProfileSelect"><option value="">Neue Verbindung eingeben</option></select></label>
+          <p id="serverProfileHint" class="lead">Noch kein Profil ausgewählt. Du kannst bestehende Zugangsdaten einmalig als Serverprofil speichern.</p>
+          <div class="server-profile-save">
+            <label>Profilname <input id="serverProfileName" placeholder="z. B. Hostinger Hauptserver" maxlength="120"></label>
+            <button type="button" class="ghost" id="saveServerProfile">Aktuelle Zugangsdaten als Profil speichern</button>
+          </div>
+          <details><summary>Zugang einer bereits eingerichteten Website als Serverprofil übernehmen</summary>
+            <div class="buttonrow"><select id="serverProfileSource"><option value="">Website wählen …</option></select>
+              <button type="button" class="ghost" id="importServerProfile">Übernehmen</button></div>
+            <small>Passwort oder SSH-Schlüssel bleiben verschlüsselt auf dem Server; sie werden nicht an deinen Browser übertragen.</small>
+          </details>
+        </div>
         <div class="formgrid">
           <label>Verbindungsart <small>SFTP verschlüsselt die komplette Verbindung.</small><select name="protocol"><option value="sftp" selected>SFTP – empfohlen</option><option value="ftps">FTPS</option><option value="ftp">FTP – unverschlüsselt</option></select></label>
           <label>Port <small>SFTP meist 22, FTP/FTPS meist 21.</small><input name="port" type="number" value="22"></label>
@@ -5524,6 +5538,68 @@ function setupPage() {
     const connectionStatusEl=document.getElementById('connectionStatus');
     const connectionFilesEl=document.getElementById('connectionFiles');
     const saveSiteStatusEl=document.getElementById('saveSiteStatus');
+    const profileSelect=document.getElementById('serverProfileSelect');
+    const profileName=document.getElementById('serverProfileName');
+    const profileHint=document.getElementById('serverProfileHint');
+    const profileSource=document.getElementById('serverProfileSource');
+    let serverProfiles=[];
+    async function loadServerProfiles(selected){
+      const r=await fetch('/api/server-profiles');if(!r.ok)throw new Error('Serverprofile konnten nicht geladen werden');
+      serverProfiles=await r.json();
+      profileSelect.replaceChildren(new Option('Neue Verbindung eingeben',''));
+      for(const p of serverProfiles){
+        profileSelect.add(new Option(p.name+' · '+p.protocol.toUpperCase()+' · '+p.host,p.id));
+      }
+      if(selected)profileSelect.value=selected;
+    }
+    function selectServerProfile(){
+      const chosen=serverProfiles.find(p=>p.id===profileSelect.value);
+      if(chosen){
+        protocol.value=chosen.protocol;
+        port.value=chosen.port;
+        field('host').value=chosen.host;
+        field('username').value=chosen.username;
+        field('password').value='';
+        profileHint.textContent='Gespeicherte Zugangsdaten werden serverseitig verwendet. Passe nur den Webroot unten für diese Website an.';
+      }else{
+        profileHint.textContent='Neue Zugangsdaten eingeben und bei Bedarf als Profil speichern.';
+      }
+      for(const name of ['protocol','port','host','username','password']){
+        field(name).readOnly=!!chosen;
+      }
+    }
+    profileSelect.addEventListener('change',selectServerProfile);
+    async function setupExistingSites(){
+      try{
+        const r=await fetch('/api/sites');if(!r.ok)return;
+        const sites=await r.json();
+        for(const site of sites.filter(s=>s.deployment_mode==='webspace'))
+          profileSource.add(new Option(site.name+' · '+site.host,site.id));
+      }catch(error){profileHint.textContent=String(error.message||error);}
+    }
+    async function saveProfile(fromExisting){
+      const name=profileName.value.trim();
+      if(!name){profileHint.textContent='Bitte zuerst einen Profilnamen eingeben.';profileName.focus();return;}
+      const endpoint=fromExisting?'/api/server-profiles/from-site':'/api/server-profiles';
+      const body=fromExisting?{name,site_id:profileSource.value}:{
+        name,protocol:protocol.value,host:field('host').value,port:Number(port.value),
+        username:field('username').value,password:field('password').value
+      };
+      if(fromExisting&&!body.site_id){profileHint.textContent='Bitte eine bestehende Website auswählen.';return;}
+      const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      const result=await r.json();if(!r.ok)throw new Error(result.message||result.error||'Profil konnte nicht gespeichert werden');
+      await loadServerProfiles(result.id);
+      selectServerProfile();
+      profileHint.textContent='Serverprofil gespeichert. Das Passwort bleibt verschlüsselt auf dem Server.';
+    }
+    document.getElementById('saveServerProfile').addEventListener('click',()=>{
+      saveProfile(false).catch(e=>profileHint.textContent='Fehler: '+e.message);
+    });
+    document.getElementById('importServerProfile').addEventListener('click',()=>{
+      saveProfile(true).catch(e=>profileHint.textContent='Fehler: '+e.message);
+    });
+    loadServerProfiles().catch(e=>profileHint.textContent='Fehler: '+e.message);
+    setupExistingSites();
 
     let slugTouched=false;
     slug.addEventListener('input',()=>slugTouched=true);
@@ -5577,6 +5653,7 @@ function setupPage() {
         siteType:fd.get('siteType'),
         deploymentMode:fd.get('deploymentMode'),
         protocol:fd.get('protocol'),
+        profileId:fd.get('profileId')||undefined,
         host:String(fd.get('host')||'').trim(),
         port:Number(fd.get('port')),
         username:String(fd.get('username')||'').trim(),
