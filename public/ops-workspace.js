@@ -9,17 +9,22 @@
   const pages=[
     ['/','Übersicht','▦'],['/websites','Websites','◎'],['/billing','Projekte','▤'],['/billing/activity','Aktivitäten','◷'],
     ['/lorzcms','LorzCMS','◈'],['/setup','Website hinzufügen','+'],
-    ['/settings','Einstellungen','⚙'],['/mcp-info','Integrationen','⇄']
+    ['/settings','Einstellungen','⚙'],['/mcp-info','Integrationen','⇄'],
+    ['/hosting','Hosting & DNS','◎','Integrationen']
   ];
   const path=location.pathname;
   const active=path.startsWith('/sites/')||path==='/websites'?'Websites':
     path.startsWith('/lorzcms')?'LorzCMS':path.startsWith('/billing')?'Projekte':
     path==='/setup'?'Website hinzufügen':path==='/settings'?'Einstellungen':
-    path.startsWith('/mcp-info')?'Integrationen':'Übersicht';
+    path.startsWith('/hosting')?'Hosting & DNS':path.startsWith('/mcp-info')?'Integrationen':'Übersicht';
   const currentPage=pages.find(([,title])=>title===active);
-  const menu=pages.map(([href,label,icon])=>
-    '<a href="'+href+'" class="ops-nav-item'+(label===active?' is-active':'')+
-    '"'+(label===active?' aria-current="page"':'')+'><span aria-hidden="true" class="ops-nav-icon">'+icon+
+  const menu=pages.map(([href,label,icon,parent])=>
+    '<a href="'+href+'" class="ops-nav-item'+(parent?' ops-nav-subitem':'')+
+    (label===active?' is-active':parent===active?' is-section-active':'')+
+    (!parent && label==='Integrationen' && active==='Hosting & DNS'?' is-section-active':'')+
+    '"'+(label===active?' aria-current="page"':'')+
+    (parent?' data-nav-parent="'+esc(parent)+'"':'')+
+    '><span aria-hidden="true" class="ops-nav-icon">'+icon+
     '</span><span>'+label+'</span></a>').join('');
   const layout=document.createElement('div');
   layout.className='ops-workspace';
