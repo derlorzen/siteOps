@@ -21,19 +21,29 @@ test('new websites select one stored hosting connection', () => {
 test('directory is prepared recursively before content check', async () => {
   const calls = [];
   const remote = {
-    async ensureDirectory(path) { calls.push(['mkdir', path]); },
-    async list(path) { calls.push(['list', path]); return []; }
+    async ensureDirectory(path) {
+      calls.push(['mkdir', path]);
+    },
+    async list(path) {
+      calls.push(['list', path]);
+      return [];
+    }
   };
   assert.deepEqual(await prepareEmptyHostingTarget(remote, '/project/public'), {
     remoteRoot: '/project/public',
     empty: true
   });
-  assert.deepEqual(calls, [['mkdir', '/project/public'], ['list', '/project/public']]);
+  assert.deepEqual(calls, [
+    ['mkdir', '/project/public'],
+    ['list', '/project/public']
+  ]);
 });
 test('existing site files are never overwritten', async () => {
   const remote = {
     async ensureDirectory() {},
-    async list() { return [{ name: 'index.php', type: 'file' }]; }
+    async list() {
+      return [{ name: 'index.php', type: 'file' }];
+    }
   };
   await assert.rejects(prepareEmptyHostingTarget(remote, '/existing'), /nicht leer/);
 });
