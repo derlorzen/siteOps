@@ -19,6 +19,20 @@ $site->save('menus',0,[['id'=>'home','label'=>'Startseite','url'=>'/','parent'=>
 $initial=$site->get('appearance');$appearance=$initial['value'];$appearance['accent']='#a6cfbb';$appearance['background']='#faf9f6';$appearance['text']='#203a31';$appearance['footer']='Gute Gedanken. Klare Schritte.';$appearance['custom_css']='.cms-page { --page-radius: .4rem; }';
 $site->save('appearance',0,$appearance,$actor);
 rejected(fn()=>$site->save('appearance',0,$appearance,$actor),409);
+$metadata=\SiteCms\Seo::metadata($item,$site,$configuration);
+check(str_contains($metadata['description'],'Wir begleiten Menschen'),'Descriptions default to the individual page body');
+check($metadata['canonical']==='https://example.de/','Automatic canonical uses the configured public URL');
+$graph=\SiteCms\Seo::structuredData($item,$site,$configuration);
+check(count($graph['@graph'])===3,'Homepage has WebPage, WebSite and Organization schema');
+check($graph['@graph'][2]['name']==='Morgen & Partner','Organization data is based on actual site settings');
+check(str_contains(\SiteCms\Seo::head($item,$site,$configuration),'application/ld+json'),'JSON-LD is embedded in document head');
+$staging=$configuration;$staging['environment']='staging';
+check(str_contains(\SiteCms\Seo::metadata($item,$site,$staging)['robots'],'noindex'),'Non-production websites are never indexed');
+$seoState=$site->value('seo');$seoState['indexing']='disabled';
+$site->save('seo',0,$seoState,$actor);
+check(str_contains(\SiteCms\Seo::metadata($item,$site,$configuration)['robots'],'noindex'),'Launch gate disables indexing globally');
+$seoState['indexing']='enabled';$site->save('seo',1,$seoState,$actor);
+check(str_contains(\SiteCms\Seo::metadata($item,$site,$configuration)['robots'],'index,follow'),'Approved launch allows indexing');
 $pages=new PageTemplates($cms,$configuration);check($pages->enabled(),'Base installations automatically use shared templates');
 if(isset($argv[1])){file_put_contents($argv[1].'/site-theme.css',$site->themeCss());}
 foreach(PageTemplates::PRESETS as $id=>$label){$current=$item;$current['options']['page_template']=$id;$html=$pages->render($current);check(str_contains($html,'page-'.$id),'Preset class');check(substr_count($html,'<h1>')===1,'Exactly one title');check(str_contains($html,'aria-current="page"'),'Active navigation');check(str_contains($html,'project-footer'),'Project partial hook');check(str_contains($html,'Gute Gedanken.'),'Shared footer text');check(str_contains($html,'https://example.de/'),'SEO canonical');if(isset($argv[1])){file_put_contents($argv[1].'/'.$id.'.html',$html);}}
