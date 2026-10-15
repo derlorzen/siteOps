@@ -5013,7 +5013,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0"></head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : ''}</head><body><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -6400,6 +6400,18 @@ async function start() {
       .header('Cache-Control', 'no-store, max-age=0')
       .type('text/css')
       .send(await readFile(new URL('./public/app.css', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/crm-app.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/crm-app.js', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/crm-app.css', async (_r, reply) =>
+    reply
+      .type('text/css')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/crm-app.css', import.meta.url), 'utf8'))
   );
   app.get('/assets/billing.js', async (_r, reply) =>
     reply
