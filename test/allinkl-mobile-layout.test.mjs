@@ -16,7 +16,10 @@ test('ALL-INKL account table uses named fields and preserves account controls', 
     assert.match(html, new RegExp('data-label="' + label + '"'));
   }
   assert.match(html, /data-allinkl-remove=/);
-  assert.match(renderAllInklWorkspace([], [], value => String(value)), /Noch keine ALL-INKL-Konten/);
+  assert.match(
+    renderAllInklWorkspace([], [], value => String(value)),
+    /Noch keine ALL-INKL-Konten/
+  );
 });
 
 test('ALL-INKL table and forms use stacked mobile cards without sideways scrolling', () => {
