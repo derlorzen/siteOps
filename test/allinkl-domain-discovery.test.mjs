@@ -123,6 +123,6 @@ test('hosting UI shows KAS domain select and no manual DNS zone input', async ()
   const script = await readFile(new URL('../public/allinkl.js', import.meta.url), 'utf8');
   assert.match(script, /\/domains'/);
   assert.match(script, /\/diagnostics'/);
-  assert.match(script, /load\\.requestSubmit\\(\\)/);
+  assert.match(script, /load\.requestSubmit\(\)/);
   execFileSync(process.execPath, ['--check', new URL('../public/allinkl.js', import.meta.url).pathname]);
 });
