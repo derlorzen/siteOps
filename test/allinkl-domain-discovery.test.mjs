@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { createAllInklService, kasDomainNames, kasRows, parseKasSoap } from '../lib/allinkl.mjs';
 import { renderAllInklWorkspace } from '../lib/allinkl-ui.mjs';
 import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 
 const entry = (key, value) => '<item><key>' + key + '</key><value>' + value + '</value></item>';
 const row = fields =>
@@ -30,10 +31,12 @@ const dns = row({
 });
 
 test('KAS SOAP response nested in Response returns domain rows, not KasFloodDelay', () => {
-  assert.deepEqual(kasRows(parseKasSoap(envelope('TRUE', domains))), [
+  let floodDelay = null;
+  assert.deepEqual(kasRows(parseKasSoap(envelope('TRUE', domains), { onFloodDelay: ms => { floodDelay = ms; } })), [
     { domain_name: 'example.de' },
     { domain_name: 'second.example' }
   ]);
+  assert.equal(floodDelay, 5000);
   assert.deepEqual(kasRows(parseKasSoap(envelope('TRUE'))), []);
   assert.throws(() => parseKasSoap(envelope('FALSE', 'invalid_credentials')), /abgelehnt/);
 });
@@ -120,5 +123,6 @@ test('hosting UI shows KAS domain select and no manual DNS zone input', async ()
   const script = await readFile(new URL('../public/allinkl.js', import.meta.url), 'utf8');
   assert.match(script, /\/domains'/);
   assert.match(script, /\/diagnostics'/);
-  assert.match(script, /load\.requestSubmit\(\)/);
+  assert.match(script, /load\\.requestSubmit\\(\\)/);
+  execFileSync(process.execPath, ['--check', new URL('../public/allinkl.js', import.meta.url).pathname]);
 });
