@@ -275,3 +275,51 @@ body:has(#crmRoot) .navinner{max-width:1620px}
   #crmRoot .crm-project-websites .crm-inline-row label{width:100%;flex:auto}
   #crmRoot .crm-project-websites .crm-inline-row .crm-btn{flex:1}
 }
+
+/* Project 360° and global activity timeline */
+#crmRoot .crm-360-panel,#crmRoot .crm-activity-panel{padding:20px;background:#fff;border:1px solid #e4e7f0;
+  border-radius:13px;margin:0 0 21px}
+#crmRoot .crm-360-panel .crm-panel-head{margin-bottom:16px}
+#crmRoot .crm-360-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:20px}
+#crmRoot .crm-360-kpis>div{display:grid;gap:7px;background:#f8f9fd;border:1px solid #edf0f5;
+  border-radius:9px;padding:15px}
+#crmRoot .crm-360-kpis strong{font-size:23px;letter-spacing:-.04em;color:#272c3c}
+#crmRoot .crm-360-kpis small{font-size:11px;color:#7e8798;font-weight:700}
+#crmRoot .crm-360-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:25px}
+#crmRoot .crm-360-columns h3{font-size:13px;margin:5px 0 12px}
+#crmRoot .crm-360-site,#crmRoot .crm-360-invoice{display:flex;align-items:center;gap:10px;
+  justify-content:space-between;border:1px solid #e8eaf0;border-radius:9px;padding:11px 13px;margin-bottom:9px}
+#crmRoot .crm-360-site:hover,#crmRoot .crm-360-invoice:hover{background:#f7f7fd;border-color:var(--siteops-accent-border)}
+#crmRoot .crm-360-site>span:first-child,#crmRoot .crm-360-invoice>span:first-child{display:grid;gap:3px;min-width:0}
+#crmRoot .crm-360-site strong,#crmRoot .crm-360-invoice strong{font-size:12px;overflow-wrap:anywhere}
+#crmRoot .crm-360-site small,#crmRoot .crm-360-invoice small{font-size:11px;color:#8891a2}
+#crmRoot .crm-360-incident{display:grid;gap:4px;padding:10px 13px;border:1px solid #f6c8d1;
+  border-radius:9px;background:#fff5f7;font-size:12px;margin:8px 0}
+#crmRoot .crm-360-incident strong{color:#a12e4b}
+#crmRoot .crm-360-incident span{color:#7b5861;overflow-wrap:anywhere}
+#crmRoot .crm-activity-panel>.crm-panel-head{display:flex;justify-content:space-between;align-items:start;gap:12px;flex-wrap:wrap}
+#crmRoot .crm-timeline{display:grid;gap:0}
+#crmRoot .crm-timeline-entry{display:flex;align-items:center;gap:12px;border-bottom:1px solid #edf0f5;
+  padding:13px 8px;border-radius:8px;min-height:62px;color:#263044}
+#crmRoot .crm-timeline-entry:last-child{border-bottom:0}
+#crmRoot .crm-timeline-entry:hover{background:var(--siteops-accent-soft)}
+#crmRoot .crm-timeline-icon{display:grid;place-items:center;flex:none;width:34px;height:34px;
+  border-radius:9px;background:var(--siteops-accent-soft);color:var(--siteops-accent-strong);font-size:18px}
+#crmRoot .crm-timeline-content{display:grid;gap:4px;flex:1;min-width:0}
+#crmRoot .crm-timeline-content strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#crmRoot .crm-timeline-content small{font-size:11px;color:#8c93a3;overflow-wrap:anywhere}
+#crmRoot .crm-timeline-time{flex:none;font-size:11px;color:#8b92a2}
+@media(max-width:850px){
+ #crmRoot .crm-360-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #crmRoot .crm-360-columns{grid-template-columns:1fr}
+ #crmRoot .crm-nav{grid-template-columns:repeat(7,minmax(0,1fr))}
+}
+@media(max-width:580px){
+ #crmRoot .crm-360-panel,#crmRoot .crm-activity-panel{padding:14px}
+ #crmRoot .crm-360-kpis>div{padding:12px}
+ #crmRoot .crm-360-kpis strong{font-size:20px}
+ #crmRoot .crm-timeline-entry{gap:8px}
+ #crmRoot .crm-timeline-time{max-width:74px;text-align:right;font-size:10px}
+ #crmRoot .crm-nav{display:flex;overflow-x:auto;scrollbar-width:none}
+ #crmRoot .crm-nav-link{min-width:57px;flex:1}
+}
