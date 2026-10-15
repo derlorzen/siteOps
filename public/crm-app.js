@@ -18,7 +18,7 @@
   const statusName = {backlog:'Ideen',open:'Offen',in_progress:'In Arbeit',review:'Abnahme',done:'Erledigt'};
   const priorityName = {low:'Niedrig',normal:'Normal',high:'Hoch',urgent:'Dringend'};
   const state = {
-    customers:[],projects:[],tasks:[],entries:[],invoices:[],sites:[],settings:{},
+    customers:[],projects:[],tasks:[],entries:[],invoices:[],sites:[],siteLinks:[],settings:{},
     board:null,boardLoading:false,boardError:'',projectId:'',token:0,saving:false,
     search:'',customerFilter:'',statusFilter:'all',view:'board',mobileColumn:'open',
     dialog:'',taskId:'',taskDetail:null,loading:true,recurring:[]
@@ -64,6 +64,7 @@
     const active=currentRoute().section;
     const items=[
       ['projects','/billing','▦','Projekte'],
+      ['websites','/websites','◎','Websites'],
       ['customers','/billing/customers','◎','Kunden'],
       ['time','/billing/time','◷','Zeiten'],
       ['invoices','/billing/invoices','▤','Rechnungen'],
@@ -126,10 +127,10 @@
   }
   async function reload() {
     // The board must remain usable even when an unrelated invoice, site or settings endpoint is unavailable.
-    const names=['customers','projects','tasks','entries','invoices','sites','settings'];
+    const names=['customers','projects','tasks','entries','invoices','sites','settings','siteLinks'];
     const urls=[
       '/api/billing/customers','/api/billing/projects','/api/billing/tasks',
-      '/api/billing/entries','/api/billing/invoices','/api/sites','/api/billing/settings'
+      '/api/billing/entries','/api/billing/invoices','/api/sites','/api/billing/settings','/api/site-projects'
     ];
     const results=await Promise.allSettled(urls.map(url=>api(url)));
     for (let i=0;i<names.length;i++){
@@ -197,7 +198,7 @@
         (!state.customerFilter||p.customer_id===state.customerFilter) &&
         (state.statusFilter==='all'||p.status===state.statusFilter);
     });
-    const cards=visible.map(p=>{
+    let cards=visible.map(p=>{
       const tasks=projectTasks(p.id),complete=tasks.filter(t=>t.status==='done').length;
       const progress=tasks.length?Math.round(complete/tasks.length*100):0;
       const active=tasks.filter(t=>t.status!=='done').length;
@@ -212,10 +213,23 @@
         '<div class="crm-project-card-footer"><span>'+active+' offen</span><span>'+Math.round(tracked(p.id)/3600*10)/10+' Std.</span>'+
         '<strong>Öffnen →</strong></div></a>';
     }).join('');
-    return heading('ARBEITSBEREICH','Alle Projekte',state.projects.length+' Projekte über alle Kunden hinweg.',
+    // A monitored website without a customer project is a first-class standalone workspace item.
+    const assigned = new Set(state.siteLinks.map(link => link.site_id));
+    const independentSites = state.sites.filter(site => !assigned.has(site.id) &&
+      !state.customerFilter && state.statusFilter==='all' &&
+      (site.name+' '+site.domain).toLocaleLowerCase('de-DE').includes(state.search.toLocaleLowerCase('de-DE')));
+    cards += independentSites.map(site =>
+      '<a class="crm-project-card crm-standalone-site" href="/sites/'+encodeURIComponent(site.slug)+'">'+
+      '<div class="crm-project-card-head"><span class="crm-project-icon">◎</span>'+
+      badge('Website','positive')+'</div><span class="crm-card-caption">EIGENSTÄNDIG</span>'+
+      '<h3>'+esc(site.name)+'</h3><p>'+esc(site.domain)+'</p>'+
+      '<div class="crm-project-progress"><span class="crm-muted">Monitoring · SEO · Backups · Deployment</span></div>'+
+      '<div class="crm-project-card-footer"><span>Ohne Kundenprojekt</span><strong>Website öffnen →</strong></div></a>'
+    ).join('');
+    return heading('ARBEITSBEREICH','Alle Projekte',state.projects.length+' Kundenprojekte · '+independentSites.length+' eigenständige Websites',
       button('+ Neues Projekt','new-project','','crm-btn-primary')+button('+ Kunde','new-customer','','crm-btn-ghost'))+
       '<div class="crm-summary-grid">'+[
-        [state.projects.length,'Projekte'],[state.tasks.filter(t=>t.status!=='done').length,'Offene Tasks'],
+        [state.projects.length+state.sites.filter(site=>!new Set(state.siteLinks.map(l=>l.site_id)).has(site.id)).length,'Projekte & Websites'],[state.tasks.filter(t=>t.status!=='done').length,'Offene Tasks'],
         [state.tasks.filter(isOverdue).length,'Überfällig'],[Math.round(state.entries.reduce((s,e)=>s+Number(e.duration_seconds),0)/3600*10)/10+' h','Erfasste Zeit']
       ].map(([value,label])=>'<div class="crm-stat"><strong>'+value+'</strong><span>'+label+'</span></div>').join('')+'</div>'+
       '<div class="crm-filters"><label class="crm-search"><span>⌕</span><input type="search" id="crmProjectSearch" placeholder="Projekte oder Kunden suchen" value="'+esc(state.search)+'" autocomplete="off"></label>'+
@@ -230,6 +244,20 @@
     const customer=findCustomer(project.customer_id);
     const taskList=projectTasks(id),complete=taskList.filter(t=>t.status==='done').length;
     const totalSeconds=tracked(id),progress=taskList.length?Math.round(100*complete/taskList.length):0;
+    const linkedSites=state.siteLinks.filter(link=>link.project_id===id);
+    const availableSites=state.sites.filter(site=>!state.siteLinks.some(link=>link.site_id===site.id));
+    const sitePanel='<section class="crm-project-websites"><div class="crm-panel-head"><div><h2>Websites im Projekt</h2>'+
+      '<p>Monitoring, SEO, Backups und Deployments direkt mit diesem Projekt verbinden.</p></div></div>'+
+      '<div class="crm-linked-site-list">'+(linkedSites.map(link=>
+      '<div class="crm-linked-site"><span class="crm-project-icon">◎</span><div><strong>'+esc(link.site_name)+'</strong>'+
+      '<small>'+esc(link.domain)+'</small></div>'+
+      '<a class="crm-btn crm-btn-ghost" href="/sites/'+encodeURIComponent(link.slug)+'">Öffnen →</a>'+
+      button('Entfernen','unlink-site','data-site-id="'+esc(link.site_id)+'"','crm-btn-ghost')+'</div>'
+      ).join('')||'<p class="crm-muted">Noch keine Websites verknüpft.</p>')+'</div>'+
+      '<div class="crm-inline-row"><label class="crm-field"><span>Website verknüpfen</span>'+
+      select('attach_site',[['','Website auswählen'],...availableSites.map(s=>[s.id,s.name+' · '+s.domain])],'','id="crmAttachSite"')+
+      '</label>'+button('Verknüpfen','attach-site','','crm-btn-primary')+
+      '<a class="crm-btn crm-btn-ghost" href="/setup">+ Neue Website</a></div></section>';
     const stats='<div class="crm-project-stats"><div><strong>'+taskList.length+'</strong><span>Tasks</span></div>'+
       '<div><strong>'+complete+'</strong><span>Erledigt</span></div>'+
       '<div><strong>'+progress+' %</strong><span>Fortschritt</span></div>'+
@@ -244,7 +272,7 @@
     return '<div class="crm-breadcrumb"><a href="/billing" data-route="/billing">Projekte</a><span>›</span><span>'+esc(customer?.name||'')+'</span></div>'+
       heading('PROJEKT',project.name,customer?.name||'',
         button('+ Task','new-task','','crm-btn-primary')+button('Projekt bearbeiten','edit-project','','crm-btn-ghost'))+
-      stats+'<div class="crm-project-toolbar"><div>'+tabs+'</div><div class="crm-project-tools">'+
+      stats+sitePanel+'<div class="crm-project-toolbar"><div>'+tabs+'</div><div class="crm-project-tools">'+
       button('↻','retry-board','aria-label="Board neu laden"','crm-btn-ghost')+'</div></div>'+
       board+'<details class="crm-project-maintenance"><summary>Wartungsaufgaben & Vorlagen</summary>'+maintenanceView()+'</details>';
   }
@@ -411,15 +439,14 @@
   function projectModal(id='',customerPref=''){
     const p=findProject(id);
     const customerId=p?.customer_id||customerPref||state.customers[0]?.id||'';
-    const sites=[['','Keine Website'],...state.sites.map(s=>[s.id,s.domain||s.name])];
+    // Websites are linked independently from project form; one project can hold many.
     if(!state.customers.length){notice('Bitte zuerst einen Kunden anlegen.',true);customerModal();return;}
     modal(modalFrame(p?'Projekt bearbeiten':'Neues Projekt','Projekte gehören immer zu einem Kunden.',
       '<form class="crm-stack" data-form="project" data-id="'+esc(id)+'"><label class="crm-field"><span>Kunde</span>'+
       select('customer_id',customerOptions(),customerId,p?'disabled':'required')+'</label>'+
       field('Projektname','name',p?.name,'required maxlength="255"')+
       '<label class="crm-field"><span>Beschreibung</span><textarea name="description" rows="3" maxlength="5000">'+esc(p?.description||'')+'</textarea></label>'+
-      '<div class="crm-form-cols"><label class="crm-field"><span>Überwachte Website (optional)</span>'+
-      select('site_id',sites,p?.site_id||'')+'</label>'+
+      '<div class="crm-form-cols">'+
       field('Stundensatz € (optional)','rate_eur',p?.hourly_cents==null?'':Number(p.hourly_cents)/100,'type="number" min="0" step=".01"')+'</div>'+
       (p?'<label class="crm-field"><span>Projektstatus</span>'+select('project_status',[['active','Aktiv'],['paused','Pausiert'],['completed','Abgeschlossen']],p.status)+'</label>':'')+
       '<button class="crm-btn crm-btn-primary">Projekt speichern</button></form>'
@@ -580,6 +607,21 @@
       case 'reload-workspace':await reload();if(currentRoute().section==='project')await loadBoard(currentRoute().id);break;
       case 'new-customer':customerModal();break;
       case 'edit-customer':customerModal(id);break;
+      case 'attach-site':{
+        const siteId=$('crmAttachSite')?.value;
+        if(!siteId)throw Error('Bitte zuerst eine Website auswählen.');
+        await api('/api/sites/'+encodeURIComponent(siteId)+'/project','PUT',{project_id:project});
+        await reloadAfterChange(true);
+        notice('Website mit Kundenprojekt verknüpft.');
+        break;
+      }
+      case 'unlink-site':{
+        if(!confirm('Website eigenständig verwalten und aus diesem Projekt lösen?'))return;
+        await api('/api/sites/'+encodeURIComponent(source.dataset.siteId)+'/project','PUT',{project_id:null});
+        await reloadAfterChange(true);
+        notice('Website wird jetzt eigenständig verwaltet.');
+        break;
+      }
       case 'new-project':projectModal('',source.dataset.customerId);break;
       case 'edit-project':projectModal(project);break;
       case 'new-task':taskModal('',source.dataset.status||'open');break;
@@ -695,7 +737,6 @@
         const value=formVal(form,'rate_eur');
         const payload={
           name:formVal(form,'name'),description:formVal(form,'description'),
-          site_id:formVal(form,'site_id')||null,
           hourly_cents:value===''?null:Math.round(Number(value)*100)
         };
         if(!id)payload.customer_id=formVal(form,'customer_id');

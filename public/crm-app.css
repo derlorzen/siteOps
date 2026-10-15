@@ -255,3 +255,23 @@ body:has(#crmRoot) .navinner{max-width:1620px}
  #crmRoot .crm-table td,#crmRoot .crm-table th{padding:12px 10px}
 }
 @media(prefers-reduced-motion:reduce){#crmRoot .crm-project-card{transition:none}}
+
+/* Project websites: independent cards or many sites within a customer project */
+#crmRoot .crm-project-websites{margin:0 0 22px;background:#fff;border:1px solid #e5e7f0;border-radius:12px;padding:18px}
+#crmRoot .crm-linked-site-list{display:grid;gap:9px;margin-bottom:15px}
+#crmRoot .crm-linked-site{display:flex;align-items:center;gap:12px;background:#f9f9fd;border:1px solid #eaebf3;border-radius:10px;padding:10px 12px}
+#crmRoot .crm-linked-site>div{display:grid;gap:3px;min-width:0;flex:1}
+#crmRoot .crm-linked-site strong{font-size:13px;overflow-wrap:anywhere}
+#crmRoot .crm-linked-site small{font-size:11px;color:#7e8797}
+#crmRoot .crm-project-websites .crm-inline-row{align-items:flex-end;gap:9px}
+#crmRoot .crm-project-websites .crm-inline-row label{min-width:180px;flex:1}
+#crmRoot .crm-standalone-site .crm-project-icon{background:#ecf7fc;color:#3484a5}
+@media(max-width:720px){
+  #crmRoot .crm-nav{grid-template-columns:repeat(6,minmax(0,1fr))}
+  #crmRoot .crm-nav-link{font-size:9px;padding:7px 0}
+  #crmRoot .crm-nav-icon{font-size:19px}
+  #crmRoot .crm-linked-site{flex-wrap:wrap}
+  #crmRoot .crm-linked-site .crm-btn{flex:1}
+  #crmRoot .crm-project-websites .crm-inline-row label{width:100%;flex:auto}
+  #crmRoot .crm-project-websites .crm-inline-row .crm-btn{flex:1}
+}

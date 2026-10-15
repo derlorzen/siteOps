@@ -1,0 +1,170 @@
+/* SiteOps operations workspace — shared system with CRM pages. Only applies outside CRM. */
+body.ops-mode{--ops-ink:#24293b;--ops-muted:#737d92;--ops-line:#e5e8f0;--ops-purple:#6856da;
+ --ops-purple-light:#f0edff;background:#f8f9fc;color:var(--ops-ink);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+body.ops-mode .topnav{display:none}
+.ops-workspace{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
+.ops-sidebar{position:sticky;top:0;align-self:start;height:100vh;background:#fff;border-right:1px solid var(--ops-line);
+ display:flex;flex-direction:column;gap:24px;padding:22px 12px;z-index:25}
+.ops-identity{display:flex;align-items:center;gap:11px;padding:4px 11px}
+.ops-mark,.ops-mobile-mark{width:37px;height:37px;display:grid;place-items:center;background:var(--ops-purple);
+ color:#fff;font-weight:900;font-size:18px;border-radius:11px}
+.ops-identity strong,.ops-identity small{display:block}
+.ops-identity strong{font-size:17px;letter-spacing:-.03em}
+.ops-identity small{color:#9397a9;font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-top:2px}
+.ops-side-links{display:grid;gap:5px}
+.ops-nav-item{display:flex;align-items:center;gap:12px;min-height:45px;padding:11px 13px;border-radius:10px;
+ color:#666e83;font-size:13px;font-weight:760}
+.ops-nav-item:hover{background:#f6f5fd;color:#5d4bcf}
+.ops-nav-item.is-active{color:#5e4acb;background:var(--ops-purple-light)}
+.ops-nav-icon{width:23px;text-align:center;font-size:19px;line-height:1}
+.ops-side-footer{margin-top:auto;padding:12px 9px;color:#929aaa;font-size:10px;line-height:1.5}
+.ops-content{min-width:0}
+.ops-workspace-bar{min-height:66px;background:#fff;border-bottom:1px solid var(--ops-line);
+ display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px clamp(20px,3.2vw,44px)}
+.ops-workspace-bar>div{display:flex;align-items:center;gap:11px;font-size:12px;color:#757e93}
+.ops-workspace-bar strong{color:var(--ops-ink)}
+.ops-chevron{color:#b5b9c5}
+.ops-mobile-mark{display:none;width:29px;height:29px;border-radius:8px;font-size:13px}
+.ops-top-new,.ops-primary-action{display:inline-flex;align-items:center;justify-content:center;min-height:39px;
+ background:var(--ops-purple);color:#fff!important;padding:10px 15px;font-size:12px;font-weight:760;border-radius:9px}
+.ops-top-new:hover,.ops-primary-action:hover{background:#5546c6}
+body.ops-mode .ops-main{width:100%;max-width:1600px;padding:30px clamp(20px,3.2vw,44px) 70px;margin:0 auto;min-width:0}
+body.ops-mode .ops-main>header{margin:0 0 24px;align-items:center;gap:20px}
+body.ops-mode .ops-main>header h1{font-size:clamp(27px,3vw,36px);line-height:1.13;color:var(--ops-ink);letter-spacing:-.035em}
+body.ops-mode .ops-main>header p{font-size:13px;color:#717d92;line-height:1.55}
+body.ops-mode .eyebrow{color:#6954d5;font-size:10px;letter-spacing:.14em}
+body.ops-mode section,body.ops-mode .card{border-radius:13px;border:1px solid var(--ops-line);background:#fff;
+ box-shadow:0 2px 12px rgba(22,32,62,.025)}
+body.ops-mode section{padding:22px}
+body.ops-mode .card{padding:20px}
+body.ops-mode h2{font-size:19px;color:#272d3e;letter-spacing:-.025em}
+body.ops-mode h3{font-size:15px;letter-spacing:-.02em;color:#353b50}
+body.ops-mode .lead{font-size:12px;color:var(--ops-muted);line-height:1.65}
+body.ops-mode .button,body.ops-mode .btn,body.ops-mode button:not(.ops-assignment-dialog button){
+ background:var(--ops-purple);color:#fff;border-radius:9px;border:1px solid var(--ops-purple);
+ font-size:12px;font-weight:760;min-height:40px;padding:10px 13px}
+body.ops-mode .button:hover,body.ops-mode .btn:hover,body.ops-mode button:hover{filter:brightness(.96)}
+body.ops-mode .button.ghost,body.ops-mode .btn.ghost,body.ops-mode button.ghost{
+ background:#f4f2fd;color:#5c4fc4;border-color:#e7e4f7}
+body.ops-mode input:not([type=checkbox]),body.ops-mode select,body.ops-mode textarea{
+ width:100%;border-radius:9px;border:1px solid #dadde8;min-height:43px;padding:11px;
+ background:#fff;color:#30374b;max-width:100%}
+body.ops-mode input:focus-visible,body.ops-mode select:focus-visible,body.ops-mode textarea:focus-visible,
+body.ops-mode button:focus-visible,body.ops-mode a:focus-visible{
+ outline:3px solid #b8acfa;outline-offset:2px}
+body.ops-mode input[type=checkbox]{accent-color:var(--ops-purple);width:18px;height:18px}
+body.ops-mode label{color:#59637a;font-size:12px;font-weight:720}
+body.ops-mode label small{font-size:11px;color:#8990a1}
+body.ops-mode table th{background:#fafbfe;color:#858da0;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+body.ops-mode table td,body.ops-mode table th{padding:13px 12px;border-color:var(--ops-line)}
+body.ops-mode .tablewrap{border-radius:10px;overflow-x:auto}
+body.ops-mode .metrics.big{border-color:var(--ops-line);box-shadow:none;background:#fff;gap:15px}
+body.ops-mode .metrics em{color:#7e879c}
+body.ops-mode .pill{border-radius:6px;background:#f0f2f7;color:#637085;font-size:10px}
+body.ops-mode .pill.ok{background:#e8f8ee;color:#1b7f4f}
+body.ops-mode .pill.bad{background:#fff0f1;color:#b83556}
+body.ops-mode form{max-width:none}
+body.ops-mode .notice{background:#eff1fd;border-radius:11px}
+body.ops-mode .notice.bad{background:#fff0f2}
+body.ops-mode .notice.bad strong{color:#ab2f50}
+body.ops-mode .formgrid{gap:15px}
+body.ops-mode .twocol,body.ops-mode .ops-grid{gap:16px}
+body.ops-mode .grid{gap:14px}
+body.ops-mode .backlink{display:inline-block;margin-bottom:18px;font-size:12px;font-weight:800;color:#6754d0}
+body.ops-mode .dashboard-view{margin-top:18px}
+body.ops-mode .dashboard-kpis>span{font-size:25px}
+body.ops-mode .ops-legacy-toggle{display:none}
+.ops-portfolio{padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important}
+.ops-portfolio-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:6px 0 18px}
+.ops-portfolio-head h2{font-size:23px!important;margin:5px 0}
+.ops-portfolio-head p{font-size:12px;color:var(--ops-muted);margin:0}
+.ops-portfolio-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.ops-portfolio-stats>div{border:1px solid var(--ops-line);background:#fff;padding:17px;border-radius:11px;display:grid;gap:5px}
+.ops-portfolio-stats strong{font-size:25px;letter-spacing:-.04em}
+.ops-portfolio-stats span{font-size:11px;color:#83899d;font-weight:730}
+.ops-website-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:15px}
+.ops-website-card{border:1px solid var(--ops-line);border-radius:13px;background:#fff;padding:19px;display:flex;
+ flex-direction:column;gap:9px;min-height:258px;box-shadow:0 1px 9px rgba(31,33,62,.025)}
+.ops-website-card:hover{border-color:#bbb1ef;box-shadow:0 8px 22px rgba(64,51,150,.08)}
+.ops-website-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ops-website-logo{display:grid;place-items:center;width:42px;height:42px;border-radius:11px;background:#efeafd;
+ color:#5c4bba;font-size:18px;font-weight:850}
+.ops-site-badge{padding:5px 8px;background:#f0f2f7;color:#637085;font-size:10px;font-weight:800;border-radius:6px}
+.ops-site-badge.positive{background:#e4f9ee;color:#23734f}
+.ops-site-badge.danger{background:#fff0f2;color:#b83556}
+.ops-site-kicker{font-size:10px;font-weight:850;color:#a09eaf;text-transform:uppercase;letter-spacing:.06em;margin-top:8px}
+.ops-website-card h3{font-size:17px!important;margin:0;line-height:1.25}
+.ops-website-card p{font-size:12px;color:#7a8598;margin:0;overflow-wrap:anywhere}
+.ops-website-details{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px}
+.ops-website-details span{font-size:10px;background:#f4f5fa;padding:5px 8px;color:#7f8798;border-radius:5px}
+.ops-website-association{font-size:11px;color:#7b8494;margin-top:auto}
+.ops-website-association a,.ops-site-project a{color:#6954d5;text-decoration:underline;font-weight:750}
+.ops-website-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:12px;
+ margin-top:2px;border-top:1px solid var(--ops-line)}
+.ops-website-actions a{font-size:11px;font-weight:800;color:#6b59d3}
+body.ops-mode .ops-website-actions button{padding:6px 9px;min-height:33px;background:#f5f3ff;color:#6053b7;border-color:#e8e4fb}
+.ops-advanced{margin:26px 0 0}
+.ops-advanced>summary{cursor:pointer;border-radius:10px;padding:13px 17px;background:#fff;border:1px solid var(--ops-line);
+ font-size:12px;font-weight:800;color:#6d7185}
+.ops-advanced[open]>.dashboard-view{margin-top:15px}
+.ops-site-project{margin:0 0 18px;padding:15px 18px;display:flex;align-items:center;gap:14px;
+ background:#fff;border:1px solid var(--ops-line);border-radius:12px}
+.ops-site-project-icon{width:38px;height:38px;background:#efedff;color:#6251d4;font-size:21px;
+ display:grid;place-items:center;border-radius:9px;flex:none}
+.ops-site-project>div{flex:1}
+.ops-site-project strong{font-size:13px}
+.ops-site-project p{margin:4px 0 0;color:#7b8394;font-size:11px}
+body.ops-mode .ops-site-project button{background:#f3f0ff;color:#5d4ebd;border:1px solid #e3ddf8;font-size:11px}
+.ops-site-tabs{display:flex;gap:7px;overflow-x:auto;scrollbar-width:thin;margin-bottom:15px}
+.ops-site-tabs a{flex:none;background:#fff;color:#737a8f;border:1px solid var(--ops-line);
+ border-radius:9px;padding:10px 15px;font-size:12px;font-weight:750}
+.ops-site-tabs a.is-active{color:#5b4ac7;background:#f0edff;border-color:#b8acef}
+.ops-assignment-dialog{border:1px solid #e4e4ef;border-radius:15px;box-shadow:0 25px 75px #1b1e3e47;
+ width:min(460px,calc(100vw - 20px));padding:0}
+.ops-assignment-dialog::backdrop{background:#171c33a8}
+.ops-assign-form{display:grid;gap:17px;padding:20px}
+.ops-assign-heading{display:flex;justify-content:space-between;gap:10px}
+.ops-assign-heading strong{font-size:21px}
+.ops-assign-heading p,.ops-assign-form>p{font-size:12px;color:#8a8e9d;line-height:1.45}
+.ops-assign-heading button{border:0;background:#f2f3f8;padding:5px 12px;border-radius:8px;font-size:20px}
+.ops-assign-form label{display:grid;gap:7px}
+.ops-assign-form select{width:100%;padding:11px;border:1px solid #d9dce8;border-radius:9px}
+.ops-assignment-actions{display:flex;justify-content:flex-end;gap:10px}
+.ops-assignment-actions button{border:0;border-radius:9px;background:var(--ops-purple);padding:11px 14px;color:#fff;font-weight:800}
+.ops-assignment-actions button.ghost{background:#f3f3f8;color:#5f627b}
+.ops-toast{position:fixed;top:18px;right:20px;z-index:90;background:#252a42;color:#fff;padding:14px 17px;
+ box-shadow:0 8px 24px #252a4230;border-radius:9px;max-width:390px;font-size:12px;font-weight:750}
+.ops-toast:empty{display:none}
+.ops-toast.is-error{background:#ad2c51}
+@media(max-width:1150px){.ops-workspace{grid-template-columns:190px minmax(0,1fr)}.ops-nav-item{font-size:12px}}
+@media(max-width:800px){
+ .ops-workspace{display:block}
+ .ops-sidebar{position:fixed;top:auto;left:0;bottom:0;right:0;z-index:45;height:auto;border-right:0;
+ border-top:1px solid var(--ops-line);padding:6px 5px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -5px 20px #30375915}
+ .ops-identity,.ops-side-footer{display:none}
+ .ops-side-links{display:flex;gap:2px;overflow-x:auto;scrollbar-width:thin}
+ .ops-nav-item{flex:1;min-width:75px;min-height:54px;padding:6px 4px;display:flex;flex-direction:column;gap:4px;
+ align-items:center;justify-content:center;font-size:10px;white-space:nowrap}
+ .ops-nav-icon{font-size:20px}
+ .ops-workspace-bar{min-height:58px;padding:10px 14px}
+ .ops-mobile-mark{display:grid}
+ .ops-top-new{padding:10px}
+ body.ops-mode .ops-main{padding:20px 14px 105px}
+ body.ops-mode .ops-main>header{flex-direction:column;align-items:flex-start;gap:13px}
+ body.ops-mode .ops-main>header h1{font-size:29px}
+ body.ops-mode .ops-main>header .actions{width:100%}
+ body.ops-mode .ops-main>header .actions>*{flex:1}
+ body.ops-mode .ops-main .grid{grid-template-columns:1fr}
+ body.ops-mode .ops-main .twocol{grid-template-columns:1fr}
+ body.ops-mode .metrics.big{flex-wrap:wrap}
+ body.ops-mode .metrics.big span{min-width:95px}
+ .ops-portfolio-stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+ .ops-portfolio-stats>div{padding:12px}
+ .ops-portfolio-stats strong{font-size:21px}
+ .ops-portfolio-head{flex-wrap:wrap}
+ .ops-website-grid{grid-template-columns:1fr}
+ .ops-website-card{min-height:220px}
+ .ops-site-project{flex-wrap:wrap;padding:13px}
+ .ops-site-project button{width:100%}
+ .ops-toast{top:auto;bottom:100px;left:10px;right:10px;max-width:none}
+}
