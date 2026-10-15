@@ -94,7 +94,7 @@ final class SiteAdmin {
     }
     private function seoAudit(array $actor):string {
         $html='<section class="panel"><h2>Inhalte prüfen</h2><p>Hinweise zur Redaktion, keine automatische Bewertung des Google-Rankings.</p><div class="table-scroll"><table><thead><tr><th>Inhalt</th><th>Hinweise</th></tr></thead><tbody>';
-        foreach($this->content->list($actor) as $item){if($item['status']!=='published'){continue;}$issues=Seo::audit($item);if(!$issues){continue;}$html.='<tr><td><a href="/admin/content/'.$item['id'].'/?tab=seo">'.Html::escape($item['title']).'</a></td><td>'.Html::escape(implode(' · ',$issues)).'</td></tr>';}
+        foreach($this->content->list($actor) as $item){if($item['status']!=='published'){continue;}$issues=Seo::audit($item,$this->site,$this->configuration);if(!$issues){continue;}$html.='<tr><td><a href="/admin/content/'.$item['id'].'/?tab=seo">'.Html::escape($item['title']).'</a></td><td>'.Html::escape(implode(' · ',$issues)).'</td></tr>';}
         return $html.'</tbody></table></div><p><a href="/sitemap.xml">Sitemap öffnen</a> · <a href="/robots.txt">robots.txt öffnen</a> · <a href="/admin/redirects/">Weiterleitungen verwalten</a></p></section>';
     }
 }
