@@ -8,21 +8,21 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 
 // Exact original HSG Angeln TEST Apache startup file before the SiteOps connector
 // exception was added. This hash is explicitly allowlisted in supported-legacy.json.
-const legacyHtaccess = [
-  'Options -Indexes',
-  'RewriteEngine On',
-  'RewriteRule ^api/cms/ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]',
-  'RewriteCond %{REQUEST_FILENAME} -f',
-  'RewriteRule ^assets/([a-zA-Z0-9._-]+\\.(css|js|svg)|fonts/[a-zA-Z0-9._-]+\\.(ttf|woff2?|txt))$ - [L]',
-  'RewriteRule ^ index.php [L,QSA]',
-  '<IfModule mod_mime.c>',
-  'AddType font/ttf .ttf',
-  'AddType font/woff2 .woff2',
-  '</IfModule>'
-].join('\n') + '\n';
-const loadSupported = async () => JSON.parse(await readFile(
-  new URL('../lib/lorzcms/supported-legacy.json', import.meta.url), 'utf8'
-));
+const legacyHtaccess =
+  [
+    'Options -Indexes',
+    'RewriteEngine On',
+    'RewriteRule ^api/cms/ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]',
+    'RewriteCond %{REQUEST_FILENAME} -f',
+    'RewriteRule ^assets/([a-zA-Z0-9._-]+\\.(css|js|svg)|fonts/[a-zA-Z0-9._-]+\\.(ttf|woff2?|txt))$ - [L]',
+    'RewriteRule ^ index.php [L,QSA]',
+    '<IfModule mod_mime.c>',
+    'AddType font/ttf .ttf',
+    'AddType font/woff2 .woff2',
+    '</IfModule>'
+  ].join('\n') + '\n';
+const loadSupported = async () =>
+  JSON.parse(await readFile(new URL('../lib/lorzcms/supported-legacy.json', import.meta.url), 'utf8'));
 
 test('HSG TEST legacy .htaccess baseline is the allowlisted original', async () => {
   const supported = await loadSupported();
@@ -56,23 +56,44 @@ test('the fix does not permit arbitrary edits to any legacy startup file', async
   const supported = await loadSupported();
   const patched = cmsAgentRoutingHtaccess(legacyHtaccess).trimEnd();
   assert.throws(
-    () => verifiedLegacyStartFile('public/.htaccess', Buffer.from(patched.replace('index.php [L,QSA]', 'hacked.php [L,QSA]')), supported),
+    () =>
+      verifiedLegacyStartFile(
+        'public/.htaccess',
+        Buffer.from(patched.replace('index.php [L,QSA]', 'hacked.php [L,QSA]')),
+        supported
+      ),
     /public\/\.htaccess/
   );
   assert.throws(
-    () => verifiedLegacyStartFile('public/.htaccess', Buffer.from(patched.replace('RewriteEngine On', 'RewriteEngine Off')), supported),
+    () =>
+      verifiedLegacyStartFile(
+        'public/.htaccess',
+        Buffer.from(patched.replace('RewriteEngine On', 'RewriteEngine Off')),
+        supported
+      ),
     /public\/\.htaccess/
   );
   assert.throws(
-    () => verifiedLegacyStartFile('public/.htaccess', Buffer.from(
-      patched.replace('RewriteRule ^api/cms/', 'RewriteRule ^api/other/')
-    ), supported),
+    () =>
+      verifiedLegacyStartFile(
+        'public/.htaccess',
+        Buffer.from(patched.replace('RewriteRule ^api/cms/', 'RewriteRule ^api/other/')),
+        supported
+      ),
     /public\/\.htaccess/
   );
   assert.throws(
-    () => verifiedLegacyStartFile('public/.htaccess', Buffer.from(
-      patched.replace('RewriteRule ^ index.php', 'RewriteRule ^siteops\\.php$ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization},L]\nRewriteRule ^ index.php')
-    ), supported),
+    () =>
+      verifiedLegacyStartFile(
+        'public/.htaccess',
+        Buffer.from(
+          patched.replace(
+            'RewriteRule ^ index.php',
+            'RewriteRule ^siteops\\.php$ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization},L]\nRewriteRule ^ index.php'
+          )
+        ),
+        supported
+      ),
     /public\/\.htaccess/
   );
   assert.throws(
@@ -85,7 +106,8 @@ test('unsupported files cannot become trusted through line-ending normalization 
   const supported = await loadSupported();
   const changed = legacyHtaccess.replace('Options -Indexes', 'Options +Indexes');
   assert.throws(
-    () => verifiedLegacyStartFile('public/.htaccess', Buffer.from(cmsAgentRoutingHtaccess(changed).trimEnd()), supported),
+    () =>
+      verifiedLegacyStartFile('public/.htaccess', Buffer.from(cmsAgentRoutingHtaccess(changed).trimEnd()), supported),
     /Anschluss muss zuerst geprüft/
   );
 });
