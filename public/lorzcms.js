@@ -125,6 +125,8 @@
   const create = byId('cmsCreate');
   if (!create) return;
   const stored = create.elements.namedItem('savedConnection');
+  const allinkl = create.elements.namedItem('allinklAccountId');
+  const publicRootCheckbox = create.elements.namedItem('publicRootReady');
   const hint = byId('cmsSavedConnectionHint');
   const fields = ['protocol', 'host', 'port', 'username', 'password'];
   let connections = [];
@@ -162,8 +164,24 @@
       ? 'Zugangsdaten werden ausschließlich auf dem Server übernommen. Gib nur das Zielverzeichnis ein.'
       : 'Hosting-Daten eingeben oder eine gespeicherte Verbindung auswählen.';
   }
+  function syncAllInkl() {
+    const option = allinkl.selectedOptions?.[0];
+    if (allinkl.value && option?.dataset.profile) {
+      stored.value='profile:'+option.dataset.profile;
+      stored.disabled=true;
+    } else {
+      stored.disabled=false;
+    }
+    publicRootCheckbox.required=!allinkl.value;
+    publicRootCheckbox.checked=!!allinkl.value;
+    document.getElementById('cmsAllInklHint').textContent=allinkl.value
+      ? 'SiteOps legt beim Start das leere Projektverzeichnis und die ALL-INKL-Subdomain automatisch an. Das CMS startet erst bei verfügbarer HTTPS-Verbindung; bei fehlendem Zertifikat kann ein erneuter Start nötig sein.'
+      : 'ALL-INKL kann Webverzeichnis und Subdomain automatisch anlegen. Hinterlege den KAS-Zugang unter Hosting & DNS.';
+    syncConnection();
+  }
+  allinkl.addEventListener('change',syncAllInkl);
   stored.addEventListener('change', syncConnection);
-  fetchConnections().then(syncConnection).catch(error => hint.textContent = error.message);
+  fetchConnections().then(syncAllInkl).catch(error => hint.textContent = error.message);
   create.elements.namedItem('protocol').addEventListener('change', () => {
     create.elements.namedItem('port').value = create.elements.namedItem('protocol').value === 'sftp' ? 22 : 21;
   });
@@ -199,20 +217,22 @@
     event.preventDefault();
     const form = new FormData(create);
     const values = Object.fromEntries(form.entries());
-    const selection = form.get('savedConnection');
+    const selection = stored.value;
+    const useAllInkl = !!allinkl.value;
     delete values.savedConnection;
-    if (selection) {
+    if (useAllInkl) values.allinklAccountId=allinkl.value;
+    if (selection && !useAllInkl) {
       const [kind,id] = String(selection).split(':');
       if (kind === 'profile') values.profileId=id;
       if (kind === 'site') values.existingSiteId=id;
       // Disabled protocol select does not appear in FormData, but the server supplies it.
-    } else if (!values.password) {
+    } else if (!useAllInkl && !values.password) {
       show('Bitte ein Hosting-Passwort eingeben oder eine gespeicherte Verbindung auswählen.', true);
       return;
     }
     if (!values.projectId) delete values.projectId;
     values.port = Number(form.get('port'));
-    values.publicRootReady = form.has('publicRootReady');
+    values.publicRootReady = useAllInkl || form.has('publicRootReady');
     values.runAt = runAt(form);
     values.database = form.get('databaseEngine')==='sqlite' ? {engine:'sqlite'} : {
       engine:'mysql',host:form.get('databaseHost'),
