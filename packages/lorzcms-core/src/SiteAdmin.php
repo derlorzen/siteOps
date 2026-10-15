@@ -36,7 +36,20 @@ final class SiteAdmin {
         else {foreach($definition['fields'] as $key=>$field){$body.=($field['admin_hidden'] ?? false)?'<input type="hidden" name="values['.Html::escape($key).']" value="'.Html::escape((string)($record['value'][$key] ?? '')).'">':self::field('values['.$key.']',$field,$record['value'][$key] ?? '');}}
         $body.='<div class="save-bar"><span>Version '.$record['version'].'</span><button>Änderungen speichern</button></div></form>';
         $history=$this->site->history($section);if($history){$body.='<details class="panel"><summary>Änderungsverlauf</summary><ul class="revision-list">';foreach($history as $row){$body.='<li>Version '.$row['version'].' · '.Html::escape($row['created_at']);if((int)$row['version']!==$record['version']){$body.='<form method="post">'.$this->token().'<input type="hidden" name="version" value="'.$record['version'].'"><button class="secondary" name="restore" value="'.Html::escape($row['id']).'">Wiederherstellen</button></form>';}$body.='</li>';}$body.='</ul></details>';}
-        if($section==='seo'){$body.=$this->seoAudit($actor);}
+        if($section==='seo'){
+            $indexing=$this->site->value('seo')['indexing'] ?? 'disabled';
+            $production=($this->configuration['environment'] ?? '')==='production';
+            $name=$this->site->value('settings')['name'] ?? '';
+            $body.='<section class="panel"><h2>SEO-Startprüfung</h2><p>Neue Websites bleiben bewusst von Suchmaschinen ausgeschlossen, bis die Freigabe nach einem Inhalts- und Technikcheck erfolgt. Bestehende Websites behalten ihre bisherigen Einstellungen.</p><ul>';
+            $checks=[
+                ['HTTPS-Adresse',str_starts_with((string)$this->configuration['base_url'],'https://')],
+                ['Individueller Website-Name',$name!=='' && $name!=='Meine Website'],
+                ['Suchmaschinenindexierung freigegeben',$production && $indexing==='enabled']
+            ];
+            foreach($checks as [$label,$ok]){$body.='<li>'.($ok?'Erfüllt: ':'Offen: ').Html::escape($label).'</li>';}
+            $body.='</ul><p>Die Freigabe erfolgt über die Einstellung <strong>Suchmaschinenindexierung</strong> oben. Fehlende Inhalte und andere Hinweise stehen in der folgenden Inhaltsprüfung. Der externe SiteOps-Crawler prüft zusätzlich die tatsächlich ausgelieferten Seiten.</p></section>';
+            $body.=$this->seoAudit($actor);
+        }
         if($section==='settings'){$body.='<section class="panel"><h2>Betrieb</h2><dl class="facts"><dt>Website-Adresse</dt><dd>'.Html::escape($this->configuration['base_url']).'</dd><dt>Umgebung</dt><dd>'.($this->configuration['environment']==='production'?'Produktion':'Vorschau – Suchmaschinen gesperrt').'</dd><dt>PHP</dt><dd>'.Html::escape(PHP_VERSION).'</dd></dl></section>';}
         if(isset($definition['admin_status']) && is_callable($definition['admin_status'])){
             $body.='<section class="panel"><h2>Datenanbindung</h2><dl class="facts">';
