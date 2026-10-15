@@ -159,6 +159,10 @@ try {
                 $id = $access->create($email,$name,$password,'admin'); $actor=$access->user($id);
                 $settings = $content->site->value('settings'); $settings['name']=$body['siteName'] ?? 'Meine Website';
                 $content->site->save('settings',0,$settings,$actor);
+                // A new site starts as a preview until its owner deliberately enables indexing.
+                // Never change indexing when enrolling or updating an existing installation.
+                $seo=$content->site->value('seo');$seo['indexing']='disabled';
+                $content->site->save('seo',0,$seo,$actor);
                 $content->create('page','Willkommen','/',['body'=>'<p>Deine Website ist eingerichtet. Bearbeite die Startseite in der Verwaltung.</p>'],[],'published',$actor);
                 $store->query('INSERT INTO site_state VALUES (?,?,?,?)',['siteops:installation',SiteCms\Store::json(['jobId'=>$job,'instanceId'=>$agent['instance_id']]),1,gmdate('c')]);
             });
