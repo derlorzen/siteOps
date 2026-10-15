@@ -1,7 +1,9 @@
 {
-  "version": "3.4.0",
+  "version": "3.5.0",
   "schemaVersion": 1,
-  "compatibleSchemas": [1],
+  "compatibleSchemas": [
+    1
+  ],
   "minPhp": "8.3",
-  "notes": "Vier gemeinsame Seitentemplates, bearbeitbare Header- und Footer-Vorlagen, individuelles CSS und Layoutwahl je Seite. Bestehende Projektlayouts bleiben standardmäßig aktiv."
+  "notes": "SEO-first: individuelle Meta-Descriptions, JSON-LD, Social-Tags, Redaktionsempfehlungen und bewusste Indexierungsfreigabe für neue Installationen."
 }

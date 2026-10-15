@@ -121,7 +121,17 @@ test(
       409,
       'different install request cannot reuse the job'
     );
-    assert.equal((await fetch(base + '/')).status, 200);
+    const homepage = await fetch(base + '/');
+    assert.equal(homepage.status, 200);
+    const homepageHtml = await homepage.text();
+    assert.match(
+      homepageHtml,
+      /<meta name="robots" content="noindex,follow">/,
+      'new websites stay out of the index until launch approval'
+    );
+    assert.match(homepageHtml, /application\/ld\+json/, 'CMS renders JSON-LD from the start');
+    assert.match(homepageHtml, /"@type":"Organization"/, 'the site identity is published as organization data');
+    assert.doesNotMatch(await (await fetch(base + '/sitemap.xml')).text(), /<loc>/, 'prelaunch sitemap is empty');
     const login = await fetch(base + '/admin/login/');
     assert.equal(login.status, 200);
     const loginHtml = await login.text();
@@ -200,7 +210,7 @@ test(
     assert.equal((await fetch(base + '/config/local.php')).status, 404);
     assert.equal((await fetch(base + '/.lorzcms/backups/test/database.sqlite')).status, 404);
     const config = await readFile(join(root, 'config/local.php'));
-    const next = validateRelease({ ...initial, version: '3.4.1', notes: 'Test update' });
+    const next = validateRelease({ ...initial, version: '3.5.1', notes: 'Test update' });
     await stage(next);
     assert.equal(
       (
@@ -256,7 +266,7 @@ test(
     );
     assert.equal(snapshot.status, 0, snapshot.stderr);
     assert.doesNotMatch(snapshot.stdout, /Redaktion nach Update/);
-    const tampered = join(root, '.lorzcms/releases/3.4.1/src/Store.php');
+    const tampered = join(root, '.lorzcms/releases/3.5.1/src/Store.php');
     await writeFile(tampered, '<?php echo "bad";');
     assert.equal(
       (
@@ -272,7 +282,7 @@ test(
     );
     assert.equal((await call()).data.version, initial.version);
     const active = await readFile(join(root, '.lorzcms/active.json'));
-    await writeFile(join(root, '.lorzcms/releases/3.4.1/manifest.json'), '{}');
+    await writeFile(join(root, '.lorzcms/releases/3.5.1/manifest.json'), '{}');
     assert.equal(
       (
         await call({

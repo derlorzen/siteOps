@@ -15,6 +15,9 @@ final class Setup {
             $this->store->transaction(function():void {
                 if((int)$this->store->query('SELECT COUNT(*) FROM users')->fetchColumn()!==0){throw new HttpError(409,'Die Einrichtung wurde bereits abgeschlossen.');}
                 $id=$this->access->create((string)($_POST['email'] ?? ''),(string)($_POST['name'] ?? ''),(string)($_POST['password'] ?? ''),'admin');$actor=$this->access->user($id);
+                // Fresh installations must explicitly approve search engine indexing at launch.
+                $seo=$this->content->site->value('seo');$seo['indexing']='disabled';
+                $this->content->site->save('seo',0,$seo,$actor);
                 if($this->seed){
                     if(!is_file($this->seed)){throw new HttpError(422,'Der vorbereitete Inhaltsexport fehlt.');}
                     $data=Store::decode(file_get_contents($this->seed));
