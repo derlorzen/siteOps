@@ -7449,7 +7449,7 @@ async function checkRuntime() {
   const discoveryHandler = createMcpHandler(() => mcpServer());
   try {
     const response = await discoveryHandler.fetch(
-      new Request('http://localhost:3000/mcp', {
+      new globalThis.Request('http://localhost:3000/mcp', {
         method: 'POST',
         headers: {
           accept: 'application/json, text/event-stream',
