@@ -1,0 +1,28 @@
+name: Temporary SSL Formatter
+on:
+  push:
+    branches:
+      - feat/allinkl-acme-ssl-auto
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/allinkl-acme-ssl-auto
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --write lib/allinkl-ssl.mjs
+      - run: |
+          if ! git diff --quiet; then
+            git config user.name "SiteOps CI Formatter"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add lib/allinkl-ssl.mjs
+            git commit -m "style: format SSL maintenance changes"
+            git push origin HEAD:feat/allinkl-acme-ssl-auto
+          fi
