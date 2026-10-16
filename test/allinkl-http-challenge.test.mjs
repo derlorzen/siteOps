@@ -54,8 +54,10 @@ function fixture({ kasRoot = root + '/public', publicResponse = 'correct' } = {}
     };
   };
   const fetcher = async (url, options) => {
-    const expectedPath = root + '/public/.well-known/acme-challenge/' + token;
-    assert.equal(url, 'http://' + hostname + '/.well-known/acme-challenge/' + token);
+    const requested = new URL(url);
+    assert.equal(requested.hostname, hostname);
+    assert.ok(requested.pathname.startsWith('/.well-known/acme-challenge/'));
+    const expectedPath = root + '/public' + requested.pathname;
     assert.equal(options.redirect, 'manual');
     const response = publicResponse === 'correct' ? files.get(expectedPath)?.toString('utf8') || null : publicResponse;
     return {
@@ -119,4 +121,13 @@ test('HTTP-01 rejects redirects and incorrect content instead of requesting a ce
     () => altered.ssl.verify(hostname, token, authorization, { maxAttempts: 2 }),
     /nicht unverändert/
   );
+});
+
+test('HTTP-01 probe validates an actual file and detects shared nginx blocking .well-known', async () => {
+  const working = fixture();
+  assert.equal(await working.ssl.probe(accountId, hostname), true);
+  assert.equal(working.files.size, 0, 'probe must remove its temporary file');
+  const blocked = fixture({ publicResponse: 'error_kas_44' });
+  assert.equal(await blocked.ssl.probe(accountId, hostname), false);
+  assert.equal(blocked.files.size, 0, 'failed probe must remove its temporary file');
 });

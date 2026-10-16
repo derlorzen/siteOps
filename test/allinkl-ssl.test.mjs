@@ -156,6 +156,11 @@ function memoryDb() {
         records.set(hostname, row);
         return [{ affectedRows: 1 }];
       }
+      if (
+        text.startsWith('update allinkl_ssl_certificates') &&
+        text.includes("where state in ('issuing','dns_propagating')")
+      )
+        return [{ affectedRows: 0 }];
       if (text.startsWith('update allinkl_ssl_certificates')) {
         const hostName = params[params.length - 1],
           row = records.get(hostName);
