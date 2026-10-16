@@ -11,5 +11,8 @@ test('LorzCMS Apache rewrite serves real HTTP-01 token files before the front co
   assert.ok(catchAllIndex > acmeIndex, 'ACME exception must precede CMS catch-all rewrite');
   assert.equal(lines[acmeIndex - 1], 'RewriteCond %{REQUEST_FILENAME} -f', 'only existing files may bypass routing');
   assert.match(lines[acmeIndex], /\[A-Za-z0-9_-\]\+/);
-  assert.ok(lines.some(line => line.startsWith('RewriteRule ^siteops\\.php$')), 'MCP agent routing stays intact');
+  assert.ok(
+    lines.some(line => line.startsWith('RewriteRule ^siteops\\.php$')),
+    'MCP agent routing stays intact'
+  );
 });
