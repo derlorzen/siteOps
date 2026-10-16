@@ -7444,6 +7444,28 @@ async function checkRuntime() {
     prm.resource !== oauthResource()
   )
     throw new Error('OAuth discovery self-check failed');
+  // Connecting an OAuth client is not sufficient: ChatGPT immediately
+  // requests tools/list. Catch invalid tool schemas before deployment.
+  const discoveryHandler = createMcpHandler(() => mcpServer());
+  try {
+    const response = await discoveryHandler.fetch(
+      new globalThis.Request('http://localhost:3000/mcp', {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+      })
+    );
+    const payload = await response.text();
+    if (!response.ok || !payload.includes('"website_create"') || !payload.includes('"sites_list"')) {
+      throw new Error('MCP tool discovery failed: HTTP ' + response.status + ' (' + payload.slice(0, 350) + ')');
+    }
+    console.log('MCP tools/list self-check OK.');
+  } finally {
+    await discoveryHandler.close();
+  }
   await db.end();
   console.log('Runtime imports + OAuth checks OK.');
 }
