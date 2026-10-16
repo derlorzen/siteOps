@@ -5,9 +5,11 @@ import {
   sslDnsName,
   inspectCertificate,
   waitForDnsTxt,
+  acmeDns01TxtValue,
   allinklSslRequestSchema
 } from '../lib/allinkl-ssl.mjs';
 import { createKasClient } from '../lib/allinkl.mjs';
+import acme from 'acme-client';
 
 const cert =
   '-----BEGIN CERTIFICATE-----\nMIIBszCCAVqgAwIBAgIUPbkUWw/SdSOXkyMbutRmQDMqdNQwCgYIKoZIzj0EAwIw\nHzEdMBsGA1UEAwwUY29udGFpbmVyLmV4YW1wbGUuZGUwHhcNMjYxMDE2MTMzNDQ3\nWhcNMjcxMDE2MTMzNDQ3WjAfMR0wGwYDVQQDDBRjb250YWluZXIuZXhhbXBsZS5k\nZTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABMAJo+cW8YjhjUFqbxmkqxqQNhA3\nKLKFhvSa8/CqaGdlFcMhB7wHbse/MtcXrfFGG7LEYv9rVDmVL/dviGkIVuGjdDBy\nMB0GA1UdDgQWBBSsWRbGE67ylyHJv3WXqauJ8yhygjAfBgNVHSMEGDAWgBSsWRbG\nE67ylyHJv3WXqauJ8yhygjAPBgNVHRMBAf8EBTADAQH/MB8GA1UdEQQYMBaCFGNv\nbnRhaW5lci5leGFtcGxlLmRlMAoGCCqGSM49BAMCA0cAMEQCIExTtCdwr4l8Ilir\n9nwhxm+xzWheUapTF1dgUyNNUbpkAiBPd/J5+UhlijJt1HeKG4s2JBFMt2OY0S9B\nGq5q6ygFVA==\n-----END CERTIFICATE-----';
@@ -15,6 +17,27 @@ const key =
   '-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg0j8hLBTxVADcFox+\nZZ/tEW6YyZwgWPSlhW37HhMAvKmhRANCAATACaPnFvGI4Y1Bam8ZpKsakDYQNyiy\nhYb0mvPwqmhnZRXDIQe8B27HvzLXF63xRhuyxGL/a1Q5lS/3b4hpCFbh\n-----END PRIVATE KEY-----';
 const accountId = '11111111-1111-4111-8111-111111111111';
 const host = 'container.example.de';
+
+test('regression: acme-client v5 DNS-01 keyAuthorization is already the TXT answer', async () => {
+  const accountKey = await acme.crypto.createPrivateKey();
+  const client = new acme.Client({
+    directoryUrl: acme.directory.letsencrypt.staging,
+    accountKey
+  });
+  const keyAuthorization = await client.getChallengeKeyAuthorization({
+    type: 'dns-01',
+    token: 'known-test-token-with-enough-entropy-and-length'
+  });
+  assert.match(keyAuthorization, /^[A-Za-z0-9_-]{43}$/);
+  // Important: the library has already SHA-256 hashed token + JWK thumbprint.
+  // A second SHA-256 is exactly what produced "Authorization not found in DNS TXT record".
+  assert.equal(acmeDns01TxtValue(keyAuthorization), keyAuthorization);
+  assert.notEqual(
+    acmeDns01TxtValue(keyAuthorization),
+    (await import('node:crypto')).createHash('sha256').update(keyAuthorization).digest('base64url')
+  );
+  assert.throws(() => acmeDns01TxtValue('token.thumbprint'), /Ungültiger DNS-01/);
+});
 
 test('ACME uses only the owned subdomain DNS-01 name', () => {
   assert.deepEqual(sslDnsName(host, ['example.de']), {
