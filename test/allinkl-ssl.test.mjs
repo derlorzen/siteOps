@@ -56,7 +56,7 @@ function memoryDb() {
   const db = {
     async getConnection() { return connection; },
     async query(sql, params = []) {
-      const text = sql.replace(/\\s+/g, ' ').trim().toLowerCase();
+      const text = sql.replace(/\s+/g, ' ').trim().toLowerCase();
       if (text.startsWith('select * from allinkl_ssl_certificates where hostname')) return [[records.get(params[0])].filter(Boolean)];
       if (text.startsWith('select hostname,account_id,state')) return [[...records.values()]];
       if (text.startsWith('insert into allinkl_ssl_certificates')) {
