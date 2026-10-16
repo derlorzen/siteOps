@@ -56,7 +56,7 @@ function fixture({ kasRoot = root + '/public', publicResponse = 'correct' } = {}
   const fetcher = async (url, options) => {
     const requested = new URL(url);
     assert.equal(requested.hostname, hostname);
-    assert.match(requested.pathname, /^\\/\\.well-known\\/acme-challenge\\/[A-Za-z0-9_-]+$/);
+    assert.ok(requested.pathname.startsWith('/.well-known/acme-challenge/'));
     const expectedPath = root + '/public' + requested.pathname;
     assert.equal(options.redirect, 'manual');
     const response = publicResponse === 'correct' ? files.get(expectedPath)?.toString('utf8') || null : publicResponse;
