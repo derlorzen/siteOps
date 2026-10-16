@@ -1,0 +1,32 @@
+name: Temporary SSL HTTP and DNS Diagnostic
+on:
+  push:
+    branches: [diagnostics/ssl-http-oct16]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check public DNS, HTTP, redirect, webroot
+        shell: bash
+        run: |
+          set +e
+          echo "==== Delegation lorzen.de ===="
+          dig +short NS lorzen.de
+          dig +short SOA lorzen.de
+          for domain in container.lorzen.de unfall.lorzen.de; do
+            echo "==== $domain ===="
+            echo "A:"
+            dig +short A "$domain"
+            echo "HTTP root:"
+            curl -sS -v --max-time 12 -D /tmp/h1 -o /tmp/b1 "http://$domain/" 2>&1 | grep -E "(Trying |Connected to|SSL|HTTP/|Failed|Could not|timed|refused|Empty reply)" | head -12
+            head -16 /tmp/h1
+            echo "HTTP ACME path (non-existent probe):"
+            curl -sS -v --max-time 12 -D /tmp/h2 -o /tmp/b2 "http://$domain/.well-known/acme-challenge/siteopsdiagnostic123456789" 2>&1 | grep -E "(Trying |Connected to|SSL|HTTP/|Failed|Could not|timed|refused|Empty reply)" | head -12
+            head -16 /tmp/h2
+            echo "ACME first bytes:"
+            head -c 220 /tmp/b2 | tr '\n' ' '
+            echo
+            rm -f /tmp/h1 /tmp/h2 /tmp/b1 /tmp/b2
+          done
