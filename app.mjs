@@ -387,6 +387,10 @@ async function saveAppSettings(x) {
 }
 function publicSettings() {
   return {
+    buildVersion: buildInfo.version,
+    buildFingerprint: buildInfo.build,
+    buildCommit: buildInfo.commitShort,
+    sslAcmeDns01PassThrough: true,
     publicBaseUrl: cfg.publicBaseUrl,
     githubBackupRepo: cfg.githubBackupRepo,
     githubBackupTokenConfigured: Boolean(cfg.githubBackupToken),
