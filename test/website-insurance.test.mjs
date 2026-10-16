@@ -8,8 +8,8 @@ const id = '11111111-1111-4111-8111-111111111111';
 
 test('one request for insurance website needs no fictional business name or city', () => {
   assert.equal(websiteCreateSchema.safeParse(input).success, true);
-  assert.equal(websiteCreateSchema.safeParse({ baseUrl: input.baseUrl }).success, false);
-  assert.equal(websiteCreateSchema.safeParse({ baseUrl: input.baseUrl, preset: 'business' }).success, false);
+  assert.throws(() => websiteBlueprint({ baseUrl: input.baseUrl }), /companyName und location/);
+  assert.throws(() => websiteBlueprint({ baseUrl: input.baseUrl, preset: 'business' }), /companyName und location/);
   const site = websiteBlueprint(input);
   assert.equal(site.companyName, 'Unfallversicherung verständlich erklärt');
   assert.equal(site.pages.length, 6);
