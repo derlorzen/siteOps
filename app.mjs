@@ -4539,7 +4539,8 @@ function mcpServer() {
   s.registerTool(
     'allinkl_ssl_list',
     {
-      description: 'List ALL-INKL ACME SSL domains, certificate lifecycle, expiration dates and errors without passwords or private keys.',
+      description:
+        'List ALL-INKL ACME SSL domains, certificate lifecycle, expiration dates and errors without passwords or private keys.',
       inputSchema: z.object({})
     },
     async () => toolText(await sslService.list())
@@ -4547,7 +4548,8 @@ function mcpServer() {
   s.registerTool(
     'allinkl_ssl_status',
     {
-      description: 'Read the certificate activation or renewal status of a specific managed ALL-INKL subdomain. Never returns private keys.',
+      description:
+        'Read the certificate activation or renewal status of a specific managed ALL-INKL subdomain. Never returns private keys.',
       inputSchema: z.object({ hostname: z.string().min(4).max(253) })
     },
     async ({ hostname }) => toolText(await sslService.status(hostname))
@@ -4555,7 +4557,8 @@ function mcpServer() {
   s.registerTool(
     'allinkl_ssl_enable',
     {
-      description: 'Queue automatic Let\'s Encrypt issuance and 30-day-before-expiry renewal through ACME DNS-01 and the KAS update_ssl action for an existing owned ALL-INKL subdomain. Verify account, zone, existing subdomain, mail contact. This is a real live certificate request; only call on explicit SSL activation intent. The durable worker also resumes interrupted new LorzCMS installs when HTTPS is active.',
+      description:
+        "Queue automatic Let's Encrypt issuance and 30-day-before-expiry renewal through ACME DNS-01 and the KAS update_ssl action for an existing owned ALL-INKL subdomain. Verify account, zone, existing subdomain, mail contact. This is a real live certificate request; only call on explicit SSL activation intent. The durable worker also resumes interrupted new LorzCMS installs when HTTPS is active.",
       inputSchema: allinklSslRequestSchema
     },
     async input => toolText(await sslService.enqueue(input))

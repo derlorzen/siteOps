@@ -306,7 +306,8 @@
       const input = Object.fromEntries(new FormData(sslForm));
       input.autoRenew = sslForm.elements.namedItem('autoRenew').checked;
       await api('/api/hosting/allinkl/ssl', {
-        method: 'POST', body: JSON.stringify(input)
+        method: 'POST',
+        body: JSON.stringify(input)
       });
       show('SSL-Ausstellung eingereiht. Bitte Status und HTTPS-Aktivierung prüfen.');
       await refreshSsl();
