@@ -260,6 +260,64 @@
       loadButton.disabled = !domainSelect.value;
     }
   });
+  const sslForm = $('allinklSslEnable');
+  const sslRows = $('allinklSslRows');
+  const sslStatus = $('allinklSslStatus');
+  async function refreshSsl() {
+    if (!sslRows) return;
+    try {
+      const all = await api('/api/hosting/allinkl/ssl');
+      sslRows.replaceChildren();
+      for (const entry of all) {
+        const tr = document.createElement('tr');
+        for (const [key, value] of [
+          ['Subdomain', entry.hostname],
+          ['Status', entry.state + (entry.lastError ? ' · ' + entry.lastError : '')],
+          ['Ablauf', entry.expiresAt ? new Date(entry.expiresAt).toLocaleDateString('de-DE') : '–'],
+          ['Erneuerung', entry.autoRenew ? 'Automatisch' : 'Aus']
+        ]) {
+          const td = document.createElement('td');
+          td.dataset.label = key;
+          td.textContent = String(value ?? '');
+          tr.append(td);
+        }
+        sslRows.append(tr);
+      }
+      if (!all.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 4;
+        td.className = 'hosting-empty';
+        td.textContent = 'Noch keine automatisch verwalteten Zertifikate.';
+        tr.append(td);
+        sslRows.append(tr);
+      }
+      sslStatus.textContent = all.length + ' Zertifikatsaufträge gefunden.';
+    } catch (error) {
+      sslStatus.textContent = 'SSL-Status konnte nicht geladen werden: ' + error.message;
+    }
+  }
+  $('allinklSslRefresh')?.addEventListener('click', () => void refreshSsl());
+  sslForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = sslForm.querySelector('[type=submit]');
+    button.disabled = true;
+    try {
+      const input = Object.fromEntries(new FormData(sslForm));
+      input.autoRenew = sslForm.elements.namedItem('autoRenew').checked;
+      await api('/api/hosting/allinkl/ssl', {
+        method: 'POST',
+        body: JSON.stringify(input)
+      });
+      show('SSL-Ausstellung eingereiht. Bitte Status und HTTPS-Aktivierung prüfen.');
+      await refreshSsl();
+    } catch (error) {
+      show('SSL-Auftrag fehlgeschlagen: ' + error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  void refreshSsl();
   if (accountSelect?.options.length === 2) {
     accountSelect.selectedIndex = 1;
     void fetchDomains();

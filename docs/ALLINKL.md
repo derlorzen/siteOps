@@ -21,11 +21,26 @@ Daraufhin legt SiteOps bei Bedarf Projektordner und `public/` per FTP/SFTP an, e
 
 ## Wichtige Grenzen
 
-- **HTTPS/Let's Encrypt:** Das Anlegen der Subdomain ist *nicht* gleichbedeutend mit einem ausgestellten Zertifikat. Bei ALL-INKL kann ein SSL-Zertifikat im KAS aktiviert werden müssen. LorzCMS benötigt HTTPS und PHP **8.3 oder neuer**. Eine Installation bei noch fehlendem SSL kann im Auftrag mit einem prüfbaren Fehler stoppen; anschließend den Auftrag erneut starten.
+- **HTTPS/Let's Encrypt:** Das Anlegen einer Subdomain stellt noch kein Zertifikat aus. SiteOps kann seit der ACME-Erweiterung Zertifikate über DNS-01 ausstellen und mit KAS-API `update_ssl` installieren. Das erfolgt bei neuen ALL-INKL-LorzCMS-Aufträgen automatisch, sofern die Zone über die hinterlegte KAS-DNS-API verwaltbar ist und die Subdomain im Konto existiert. Der Provider muss die Einbindung eigener SNI-Zertifikate erlauben; die eigentliche HTTPS-Freischaltung kann einige Minuten dauern. LorzCMS benötigt PHP **8.3 oder neuer**.
 - **DNS-Hosting:** Die KAS-API kann DNS nur verwalten, wenn die Zone dort tatsächlich administriert wird. Bei externen Nameservern muss deren Dienst genutzt werden.
 - **Verzeichnispfade:** Der KAS-Webroot-Pfad und der FTP-Pfad müssen denselben Serverordner bezeichnen. Deshalb verwendet jeder KAS-Account genau ein passendes gespeichertes Serverprofil.
 - **Flood-Schutz:** KAS-Anfragen werden pro KAS-Konto serialisiert und mit mindestens fünf Sekunden Abstand ausgeführt.
-- **Nicht enthalten:** automatische Beschaffung/Erneuerung von SSL-Zertifikaten, Anlegen eines ALL-INKL-Vertrags, automatische MySQL-Datenbank-Provisionierung sowie Löschen von Subdomains durch CMS-Abbruch.
+- **Nicht enthalten:** Anlegen eines ALL-INKL-Vertrags, automatische MySQL-Datenbank-Provisionierung sowie Löschen von Subdomains durch CMS-Abbruch. Die ALL-INKL-eigene Let's-Encrypt-KAS-Funktion ist nicht automatisiert; SiteOps nutzt die standardisierte externe ACME-Ausstellung.
+
+## Vollautomatische SSL-Zertifikate
+
+1. ALL-INKL-KAS-Zugang und FTP-/SFTP-Profil wie oben einrichten. Die Subdomain muss bereits angelegt sein; für neu angelegte LorzCMS-Sites erledigt der Website-Workflow das automatisch.
+2. Unter **Hosting & DNS → SSL / Let's Encrypt** das KAS-Konto, den Subdomainnamen und eine gültige Kontakt-E-Mail-Adresse auswählen. Der Aufruf beauftragt ein **reales Zertifikat** bei Let's Encrypt und akzeptiert dessen Subscriber Agreement.
+3. SiteOps erstellt eine ACME-DNS-01-Challenge als TXT-Eintrag `_acme-challenge.<subdomain>`, wartet auf öffentliche DNS-Verbreitung, entfernt ausschließlich seinen Challenge-Eintrag wieder und bezieht ein X.509-Zertifikat. Extern verwaltete DNS-Zonen benötigen eigene Nameserver-Integration; sonst wird der Auftrag mit einer nachvollziehbaren Fehlermeldung angehalten.
+4. Der private Zertifikatsschlüssel und der ACME-Accountschlüssel werden mit `SITEOPS_MASTER_KEY` verschlüsselt in MySQL gespeichert. Über die KAS-API-Aktion `update_ssl` installiert SiteOps den privaten Schlüssel, das Zertifikat und die Intermediate-Kette. Keine Schlüssel werden über MCP-/Dashboard-Antworten zurückgegeben.
+5. Der SSL-Worker prüft einmal pro Minute auf Aktivierung. Sobald die Subdomain per TLS mit **genau dem ausgestellten Zertifikat** und einer gültigen Vertrauenskette antwortet, wird der Zertifikatsstatus `active`. Unterbrochene LorzCMS-Erstinstallationen für die betreffende Subdomain in `preflight` werden einmalig automatisch erneut eingereiht.
+6. Mit eingeschalteter automatischer Verlängerung löst der Worker ca. **30 Tage vor Ablauf** eine neue Ausstellung aus und prüft anschließend, ob das neue Zertifikat aktiv ist. Bei Fehlern bleibt der letzte gültige Stand erhalten; der Fehler ist in der SSL-Statusübersicht sichtbar.
+
+**Sicherheitsgrenzen:** Die KAS-API stellt keine neuen Let's-Encrypt-Zertifikate aus; ihre Aktion `update_ssl` bindet nur eine zuvor extern ausgestellte Zertifikatskette ein. Es werden keine bestehenden DNS- oder Zertifikatsdaten anderer Domains blind überschrieben. Die Domain muss einem hinterlegten KAS-Konto gehören. Die ACME-DNS-Challenge erfordert tatsächlich dort verwaltete öffentliche Nameserver. Zertifikate werden vor dem Upload auf Hostname, Ablauf und passenden privaten Schlüssel geprüft. Keys dürfen weder ins Git-Repository noch in Logs gelangen.
+
+**Betrieb:** Vor dem ersten produktiven Einsatz im eigenen Tarif prüfen, ob das Einbinden externer SSL-Zertifikate per `update_ssl` freigeschaltet ist. Für isolierte ACME-Tests `SITEOPS_ACME_STAGING=true` setzen. Ein bei der Staging-CA ausgestelltes Zertifikat ist öffentlich nicht vertrauenswürdig; diesen Modus niemals für Produktionsdomains aktiv lassen.
+
+**Bereits unterbrochene Installationen** (z. B. `container.lorzen.de`, `unfall.lorzen.de`) erhalten ein Zertifikat über `allinkl_ssl_enable`. Danach setzt der Worker passende unterbrochene LorzCMS-Aufträge selbst fort; neue Website-Projekte werden nicht erneut angelegt.
 
 ## Schnittstellen
 
@@ -41,6 +56,8 @@ Daraufhin legt SiteOps bei Bedarf Projektordner und `public/` per FTP/SFTP an, e
 - `GET|POST /api/hosting/allinkl/accounts/:id/dns?zone=example.de`
 - `PUT|DELETE /api/hosting/allinkl/accounts/:id/dns/:recordId`
 - `POST /api/hosting/allinkl/provision`
+- `GET /api/hosting/allinkl/ssl` und `GET /api/hosting/allinkl/ssl/:hostname`
+- `POST /api/hosting/allinkl/ssl` (SSL-Ausstellung einreihen)
 - `POST /api/lorzcms/installations` mit `allinklAccountId`
 
 ### MCP
@@ -50,6 +67,7 @@ Daraufhin legt SiteOps bei Bedarf Projektordner und `public/` per FTP/SFTP an, e
 - `allinkl_dns_add`
 - `allinkl_dns_update`
 - `allinkl_provision`
+- `allinkl_ssl_list`, `allinkl_ssl_status`, `allinkl_ssl_enable`
 - `cms_install_allinkl` (Subdomain, Webroot und CMS-Auftrag)
 
 Alle HTTP-Änderungsrouten sind durch die bestehende Dashboard-Authentifizierung und den Origin-/Content-Type-Schutz geschützt. MCP verwendet den bestehenden OAuth-Zugang.

@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS allinkl_ssl_certificates (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  account_id CHAR(36) NOT NULL,
+  hostname VARCHAR(253) NOT NULL,
+  email VARCHAR(320) NOT NULL,
+  account_key_encrypted LONGTEXT NULL,
+  private_key_encrypted LONGTEXT NULL,
+  certificate_pem LONGTEXT NULL,
+  chain_pem LONGTEXT NULL,
+  fingerprint_sha256 CHAR(64) NULL,
+  expires_at DATETIME NULL,
+  state VARCHAR(32) NOT NULL DEFAULT 'queued',
+  auto_renew TINYINT(1) NOT NULL DEFAULT 1,
+  last_error VARCHAR(500) NULL,
+  last_attempt_at DATETIME NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_allinkl_ssl_hostname (hostname),
+  INDEX idx_allinkl_ssl_renew (auto_renew, state, expires_at),
+  INDEX idx_allinkl_ssl_account (account_id),
+  CONSTRAINT fk_allinkl_ssl_account FOREIGN KEY (account_id) REFERENCES hosting_accounts(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

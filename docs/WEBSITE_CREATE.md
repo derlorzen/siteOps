@@ -17,8 +17,7 @@ außerdem `website_create_plan` (ohne Schreibzugriffe) und
 
 1. In **Integrationen → Hosting & DNS** muss das ALL-INKL-KAS-Konto inklusive
    passendem, gespeicherten FTP-/SFTP-Profil existieren.
-2. Ein PHP-8.3+-Webspace und HTTPS für die neue Subdomain sind nötig.
-   ALL-INKL kann eine zusätzliche manuelle Zertifikatsaktivierung verlangen.
+2. Ein PHP-8.3+-Webspace mit SNI-SSL-Unterstützung ist nötig. Für neue ALL-INKL-Subdomains reiht SiteOps die Let's-Encrypt-Ausstellung über ACME DNS-01 automatisch ein. Voraussetzung ist, dass die autoritative DNS-Zone über die KAS-API verwaltbar ist und das Konto eigene SSL-Zertifikate einbinden darf. Die HTTPS-Aktivierung benötigt mitunter einige Minuten.
 3. `SITEOPS_DEFAULT_CMS_ADMIN_EMAIL` auf eine administrativ erreichbare
    E-Mail-Adresse setzen. Alternativ `adminEmail` beim Aufruf übergeben.
    Falls `ALERT_EMAIL_TO` eine einzelne gültige E-Mail-Adresse enthält,
@@ -69,9 +68,7 @@ es wird nicht als Klartext in SiteOps-Jobstatus gespeichert.
   Bildmaterial. Erweiterte Designs können danach im CMS erstellt werden.
 - Ohne geprüfte reale Kontaktdaten entsteht eine **prüfpflichtige Vorschau**,
   keine rechtlich fertige, suchmaschinenfreigegebene Unternehmenswebsite.
-- Die KAS-API stellt in dieser Integration **kein automatisches SSL-Zertifikat
-  aus**. Fehlt HTTPS, wird der CMS-Job zur Prüfung angehalten; die angelegte
-  Subdomain und das leere Verzeichnis bleiben erhalten.
+- Die KAS-API stellt selbst kein Zertifikat aus. SiteOps beantragt es extern über Let's Encrypt, installiert es über `update_ssl` und prüft die Aktivierung. Bis dahin kann der CMS-Erstauftrag in `preflight` anhalten; sobald das exakt beantragte Zertifikat per TLS aktiv ist, reiht der SSL-Worker diesen CMS-Auftrag automatisch wieder ein. Bei nicht über KAS verwaltbaren Nameservern oder fehlender Tarifberechtigung muss die Ursache zuerst behoben werden.
 - Der aktuelle MCP-Client muss das neue Toolset neu synchronisieren, bevor
   `website_create` direkt aus ChatGPT aufgerufen werden kann.
 - Das Backend führt keine selbstständige Webrecherche aus. Die mit
