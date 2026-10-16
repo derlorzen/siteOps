@@ -232,7 +232,7 @@ const billingController = createBillingController({ db, archive: archiveIssuedIn
 const siteProjectService = createSiteProjectService(db);
 const connectionProfiles = createConnectionProfiles({ db, encrypt, decrypt });
 const allInklService = createAllInklService({ db, encrypt, decrypt, profiles: connectionProfiles, connectSite });
-const sslService = createAllInklSslService({ db, encrypt, decrypt, allInklService });
+const sslService = createAllInklSslService({ db, encrypt, decrypt, allInklService, connectSite });
 const websiteFactory = createWebsiteFactory({
   allInklService,
   cmsController,

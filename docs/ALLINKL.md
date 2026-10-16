@@ -27,11 +27,35 @@ Daraufhin legt SiteOps bei Bedarf Projektordner und `public/` per FTP/SFTP an, e
 - **Flood-Schutz:** KAS-Anfragen werden pro KAS-Konto serialisiert und mit mindestens fünf Sekunden Abstand ausgeführt.
 - **Nicht enthalten:** Anlegen eines ALL-INKL-Vertrags, automatische MySQL-Datenbank-Provisionierung sowie Löschen von Subdomains durch CMS-Abbruch. Die ALL-INKL-eigene Let's-Encrypt-KAS-Funktion ist nicht automatisiert; SiteOps nutzt die standardisierte externe ACME-Ausstellung.
 
+## ACME HTTP-01 für LorzCMS-Webspace (bevorzugt)
+
+Für bereits mit SiteOps registrierte ALL-INKL-Websites nutzt die Zertifikatsausstellung zuerst
+**ACME HTTP-01**. SiteOps prüft die exakt zugeordnete KAS-Subdomain und das registrierte
+`<site>/public`-Webverzeichnis, lädt die temporäre Datei nach
+`public/.well-known/acme-challenge/<token>` per gespeichertem FTP-/SFTP-Zugang hoch
+und prüft, dass sie **ohne Redirect** über Port 80 unverändert abrufbar ist. Nach
+der ACME-Prüfung wird ausschließlich die selbst angelegte Challenge-Datei gelöscht.
+Vorhandene fremde Dateien oder abweichende KAS-Webroot-Zuordnungen werden nicht verändert.
+
+Bei Subdomains, für die SiteOps **kein** passendes Webspace-Projekt kennt,
+bleibt DNS-01 als Fallback verfügbar. Achtung: Laut ALL-INKL können neue TXT-
+Einträge drei bis vier Stunden zur Aktivierung benötigen. Die bisherige
+DNS-Prüfung über einen einzelnen rekursiven Resolver kann zwischen den
+autoritativen Nameservern und seinem Cache abweichen. Ein Test am
+16.10.2026 zeigte TXT-Einträge auf ns5/ns6 und öffentlichen Resolvern,
+obwohl der SiteOps-DNS-01-Versuch scheiterte.
+
+Die HTTP-01-Methode benötigt eingehenden HTTP-Zugriff auf Port 80 und korrektes
+Routing nach `public/`. Bestehende SSL-/HTTPS-Einstellungen werden weiterhin
+nicht überschrieben, wenn bereits ein gültiges, fremd verwaltetes Zertifikat
+aktiv ist. Die Ausstellung und Verlängerung bleiben nach der Installation
+weiter über den bestehenden SSL-Worker automatisiert.
+
 ## Vollautomatische SSL-Zertifikate
 
 1. ALL-INKL-KAS-Zugang und FTP-/SFTP-Profil wie oben einrichten. Die Subdomain muss bereits angelegt sein; für neu angelegte LorzCMS-Sites erledigt der Website-Workflow das automatisch.
 2. Unter **Hosting & DNS → SSL / Let's Encrypt** das KAS-Konto, den Subdomainnamen und eine gültige Kontakt-E-Mail-Adresse auswählen. Der Aufruf beauftragt ein **reales Zertifikat** bei Let's Encrypt und akzeptiert dessen Subscriber Agreement.
-3. SiteOps erstellt eine ACME-DNS-01-Challenge als TXT-Eintrag `_acme-challenge.<subdomain>`, wartet auf öffentliche DNS-Verbreitung, entfernt ausschließlich seinen Challenge-Eintrag wieder und bezieht ein X.509-Zertifikat. Extern verwaltete DNS-Zonen benötigen eigene Nameserver-Integration; sonst wird der Auftrag mit einer nachvollziehbaren Fehlermeldung angehalten.
+3. Auf registrierten LorzCMS-Webspace-Sites stellt SiteOps einen einmaligen HTTP-01-Prüfwert unter `public/.well-known/acme-challenge/` bereit. Andernfalls verwendet SiteOps DNS-01 mit einem TXT-Eintrag unter `_acme-challenge.<subdomain>`. Die Challenge wird nach Prüfung sicher bereinigt. Bei externen Nameservern benötigt DNS-01 deren Schreibzugang.
 4. Der private Zertifikatsschlüssel und der ACME-Accountschlüssel werden mit `SITEOPS_MASTER_KEY` verschlüsselt in MySQL gespeichert. Über die KAS-API-Aktion `update_ssl` installiert SiteOps den privaten Schlüssel, das Zertifikat und die Intermediate-Kette. Keine Schlüssel werden über MCP-/Dashboard-Antworten zurückgegeben.
 5. Der SSL-Worker prüft einmal pro Minute auf Aktivierung. Sobald die Subdomain per TLS mit **genau dem ausgestellten Zertifikat** und einer gültigen Vertrauenskette antwortet, wird der Zertifikatsstatus `active`. Unterbrochene LorzCMS-Erstinstallationen für die betreffende Subdomain in `preflight` werden einmalig automatisch erneut eingereiht.
 6. Mit eingeschalteter automatischer Verlängerung löst der Worker ca. **30 Tage vor Ablauf** eine neue Ausstellung aus und prüft anschließend, ob das neue Zertifikat aktiv ist. Bei Fehlern bleibt der letzte gültige Stand erhalten; der Fehler ist in der SSL-Statusübersicht sichtbar.
