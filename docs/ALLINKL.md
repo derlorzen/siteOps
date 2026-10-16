@@ -105,3 +105,9 @@ Alle HTTP-Änderungsrouten sind durch die bestehende Dashboard-Authentifizierung
 - [KAS-API Dokumentation](https://kasapi.kasserver.com/dokumentation/)
 - [SOAP-Beispiele](https://kasapi.kasserver.com/dokumentation/?open=quellcode)
 - [KAS API Funktionen](https://kasapi.kasserver.com/dokumentation/phpdoc/)
+
+## ALL-INKL-nginx blockiert ACME-Pfad (error_kas_44)
+
+Bei `container.lorzen.de` und `unfall.lorzen.de` lieferte der nginx-Proxy für `/.well-known/acme-challenge/...` HTTP 404 `error_kas_44` – auch wenn die konkrete Datei über FTP **nachweislich vorhanden** war. Die Apache-Ausnahme in `.htaccess` ist dafür wirkungslos, weil der nginx-Proxy die Anforderung vorher abfängt. Die HTTP-Startseite ist dagegen mit 200 erreichbar; die autoritativen Nameserver sind `ns5.kasserver.com` und `ns6.kasserver.com`.
+
+SiteOps schreibt deshalb vor jedem neuen HTTP-01-Auftrag einen zufälligen Testwert in genau das KAS-Webroot, liest ihn über Port 80 öffentlich zurück und löscht ihn. Wenn die Prüfung scheitert, verwendet SiteOps stattdessen automatisch **DNS-01**. ALL-INKL meldet für DNS-Änderungen eine mögliche Verteilungszeit von mehreren Stunden; SiteOps wartet bis zu **sechs Stunden**. Währenddessen ist der sichtbare Zustand `dns_propagating`. Unterschiedliche Subdomains werden parallel bearbeitet, damit die DNS-Wartezeit einer Domain nicht die anderen blockiert. Der Website-Installationsjob läuft nach erfolgreicher TLS-Prüfung automatisch weiter. Bei einem Neustart werden abgebrochene SSL-Aufträge erst nach Ablauf des maximalen Wartefensters erneut eingereiht, um unnötige ACME-Anfragen zu vermeiden.
