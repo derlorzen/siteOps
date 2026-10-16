@@ -24,6 +24,7 @@ import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
 import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
 import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
+import { createAllInklSslService, allinklSslRequestSchema } from './lib/allinkl-ssl.mjs';
 import { createAllInklService, allinklProvisionSchema, allinklDnsRecordSchema } from './lib/allinkl.mjs';
 import { renderAllInklWorkspace } from './lib/allinkl-ui.mjs';
 import { createWebsiteFactory, websiteCreateSchema } from './lib/website-factory.mjs';
@@ -175,7 +176,17 @@ const cmsController = createCmsController({
     };
   },
   getAllInklProfile: accountId => allInklService.profileFor(accountId),
-  prepareAllInkl: input => allInklService.provision(input),
+  prepareAllInkl: async input => {
+    const provisioned = await allInklService.provision(input);
+    // KAS does not issue Let's Encrypt certificates directly. Schedule a
+    // managed ACME DNS-01 certificate after safely provisioning the subdomain.
+    await sslService.enqueue({
+      accountId: input.accountId,
+      hostname: new URL(input.baseUrl).hostname,
+      email: input.adminEmail
+    });
+    return provisioned;
+  },
   linkSiteToProject: async (siteId, projectId) => siteProjectService.link(siteId, { project_id: projectId })
 });
 
@@ -221,6 +232,7 @@ const billingController = createBillingController({ db, archive: archiveIssuedIn
 const siteProjectService = createSiteProjectService(db);
 const connectionProfiles = createConnectionProfiles({ db, encrypt, decrypt });
 const allInklService = createAllInklService({ db, encrypt, decrypt, profiles: connectionProfiles, connectSite });
+const sslService = createAllInklSslService({ db, encrypt, decrypt, allInklService });
 const websiteFactory = createWebsiteFactory({
   allInklService,
   cmsController,
@@ -4525,6 +4537,30 @@ function mcpServer() {
     async input => toolText(await allInklService.provision(input))
   );
   s.registerTool(
+    'allinkl_ssl_list',
+    {
+      description: 'List ALL-INKL ACME SSL domains, certificate lifecycle, expiration dates and errors without passwords or private keys.',
+      inputSchema: z.object({})
+    },
+    async () => toolText(await sslService.list())
+  );
+  s.registerTool(
+    'allinkl_ssl_status',
+    {
+      description: 'Read the certificate activation or renewal status of a specific managed ALL-INKL subdomain. Never returns private keys.',
+      inputSchema: z.object({ hostname: z.string().min(4).max(253) })
+    },
+    async ({ hostname }) => toolText(await sslService.status(hostname))
+  );
+  s.registerTool(
+    'allinkl_ssl_enable',
+    {
+      description: 'Queue automatic Let\'s Encrypt issuance and 30-day-before-expiry renewal through ACME DNS-01 and the KAS update_ssl action for an existing owned ALL-INKL subdomain. Verify account, zone, existing subdomain, mail contact. This is a real live certificate request; only call on explicit SSL activation intent. The durable worker also resumes interrupted new LorzCMS installs when HTTPS is active.',
+      inputSchema: allinklSslRequestSchema
+    },
+    async input => toolText(await sslService.enqueue(input))
+  );
+  s.registerTool(
     'website_create_plan',
     {
       description:
@@ -5348,7 +5384,7 @@ function mcpInfoPage() {
     ['Konfiguration', 'site_update, site_connection_test, site_connection_update'],
     [
       'Hosting / ALL-INKL',
-      'website_create_plan, website_create, website_create_status, allinkl_accounts, allinkl_domains, allinkl_diagnostics, allinkl_dns_list, allinkl_dns_add, allinkl_dns_update, allinkl_provision, cms_install_allinkl'
+      'website_create_plan, website_create, website_create_status, allinkl_ssl_list, allinkl_ssl_status, allinkl_ssl_enable, allinkl_accounts, allinkl_domains, allinkl_diagnostics, allinkl_dns_list, allinkl_dns_add, allinkl_dns_update, allinkl_provision, cms_install_allinkl'
     ],
     ['Dateien', 'files_list, files_find, text_search, file_read'],
     ['Änderungen', 'change_preview, change_apply, history_list, history_diff, rollback_preview'],
@@ -7030,6 +7066,9 @@ async function start() {
     allInklService.removeRecord(req.params.id, req.query.zone, req.params.recordId)
   );
   app.post('/api/hosting/allinkl/provision', req => allInklService.provision(req.body));
+  app.get('/api/hosting/allinkl/ssl', () => sslService.list());
+  app.get('/api/hosting/allinkl/ssl/:hostname', req => sslService.status(req.params.hostname));
+  app.post('/api/hosting/allinkl/ssl', req => sslService.enqueue(req.body));
   app.get('/api/sites', async () => listSites());
   app.get('/api/sites/:site', async req => publicSite(await getSite(req.params.site)));
   app.get('/api/sites/:site/overview', async req => siteOverview(req.params.site));
@@ -7375,6 +7414,7 @@ async function start() {
     startBackupWorker();
     startSyntheticWorker();
     cmsController.startWorker();
+    sslService.startWorker();
   }
   await app.listen({ host: cfg.host, port: cfg.port });
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');
