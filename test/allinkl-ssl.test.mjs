@@ -47,7 +47,11 @@ test('public DNS diagnostics detect externally delegated zones without leaking c
     records: [{ name: '_acme-challenge.container', type: 'TXT', value: 'do-not-print-token' }],
     lookupNs: async () => ['iris.ns.cloudflare.com', 'max.ns.cloudflare.com'],
     lookupSoa: async () => ({ nsname: 'iris.ns.cloudflare.com.' }),
-    lookupTxt: async () => { const e = new Error('not found'); e.code = 'ENOTFOUND'; throw e; }
+    lookupTxt: async () => {
+      const e = new Error('not found');
+      e.code = 'ENOTFOUND';
+      throw e;
+    }
   });
   assert.equal(data.nameserverProvider, 'external_or_unknown');
   assert.equal(data.kasTxtCount, 1);
