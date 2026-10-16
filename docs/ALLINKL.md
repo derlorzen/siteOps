@@ -46,7 +46,10 @@ autoritativen Nameservern und seinem Cache abweichen. Ein Test am
 obwohl der SiteOps-DNS-01-Versuch scheiterte.
 
 Die HTTP-01-Methode benötigt eingehenden HTTP-Zugriff auf Port 80 und korrektes
-Routing nach `public/`. Bestehende SSL-/HTTPS-Einstellungen werden weiterhin
+Routing nach `public/`. Der LorzCMS-Apache-Frontcontroller muss die vorhandene
+`/.well-known/acme-challenge/<token>`-Datei von der allgemeinen Weiterleitung
+nach `index.php` ausnehmen. Das SiteOps-LorzCMS-Template enthält dafür vor
+der Catch-all-Regel eine auf vorhandene ACME-Prüfdateien beschränkte Ausnahme. Bestehende SSL-/HTTPS-Einstellungen werden weiterhin
 nicht überschrieben, wenn bereits ein gültiges, fremd verwaltetes Zertifikat
 aktiv ist. Die Ausstellung und Verlängerung bleiben nach der Installation
 weiter über den bestehenden SSL-Worker automatisiert.

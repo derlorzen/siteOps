@@ -1,5 +1,8 @@
 Options -Indexes
 RewriteEngine On
+# ACME HTTP-01: only allow an existing token file; all other CMS routes are unchanged.
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^\.well-known/acme-challenge/[A-Za-z0-9_-]+$ - [L]
 RewriteRule ^siteops\.php$ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization},L]
 RewriteRule ^api/cms/ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 RewriteRule ^ index.php [L,QSA]
