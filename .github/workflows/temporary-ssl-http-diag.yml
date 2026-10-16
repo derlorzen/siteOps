@@ -1,5 +1,7 @@
 name: Temporary SSL HTTP and DNS Diagnostic
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [diagnostics/ssl-http-oct16]
 permissions:
