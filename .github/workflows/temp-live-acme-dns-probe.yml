@@ -1,5 +1,8 @@
 name: Temporary Live ACME DNS Probe
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - diagnose/ssl-authoritative-txt-20261016
