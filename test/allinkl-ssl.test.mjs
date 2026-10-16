@@ -112,8 +112,12 @@ test('only matching X.509 certificate and private key can be submitted', () => {
 
 test('DNS-01 readiness checks every authoritative ALL-INKL nameserver', async () => {
   class Resolver {
-    constructor() { this.servers = []; }
-    setServers(servers) { this.servers = servers; }
+    constructor() {
+      this.servers = [];
+    }
+    setServers(servers) {
+      this.servers = servers;
+    }
     async resolveTxt() {
       return this.servers.includes('203.0.113.5') ? [['the', 'answer']] : [['old-answer']];
     }
@@ -123,21 +127,34 @@ test('DNS-01 readiness checks every authoritative ALL-INKL nameserver', async ()
     lookupA: async hostname => [hostname.startsWith('ns5') ? '203.0.113.5' : '203.0.113.6'],
     Resolver
   };
-  assert.equal(await authoritativeTxtMatch('_acme-challenge.test.example.de', 'example.de', 'theanswer', options), false);
+  assert.equal(
+    await authoritativeTxtMatch('_acme-challenge.test.example.de', 'example.de', 'theanswer', options),
+    false
+  );
   class ConvergedResolver extends Resolver {
-    async resolveTxt() { return [['the', 'answer']]; }
+    async resolveTxt() {
+      return [['the', 'answer']];
+    }
   }
-  assert.equal(await authoritativeTxtMatch('_acme-challenge.test.example.de', 'example.de', 'theanswer',
-    { ...options, Resolver: ConvergedResolver }), true);
+  assert.equal(
+    await authoritativeTxtMatch('_acme-challenge.test.example.de', 'example.de', 'theanswer', {
+      ...options,
+      Resolver: ConvergedResolver
+    }),
+    true
+  );
 });
 
 test('a recursive TXT answer is not enough while authoritative DNS is still stale', async () => {
-  let checked = 0, sleeps = 0;
+  let checked = 0,
+    sleeps = 0;
   await waitForDnsTxt('_acme-challenge.test.example.de', 'answer', {
     zone: 'example.de',
     resolveTxt: async () => [['answer']],
     authoritativeCheck: async () => ++checked >= 3,
-    sleep: async () => { sleeps++; },
+    sleep: async () => {
+      sleeps++;
+    },
     timeoutMs: 1000
   });
   assert.equal(checked, 3);
