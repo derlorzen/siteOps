@@ -1,0 +1,34 @@
+name: Temporary Live ACME DNS Probe
+on:
+  push:
+    branches:
+      - diagnose/ssl-authoritative-txt-20261016
+permissions:
+  contents: read
+jobs:
+  check-dns:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Observe public authoritative and recursive ACME TXT (read-only)
+        shell: bash
+        run: |
+          set -eu
+          command -v dig
+          dig +short NS lorzen.de || true
+          for round in $(seq 1 10); do
+            printf '\nROUND %s %s UTC\n' "$round" "$(date -u +%H:%M:%S)"
+            for host in container unfall; do
+              for resolver in ns5.kasserver.com ns6.kasserver.com 1.1.1.1 8.8.8.8; do
+                result="$(dig +tries=1 +time=2 +short "@$resolver" TXT "_acme-challenge.$host.lorzen.de" 2>&1 || true)"
+                count="$(printf '%s\n' "$result" | grep -c '^"' || true)"
+                if [ "$count" -gt 0 ]; then
+                  digest="$(printf '%s' "$result" | sha256sum | cut -c1-12)"
+                  printf '%s @%s: PUBLISHED count=%s fingerprint=%s\n' "$host" "$resolver" "$count" "$digest"
+                else
+                  printf '%s @%s: EMPTY / %s\n' "$host" "$resolver" "$(printf '%s' "$result" | cut -c1-100)"
+                fi
+              done
+            done
+            sleep 20
+          done
