@@ -6,6 +6,7 @@ import {
   inspectCertificate,
   waitForDnsTxt,
   acmeDns01TxtValue,
+  inspectAcmeDns,
   allinklSslRequestSchema
 } from '../lib/allinkl-ssl.mjs';
 import { createKasClient } from '../lib/allinkl.mjs';
@@ -37,6 +38,43 @@ test('regression: acme-client v5 DNS-01 keyAuthorization is already the TXT answ
     (await import('node:crypto')).createHash('sha256').update(keyAuthorization).digest('base64url')
   );
   assert.throws(() => acmeDns01TxtValue('token.thumbprint'), /Ungültiger DNS-01/);
+});
+
+test('public DNS diagnostics detect externally delegated zones without leaking challenge values', async () => {
+  const data = await inspectAcmeDns({
+    hostname: 'container.example.de',
+    domains: ['example.de'],
+    records: [{ name: '_acme-challenge.container', type: 'TXT', value: 'do-not-print-token' }],
+    lookupNs: async () => ['iris.ns.cloudflare.com', 'max.ns.cloudflare.com'],
+    lookupSoa: async () => ({ nsname: 'iris.ns.cloudflare.com.' }),
+    lookupTxt: async () => {
+      const e = new Error('not found');
+      e.code = 'ENOTFOUND';
+      throw e;
+    }
+  });
+  assert.equal(data.nameserverProvider, 'external_or_unknown');
+  assert.equal(data.kasTxtCount, 1);
+  assert.equal(data.publicTxtCount, 0);
+  assert.match(data.finding, /nicht ausschließlich ALL-INKL/);
+  assert.equal(data.recordName, '_acme-challenge.container.example.de');
+  assert.ok(!JSON.stringify(data).includes('do-not-print-token'));
+});
+
+test('public DNS diagnostics confirm matching KAS-authoritative TXT answers', async () => {
+  const data = await inspectAcmeDns({
+    hostname: 'container.example.de',
+    domains: ['example.de'],
+    records: [{ name: '_acme-challenge.container', type: 'TXT', value: 'secret-record' }],
+    lookupNs: async () => ['ns5.kasserver.com.', 'ns6.kasserver.com.'],
+    lookupSoa: async () => ({ nsname: 'ns5.kasserver.com.' }),
+    lookupTxt: async () => [['secret-', 'record']]
+  });
+  assert.equal(data.nameserverProvider, 'allinkl');
+  assert.equal(data.publishedMatchesKas, true);
+  assert.equal(data.kasTxtCount, 1);
+  assert.equal(data.publicTxtCount, 1);
+  assert.ok(!JSON.stringify(data).includes('secret-record'));
 });
 
 test('ACME uses only the owned subdomain DNS-01 name', () => {
