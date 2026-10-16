@@ -4550,6 +4550,14 @@ function mcpServer() {
     async () => toolText(await sslService.list())
   );
   s.registerTool(
+    'allinkl_ssl_diagnostics',
+    {
+      description: 'Read-only diagnosis for a specific owned ALL-INKL SSL subdomain: query real public NS/SOA and TXT records, compare with KAS DNS, reveal the authoritative provider without exposing challenge values or credentials. Use when ACME DNS-01 fails.',
+      inputSchema: z.object({ accountId: z.uuid(), hostname: z.string().min(4).max(253) })
+    },
+    async ({ accountId, hostname }) => toolText(await sslService.diagnose(accountId, hostname))
+  );
+  s.registerTool(
     'allinkl_ssl_status',
     {
       description:
@@ -7073,6 +7081,9 @@ async function start() {
     allInklService.removeRecord(req.params.id, req.query.zone, req.params.recordId)
   );
   app.post('/api/hosting/allinkl/provision', req => allInklService.provision(req.body));
+  app.get('/api/hosting/allinkl/ssl/diagnostics', req =>
+    sslService.diagnose(req.query.accountId, req.query.hostname)
+  );
   app.get('/api/hosting/allinkl/ssl', () => sslService.list());
   app.get('/api/hosting/allinkl/ssl/:hostname', req => sslService.status(req.params.hostname));
   app.post('/api/hosting/allinkl/ssl', req => sslService.enqueue(req.body));
