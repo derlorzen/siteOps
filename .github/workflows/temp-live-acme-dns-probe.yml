@@ -35,3 +35,16 @@ jobs:
             done
             sleep 20
           done
+  probe-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check HTTP-01 transport via both configured subdomains
+        shell: bash
+        run: |
+          for host in container.lorzen.de unfall.lorzen.de; do
+            for path in / /.well-known/acme-challenge/siteops-unconfigured-challenge; do
+              printf '\n%s%s\n' "$host" "$path"
+              curl -v --max-time 12 -o /dev/null "http://$host$path" 2>&1 | grep -E 'Connected to|< HTTP|< Location:|Connection refused|timed out|Could not resolve|Failed to connect|Host:' || true
+            done
+          done
