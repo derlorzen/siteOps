@@ -31,30 +31,52 @@ function fixture({ kasRoot = root + '/public', publicResponse = 'correct' } = {}
   const connectSite = async input => {
     assert.equal(input, site);
     return {
-      async ensureDirectory(p) { events.push(['mkdir', p]); },
-      async exists(p) { return files.has(p); },
-      async write(p, bytes) { files.set(p, Buffer.from(bytes)); events.push(['write', p]); },
-      async read(p) { return files.get(p); },
-      async remove(p) { files.delete(p); events.push(['remove', p]); },
-      async close() { events.push(['close']); }
+      async ensureDirectory(p) {
+        events.push(['mkdir', p]);
+      },
+      async exists(p) {
+        return files.has(p);
+      },
+      async write(p, bytes) {
+        files.set(p, Buffer.from(bytes));
+        events.push(['write', p]);
+      },
+      async read(p) {
+        return files.get(p);
+      },
+      async remove(p) {
+        files.delete(p);
+        events.push(['remove', p]);
+      },
+      async close() {
+        events.push(['close']);
+      }
     };
   };
   const fetcher = async (url, options) => {
     const expectedPath = root + '/public/.well-known/acme-challenge/' + token;
     assert.equal(url, 'http://' + hostname + '/.well-known/acme-challenge/' + token);
     assert.equal(options.redirect, 'manual');
-    const response = publicResponse === 'correct'
-      ? files.get(expectedPath)?.toString('utf8') || null
-      : publicResponse;
+    const response = publicResponse === 'correct' ? files.get(expectedPath)?.toString('utf8') || null : publicResponse;
     return {
       status: response === null ? 404 : publicResponse === 'redirect' ? 302 : 200,
       headers: { get: () => String(response?.length || 0) },
-      async text() { return response || ''; }
+      async text() {
+        return response || '';
+      }
     };
   };
-  return { files, events, ssl: createAllInklHttpChallenge({
-    db, allInklService, connectSite, fetcher, sleep: async () => {}
-  }) };
+  return {
+    files,
+    events,
+    ssl: createAllInklHttpChallenge({
+      db,
+      allInklService,
+      connectSite,
+      fetcher,
+      sleep: async () => {}
+    })
+  };
 }
 
 test('HTTP-01 uses exact token file under KAS-verified site public/ and cleans after validation', async () => {
@@ -83,10 +105,7 @@ test('HTTP-01 cannot traverse paths, overwrite foreign files or delete modified 
 
 test('HTTP-01 refuses a subdomain whose KAS webroot differs from the registered site', async () => {
   const f = fixture({ kasRoot: '/other-customer/public' });
-  await assert.rejects(
-    () => f.ssl.put(accountId, hostname, token, authorization),
-    /ALL-INKL-Webroot weicht/
-  );
+  await assert.rejects(() => f.ssl.put(accountId, hostname, token, authorization), /ALL-INKL-Webroot weicht/);
   assert.equal(f.events.length, 0);
 });
 
@@ -96,5 +115,8 @@ test('HTTP-01 rejects redirects and incorrect content instead of requesting a ce
   await assert.rejects(() => f.ssl.verify(hostname, token, authorization, { maxAttempts: 2 }), /nicht unverändert/);
   const altered = fixture({ publicResponse: 'wrong content' });
   await altered.ssl.put(accountId, hostname, token, authorization);
-  await assert.rejects(() => altered.ssl.verify(hostname, token, authorization, { maxAttempts: 2 }), /nicht unverändert/);
+  await assert.rejects(
+    () => altered.ssl.verify(hostname, token, authorization, { maxAttempts: 2 }),
+    /nicht unverändert/
+  );
 });
