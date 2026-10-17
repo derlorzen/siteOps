@@ -227,7 +227,8 @@ test(
     assert.equal((await fetch(base + '/config/local.php')).status, 404);
     assert.equal((await fetch(base + '/.lorzcms/backups/test/database.sqlite')).status, 404);
     const config = await readFile(join(root, 'config/local.php'));
-    const next = validateRelease({ ...initial, version: '3.5.1', notes: 'Test update' });
+    const nextVersion = initial.version.replace(/(\\d+)$/, patch => String(Number(patch) + 1));
+    const next = validateRelease({ ...initial, version: nextVersion, notes: 'Test update' });
     await stage(next);
     assert.equal(
       (
