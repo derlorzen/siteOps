@@ -144,8 +144,11 @@ try {
             !is_string($appearance['custom_css'] ?? null) || strlen($appearance['custom_css']) > 50000) { cmsAgentFail(422,'Ungültige Theme-Daten.'); }
         $current=$content->site->get('appearance');
         $updated=array_replace($current['value'],$appearance);
+        $content->site->validate('appearance',$updated);
+        $backupId='theme-'.gmdate('YmdHis').'-'.bin2hex(random_bytes(5));
+        cmsAgentBackup($root,$backupId,$store->db);
         $saved=$content->site->save('appearance',(int)$current['version'],$updated,$actor);
-        echo json_encode(['ok'=>true,'instanceId'=>$agent['instance_id'],'themeApplied'=>true,'appearanceVersion'=>$saved['version']],JSON_THROW_ON_ERROR);
+        echo json_encode(['ok'=>true,'instanceId'=>$agent['instance_id'],'themeApplied'=>true,'appearanceVersion'=>$saved['version'],'backupId'=>$backupId],JSON_THROW_ON_ERROR);
         return;
     }
     if (!in_array($action, ['preflight','provision','activate'], true)) { cmsAgentFail(422, 'Aktion nicht unterstützt.'); }
