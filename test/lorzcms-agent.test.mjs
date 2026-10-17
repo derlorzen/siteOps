@@ -227,7 +227,9 @@ test(
     assert.equal((await fetch(base + '/config/local.php')).status, 404);
     assert.equal((await fetch(base + '/.lorzcms/backups/test/database.sqlite')).status, 404);
     const config = await readFile(join(root, 'config/local.php'));
-    const next = validateRelease({ ...initial, version: '3.5.1', notes: 'Test update' });
+    const parts = initial.version.split('.');
+    const nextVersion = [parts[0], parts[1], String(Number(parts[2]) + 1)].join('.');
+    const next = validateRelease({ ...initial, version: nextVersion, notes: 'Test update' });
     await stage(next);
     assert.equal(
       (
@@ -283,7 +285,7 @@ test(
     );
     assert.equal(snapshot.status, 0, snapshot.stderr);
     assert.doesNotMatch(snapshot.stdout, /Redaktion nach Update/);
-    const tampered = join(root, '.lorzcms/releases/3.5.1/src/Store.php');
+    const tampered = join(root, '.lorzcms/releases', next.version, 'src/Store.php');
     await writeFile(tampered, '<?php echo "bad";');
     assert.equal(
       (
@@ -299,7 +301,7 @@ test(
     );
     assert.equal((await call()).data.version, initial.version);
     const active = await readFile(join(root, '.lorzcms/active.json'));
-    await writeFile(join(root, '.lorzcms/releases/3.5.1/manifest.json'), '{}');
+    await writeFile(join(root, '.lorzcms/releases', next.version, 'manifest.json'), '{}');
     assert.equal(
       (
         await call({
