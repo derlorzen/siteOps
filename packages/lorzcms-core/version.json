@@ -1,9 +1,9 @@
 {
-  "version": "3.5.0",
+  "version": "3.5.1",
   "schemaVersion": 1,
   "compatibleSchemas": [
     1
   ],
   "minPhp": "8.3",
-  "notes": "SEO-first: individuelle Meta-Descriptions, JSON-LD, Social-Tags, Redaktionsempfehlungen und bewusste Indexierungsfreigabe für neue Installationen."
+  "notes": "Korrektur der Webfont-Einbindung in der LorzCMS-Verwaltung (Manrope WOFF2 statt fehlender TTF)."
 }
