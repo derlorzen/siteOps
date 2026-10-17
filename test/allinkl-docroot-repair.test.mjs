@@ -26,7 +26,9 @@ test('ALL-INKL corrects a legacy KAS path only for a verified SiteOps installati
     db: {
       async query(sql, args) {
         if (sql.includes('FROM hosting_accounts'))
-          return [[{ id: accountId, login: 'w0137d60', encrypted_credentials: 'encrypted', server_profile_id: accountId }]];
+          return [
+            [{ id: accountId, login: 'w0137d60', encrypted_credentials: 'encrypted', server_profile_id: accountId }]
+          ];
         if (sql.includes('FROM sites') && args[0] === 'lorzen.de') return [[{ id: 'parent' }]];
         if (sql.includes('FROM sites') && args[0] === 'container.lorzen.de') return [[{ id: 'child' }]];
         throw new Error('Unexpected SQL: ' + sql);
@@ -59,9 +61,15 @@ test('ALL-INKL corrects a legacy KAS path only for a verified SiteOps installati
       const params = payload.KasRequestParams || {};
       switch (payload.kas_action) {
         case 'get_domains':
-          return { ok: true, text: async () => envelope(row({ domain_name: 'lorzen.de', domain_path: '/lorzen.de/' })) };
+          return {
+            ok: true,
+            text: async () => envelope(row({ domain_name: 'lorzen.de', domain_path: '/lorzen.de/' }))
+          };
         case 'get_subdomains':
-          return { ok: true, text: async () => envelope(row({ subdomain_name: 'container.lorzen.de', subdomain_path: mapping })) };
+          return {
+            ok: true,
+            text: async () => envelope(row({ subdomain_name: 'container.lorzen.de', subdomain_path: mapping }))
+          };
         case 'update_subdomain':
           assert.equal(params.subdomain_name, 'container.lorzen.de');
           assert.equal(params.subdomain_path, actual + '/');
