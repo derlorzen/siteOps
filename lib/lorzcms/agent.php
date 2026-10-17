@@ -114,6 +114,40 @@ try {
     if (strlen($raw) > 65536) { cmsAgentFail(413, 'Anfrage zu groß.'); }
     $body = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
     $action = $body['action'] ?? '';
+    if (in_array($action, ['theme-apply','admin-password-reset'], true)) {
+        if (!$state || !is_file($root.'/config/local.php')) { cmsAgentFail(409,'CMS noch nicht eingerichtet.'); }
+        if (is_file($root.'/.lorzcms/maintenance')) { cmsAgentFail(409,'Wartungsmodus aktiv.'); }
+        $lock = fopen($root.'/.lorzcms/deploy.lock','c');
+        if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) { cmsAgentFail(409,'Ein CMS-Auftrag läuft bereits.'); }
+        define('LORZCMS_ROOT',$root);
+        define('LORZCMS_CORE',$root.'/.lorzcms/releases/'.cmsAgentVersion($state['version']));
+        require LORZCMS_CORE.'/runtime/bootstrap.php';
+        [$configuration,$project,$store,$schema,$access,$content] = cms_boot();
+        $adminRow = $store->query("SELECT * FROM users WHERE role='admin' AND active=1 ORDER BY email LIMIT 1")->fetch();
+        if (!$adminRow) { cmsAgentFail(409,'Kein aktiver Administrator gefunden.'); }
+        $actor = $access->user($adminRow['id']);
+        if (!$actor) { cmsAgentFail(409,'Administrator nicht verfügbar.'); }
+        if ($action === 'admin-password-reset') {
+            $password = $body['newPassword'] ?? '';
+            if (!is_string($password) || strlen($password)<20 || strlen($password)>72) { cmsAgentFail(422,'Neues Passwort muss zwischen 20 und 72 Bytes lang sein.'); }
+            $email = strtolower(trim((string)($body['adminEmail'] ?? '')));
+            if ($email !== strtolower($actor['email'])) { cmsAgentFail(409,'Administratorkonto stimmt nicht überein.'); }
+            $store->transaction(static function() use ($store,$actor,$password):void {
+                $store->query('UPDATE users SET password_hash=?,auth_version=auth_version+1 WHERE id=? AND role=? AND active=1', [password_hash($password,PASSWORD_DEFAULT),$actor['id'],'admin']);
+                $store->query('DELETE FROM tokens WHERE user_id=?',[$actor['id']]);
+            });
+            echo json_encode(['ok'=>true,'instanceId'=>$agent['instance_id'],'email'=>$actor['email'],'passwordUpdated'=>true],JSON_THROW_ON_ERROR);
+            return;
+        }
+        $appearance=$body['appearance'] ?? null;
+        if (!is_array($appearance) || array_diff(array_keys($appearance),['custom_css','accent','background','text','page_template','header_style','footer_style','footer','header_template','footer_template','width']) ||
+            !is_string($appearance['custom_css'] ?? null) || strlen($appearance['custom_css']) > 50000) { cmsAgentFail(422,'Ungültige Theme-Daten.'); }
+        $current=$content->site->get('appearance');
+        $updated=array_replace($current['value'],$appearance);
+        $saved=$content->site->save('appearance',(int)$current['version'],$updated,$actor);
+        echo json_encode(['ok'=>true,'instanceId'=>$agent['instance_id'],'themeApplied'=>true,'appearanceVersion'=>$saved['version']],JSON_THROW_ON_ERROR);
+        return;
+    }
     if (!in_array($action, ['preflight','provision','activate'], true)) { cmsAgentFail(422, 'Aktion nicht unterstützt.'); }
     $version = cmsAgentVersion($body['version'] ?? null);
     $digest = $body['digest'] ?? '';
