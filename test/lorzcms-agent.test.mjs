@@ -285,7 +285,7 @@ test(
     );
     assert.equal(snapshot.status, 0, snapshot.stderr);
     assert.doesNotMatch(snapshot.stdout, /Redaktion nach Update/);
-    const tampered = join(root, '.lorzcms/releases/3.5.1/src/Store.php');
+    const tampered = join(root, '.lorzcms/releases', next.version, 'src/Store.php');
     await writeFile(tampered, '<?php echo "bad";');
     assert.equal(
       (
@@ -301,7 +301,7 @@ test(
     );
     assert.equal((await call()).data.version, initial.version);
     const active = await readFile(join(root, '.lorzcms/active.json'));
-    await writeFile(join(root, '.lorzcms/releases/3.5.1/manifest.json'), '{}');
+    await writeFile(join(root, '.lorzcms/releases', next.version, 'manifest.json'), '{}');
     assert.equal(
       (
         await call({
