@@ -4709,6 +4709,24 @@ function mcpServer() {
     },
     async ({ installationId }) => toolText(await cmsController.inspect(installationId))
   );
+  s.registerTool(
+    'cms_theme_apply',
+    {
+      description:
+        'Apply a theme designed for a managed LorzCMS website. industrial = Containerdienst/Bau, protection = Unfallversicherung/Sport. Updates only the selected website appearance, preserving existing content and page URLs.',
+      inputSchema: z.object({ installationId: z.uuid(), theme: z.enum(['industrial', 'protection']) })
+    },
+    async ({ installationId, theme }) => toolText(await cmsController.applyTheme(installationId, theme))
+  );
+  s.registerTool(
+    'cms_admin_recovery',
+    {
+      description:
+        "Reset the password of the active CMS administrator through the authenticated site-specific deployment agent and return a one-time temporary password and login URL. Call only on the website owner's explicit request. The old password is not available.",
+      inputSchema: z.object({ installationId: z.uuid() })
+    },
+    async ({ installationId }) => toolText(await cmsController.resetAdminPassword(installationId))
+  );
   return s;
 }
 
