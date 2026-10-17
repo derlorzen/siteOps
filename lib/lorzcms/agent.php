@@ -131,7 +131,7 @@ try {
             $password = $body['newPassword'] ?? '';
             if (!is_string($password) || strlen($password)<20 || strlen($password)>72) { cmsAgentFail(422,'Neues Passwort muss zwischen 20 und 72 Bytes lang sein.'); }
             $email = strtolower(trim((string)($body['adminEmail'] ?? '')));
-            if ($email !== strtolower($actor['email'])) { cmsAgentFail(409,'Administratorkonto stimmt nicht überein.'); }
+            if ($email !== '' && $email !== strtolower($actor['email'])) { cmsAgentFail(409,'Administratorkonto stimmt nicht überein.'); }
             $store->transaction(static function() use ($store,$actor,$password):void {
                 $store->query('UPDATE users SET password_hash=?,auth_version=auth_version+1 WHERE id=? AND role=? AND active=1', [password_hash($password,PASSWORD_DEFAULT),$actor['id'],'admin']);
                 $store->query('DELETE FROM tokens WHERE user_id=?',[$actor['id']]);
