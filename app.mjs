@@ -4535,7 +4535,7 @@ function mcpServer() {
     'allinkl_provision',
     {
       description:
-        'Prepare an empty LorzCMS project directory and its public/ document root and create an ALL-INKL subdomain. Never overwrites existing files or subdomain mappings. HTTPS certificate may still require activation.',
+        'Create a LorzCMS webroot and ALL-INKL subdomain, or safely repair a legacy KAS document-root mismatch for an already registered SiteOps-owned LorzCMS scaffold. Never overwrites existing files or unrelated subdomain mappings. HTTPS certificate may still require activation.',
       inputSchema: allinklProvisionSchema
     },
     async input => toolText(await allInklService.provision(input))
