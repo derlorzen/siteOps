@@ -215,7 +215,8 @@ test('unique Supabase per project, using the documented Coolify one-click servic
 });
 
 test('explicit Coolify destination is persisted and forwarded without leaking project metadata', async () => {
-  const { db } = memoryDb(), remote = coolifyMock();
+  const { db } = memoryDb(),
+    remote = coolifyMock();
   const ctl = createCoolifyService({
     db,
     encrypt: x => 'encrypted:' + x,
@@ -224,7 +225,9 @@ test('explicit Coolify destination is persisted and forwarded without leaking pr
   });
   const connection = await ctl.addConnection({ name: 'Coolify', baseUrl, token: fakeToken });
   const created = await ctl.enqueue({
-    connectionId: connection.id, projectKey, name,
+    connectionId: connection.id,
+    projectKey,
+    name,
     destinationUuid: 'docker-main',
     siteopsProjectId: '22222222-2222-4222-8222-222222222222'
   });

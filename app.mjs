@@ -7157,7 +7157,8 @@ async function start() {
       .send(
         page(
           'Coolify & Supabase',
-          renderCoolifyWorkspace(connections, instances, esc, siteopsProjects) + '<script defer src="/assets/coolify.js"></script>'
+          renderCoolifyWorkspace(connections, instances, esc, siteopsProjects) +
+            '<script defer src="/assets/coolify.js"></script>'
         )
       );
   });
