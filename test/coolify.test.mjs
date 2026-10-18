@@ -166,7 +166,7 @@ test('Coolify API uses bearer authentication, no redirects, and accepts only int
   assert.deepEqual(await api.projects(), []);
   assert.equal((await api.servers()).length, 1);
   assert.equal(state.requests[0].authorization, 'Bearer ' + fakeToken);
-  await assert.rejects(() => api.service('../../metadata'));
+  assert.throws(() => api.service('../../metadata'));
 });
 
 test('unique Supabase per project, using the documented Coolify one-click service API', async () => {
