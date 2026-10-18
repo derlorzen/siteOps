@@ -77,6 +77,8 @@
       const body = Object.fromEntries(new FormData(form));
       if (!body.serverUuid) delete body.serverUuid;
       if (!body.coolifyProjectUuid) delete body.coolifyProjectUuid;
+      if (!body.destinationUuid) delete body.destinationUuid;
+      if (!body.siteopsProjectId) delete body.siteopsProjectId;
       const saved = await api('/api/coolify/supabase', { method: 'POST', body: JSON.stringify(body) });
       show('Supabase-Auftrag eingereiht: ' + saved.name + '. Status regelmäßig aktualisieren.');
       await refresh();
