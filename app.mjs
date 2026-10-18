@@ -4582,7 +4582,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_connections',
     {
-      description: 'List saved Coolify connections (token never returned). API URL and token must be saved once through SiteOps /coolify dashboard, not pasted into ChatGPT.',
+      description:
+        'List saved Coolify connections (token never returned). API URL and token must be saved once through SiteOps /coolify dashboard, not pasted into ChatGPT.',
       inputSchema: z.object({})
     },
     async () => toolText(await coolifyService.listConnections())
@@ -4590,7 +4591,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_connection_info',
     {
-      description: 'Read connected Coolify projects and server choices, verify existing credentials. No resource creation or secret disclosure.',
+      description:
+        'Read connected Coolify projects and server choices, verify existing credentials. No resource creation or secret disclosure.',
       inputSchema: z.object({ connectionId: z.uuid() })
     },
     async ({ connectionId }) => toolText(await coolifyService.connectionInfo(connectionId))
@@ -4598,7 +4600,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_supabase_list',
     {
-      description: 'List stored dedicated self-hosted Supabase deployments per SiteOps project and their rollout states.',
+      description:
+        'List stored dedicated self-hosted Supabase deployments per SiteOps project and their rollout states.',
       inputSchema: z.object({})
     },
     async () => toolText(await coolifyService.instances())
@@ -4606,7 +4609,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_supabase_create',
     {
-      description: 'Provision one dedicated Supabase one-click service on the saved Coolify installation for a project. Creates a separate Coolify project by default; optionally use a specified existing Coolify project, server and SiteOps customerProjectId. The projectKey must be stable and unique; repeated requests with the same key never create another service. This is an actual paid-resource deployment: use ONLY when the user explicitly asks to create a Supabase instance for a project.',
+      description:
+        'Provision one dedicated Supabase one-click service on the saved Coolify installation for a project. Creates a separate Coolify project by default; optionally use a specified existing Coolify project, server and SiteOps customerProjectId. The projectKey must be stable and unique; repeated requests with the same key never create another service. This is an actual paid-resource deployment: use ONLY when the user explicitly asks to create a Supabase instance for a project.',
       inputSchema: coolifySupabaseSchema
     },
     async input => toolText(await coolifyService.enqueue(input))
@@ -4614,7 +4618,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_supabase_status',
     {
-      description: 'Get persisted Supabase deployment status and remote Coolify service metadata without secrets. deployment_requested does not prove a healthy Supabase API.',
+      description:
+        'Get persisted Supabase deployment status and remote Coolify service metadata without secrets. deployment_requested does not prove a healthy Supabase API.',
       inputSchema: z.object({ id: z.uuid() })
     },
     async ({ id }) => toolText(await coolifyService.status(id))
@@ -4622,7 +4627,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_supabase_retry',
     {
-      description: 'Resume an interrupted Coolify Supabase provisioning job. Reconciles existing project and service before a new remote create request; never deletes existing resources.',
+      description:
+        'Resume an interrupted Coolify Supabase provisioning job. Reconciles existing project and service before a new remote create request; never deletes existing resources.',
       inputSchema: z.object({ id: z.uuid() })
     },
     async ({ id }) => toolText(await coolifyService.retry(id))
@@ -5471,7 +5477,10 @@ function mcpInfoPage() {
       'Hosting / ALL-INKL',
       'website_create_plan, website_create, website_create_status, allinkl_ssl_list, allinkl_ssl_status, allinkl_ssl_enable, allinkl_accounts, allinkl_domains, allinkl_diagnostics, allinkl_dns_list, allinkl_dns_add, allinkl_dns_update, allinkl_provision, cms_install_allinkl'
     ],
-    ['Coolify / Supabase', 'coolify_connections, coolify_connection_info, coolify_supabase_list, coolify_supabase_create, coolify_supabase_status, coolify_supabase_retry'],
+    [
+      'Coolify / Supabase',
+      'coolify_connections, coolify_connection_info, coolify_supabase_list, coolify_supabase_create, coolify_supabase_status, coolify_supabase_retry'
+    ],
     ['Dateien', 'files_list, text_search, files_find, file_read'],
     ['Änderungen', 'change_preview, change_apply, history_list, history_diff, rollback_preview'],
     ['Backups', 'site_backup, backup_status, backups_list, backup_restore_preview']
@@ -7139,15 +7148,22 @@ async function start() {
   });
   app.get('/coolify', async (_req, reply) => {
     const [connections, instances] = await Promise.all([coolifyService.listConnections(), coolifyService.instances()]);
-    return reply.type('text/html').send(page('Coolify & Supabase',
-      renderCoolifyWorkspace(connections, instances, esc) + '<script defer src="/assets/coolify.js"></script>'));
+    return reply
+      .type('text/html')
+      .send(
+        page(
+          'Coolify & Supabase',
+          renderCoolifyWorkspace(connections, instances, esc) + '<script defer src="/assets/coolify.js"></script>'
+        )
+      );
   });
   app.get('/api/coolify/connections', () => coolifyService.listConnections());
   app.post('/api/coolify/connections', req => coolifyService.addConnection(req.body));
   app.get('/api/coolify/connections/:id/info', req => coolifyService.connectionInfo(req.params.id));
   app.get('/api/coolify/supabase', () => coolifyService.instances());
   app.post('/api/coolify/supabase', (req, reply) =>
-    coolifyService.enqueue(req.body).then(item => reply.code(202).send(item)));
+    coolifyService.enqueue(req.body).then(item => reply.code(202).send(item))
+  );
   app.get('/api/coolify/supabase/:id', req => coolifyService.status(req.params.id));
   app.post('/api/coolify/supabase/:id/retry', req => coolifyService.retry(req.params.id));
   app.post('/api/website-factory/plan', req => websiteFactory.plan(req.body));

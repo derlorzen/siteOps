@@ -52,7 +52,10 @@
       for (const item of result.servers) server.add(new Option(item.name + ' · ' + item.uuid, item.uuid));
       for (const item of result.projects) project.add(new Option(item.name + ' · ' + item.uuid, item.uuid));
       if (result.defaultServerUuid) server.value = result.defaultServerUuid;
-      $('coolifyInfo').textContent = result.servers.length + ' Server, ' + result.projects.length +
+      $('coolifyInfo').textContent =
+        result.servers.length +
+        ' Server, ' +
+        result.projects.length +
         ' Coolify-Projekte gefunden. Neue Projektkennung = eigene Supabase-Instanz.';
     } catch (error) {
       $('coolifyInfo').textContent = 'Coolify-Verbindung konnte nicht geprüft werden: ' + error.message;
@@ -66,7 +69,8 @@
   }
   $('coolifySupabaseCreate')?.addEventListener('submit', async event => {
     event.preventDefault();
-    const form = event.currentTarget, button = form.querySelector('[type=submit]');
+    const form = event.currentTarget,
+      button = form.querySelector('[type=submit]');
     if (!confirm('Für dieses Projekt eine eigene Supabase-Instanz auf Coolify anlegen und starten?')) return;
     button.disabled = true;
     try {
@@ -108,9 +112,16 @@
         check.addEventListener('click', async () => {
           try {
             const status = await api('/api/coolify/supabase/' + encodeURIComponent(item.id));
-            show(status.name + ': ' + status.state + (status.lastError ? ' · ' + status.lastError : '') +
-              (status.serviceUuid ? ' · Service ' + status.serviceUuid : ''));
-          } catch (error) { show(error.message, true); }
+            show(
+              status.name +
+                ': ' +
+                status.state +
+                (status.lastError ? ' · ' + status.lastError : '') +
+                (status.serviceUuid ? ' · Service ' + status.serviceUuid : '')
+            );
+          } catch (error) {
+            show(error.message, true);
+          }
         });
         cell.append(check);
         if (item.state === 'needs_attention') {
@@ -119,13 +130,18 @@
           retry.textContent = 'Erneut versuchen';
           retry.className = 'ghost';
           retry.addEventListener('click', async () => {
-            if (!confirm('Coolify-Ressourcen vor einem erneuten Versuch abgleichen und den Auftrag fortsetzen?')) return;
+            if (!confirm('Coolify-Ressourcen vor einem erneuten Versuch abgleichen und den Auftrag fortsetzen?'))
+              return;
             try {
-              await api('/api/coolify/supabase/' + encodeURIComponent(item.id) + '/retry',
-                { method: 'POST', body: '{}' });
+              await api('/api/coolify/supabase/' + encodeURIComponent(item.id) + '/retry', {
+                method: 'POST',
+                body: '{}'
+              });
               show('Erneuter Versuch eingereiht.');
               await refresh();
-            } catch (error) { show(error.message, true); }
+            } catch (error) {
+              show(error.message, true);
+            }
           });
           cell.append(retry);
         }
@@ -133,13 +149,16 @@
         tbody.append(row);
       }
       if (!items.length) {
-        const row = document.createElement('tr'), cell = document.createElement('td');
+        const row = document.createElement('tr'),
+          cell = document.createElement('td');
         cell.colSpan = 4;
         cell.textContent = 'Noch keine Supabase-Instanzen.';
         row.append(cell);
         tbody.append(row);
       }
-    } catch (error) { show(error.message, true); }
+    } catch (error) {
+      show(error.message, true);
+    }
   }
   $('coolifyRefresh')?.addEventListener('click', () => void refresh());
 })();

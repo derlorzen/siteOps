@@ -11,13 +11,19 @@ const name = 'Meine App';
 function coolifyMock() {
   const state = { projects: [], services: [], starts: [], requests: [] };
   const response = (data, status = 200) => ({
-    ok: status >= 200 && status < 300, status,
+    ok: status >= 200 && status < 300,
+    status,
     headers: { get: () => null },
     text: async () => JSON.stringify(data)
   });
   const request = async (url, options) => {
     const path = new URL(url).pathname;
-    state.requests.push({ path, method: options.method, authorization: options.headers.Authorization, redirect: options.redirect });
+    state.requests.push({
+      path,
+      method: options.method,
+      authorization: options.headers.Authorization,
+      redirect: options.redirect
+    });
     assert.equal(options.headers.Authorization, 'Bearer ' + fakeToken);
     assert.equal(options.redirect, 'error');
     if (path === '/api/v1/projects' && options.method === 'GET') return response(state.projects);
@@ -69,13 +75,29 @@ function memoryDb() {
       }
       if (normalized.startsWith('select id from customer_projects')) return [[{ id: params[0] }]];
       if (normalized.startsWith('insert ignore into coolify_supabase_instances')) {
-        const [id, connection_id, project_key, name, siteops_project_id,
-          coolify_project_uuid, environment_name, server_uuid] = params;
+        const [
+          id,
+          connection_id,
+          project_key,
+          name,
+          siteops_project_id,
+          coolify_project_uuid,
+          environment_name,
+          server_uuid
+        ] = params;
         if (!state.instances.some(x => x.connection_id === connection_id && x.project_key === project_key))
           state.instances.push({
-            id, connection_id, project_key, name, siteops_project_id,
-            coolify_project_uuid, environment_name, server_uuid,
-            service_uuid: null, state: 'queued', last_error: null
+            id,
+            connection_id,
+            project_key,
+            name,
+            siteops_project_id,
+            coolify_project_uuid,
+            environment_name,
+            server_uuid,
+            service_uuid: null,
+            state: 'queued',
+            last_error: null
           });
         return [{ affectedRows: 1 }];
       }
@@ -83,29 +105,39 @@ function memoryDb() {
         return [state.instances.filter(r => r.connection_id === params[0] && r.project_key === params[1])];
       if (normalized.startsWith('select * from coolify_supabase_instances where id'))
         return [state.instances.filter(r => r.id === params[0])];
-      if (normalized.startsWith('select * from coolify_supabase_instances order by'))
-        return [state.instances];
+      if (normalized.startsWith('select * from coolify_supabase_instances order by')) return [state.instances];
       if (normalized.startsWith('select * from coolify_supabase_instances where state='))
         return [state.instances.filter(r => r.state === 'queued').slice(0, 1)];
       if (normalized.startsWith('update coolify_supabase_instances set')) {
         let count = 0;
         for (const r of state.instances) {
           if (normalized.includes("where state='provisioning'") && r.state === 'provisioning') {
-            r.state = 'needs_attention'; count++;
+            r.state = 'needs_attention';
+            count++;
           } else if (normalized.includes('server_uuid=?') && r.id === params[1]) {
-            r.server_uuid = params[0]; count++;
+            r.server_uuid = params[0];
+            count++;
           } else if (normalized.includes('coolify_project_uuid=?') && r.id === params[1]) {
-            r.coolify_project_uuid = params[0]; count++;
+            r.coolify_project_uuid = params[0];
+            count++;
           } else if (normalized.includes('service_uuid=?') && r.id === params[1]) {
-            r.service_uuid = params[0]; count++;
+            r.service_uuid = params[0];
+            count++;
           } else if (normalized.includes("state='provisioning'") && r.id === params[0] && r.state === 'queued') {
-            r.state = 'provisioning'; count++;
+            r.state = 'provisioning';
+            count++;
           } else if (normalized.includes("state='deployment_requested'") && r.id === params[0]) {
-            r.state = 'deployment_requested'; r.last_error = null; count++;
+            r.state = 'deployment_requested';
+            r.last_error = null;
+            count++;
           } else if (normalized.includes("state='needs_attention'") && r.id === params[1]) {
-            r.state = 'needs_attention'; r.last_error = params[0]; count++;
+            r.state = 'needs_attention';
+            r.last_error = params[0];
+            count++;
           } else if (normalized.includes("state='queued'") && r.id === params[0] && r.state === 'needs_attention') {
-            r.state = 'queued'; r.last_error = null; count++;
+            r.state = 'queued';
+            r.last_error = null;
+            count++;
           }
         }
         return [{ affectedRows: count }];
@@ -118,9 +150,13 @@ function memoryDb() {
 
 test('Coolify connection accepts only clean HTTPS origin, no paths or credentials', () => {
   assert.equal(coolifyBaseUrl('https://coolify.example.de/'), baseUrl);
-  for (const url of ['http://coolify.example.de', 'https://user:secret@coolify.example.de',
-    'https://coolify.example.de/some/api', 'https://coolify.example.de/?token=abc',
-    'https://localhost'])
+  for (const url of [
+    'http://coolify.example.de',
+    'https://user:secret@coolify.example.de',
+    'https://coolify.example.de/some/api',
+    'https://coolify.example.de/?token=abc',
+    'https://localhost'
+  ])
     assert.throws(() => coolifyBaseUrl(url));
 });
 
@@ -134,12 +170,15 @@ test('Coolify API uses bearer authentication, no redirects, and accepts only int
 });
 
 test('unique Supabase per project, using the documented Coolify one-click service API', async () => {
-  const { db, state } = memoryDb(), remote = coolifyMock();
+  const { db, state } = memoryDb(),
+    remote = coolifyMock();
   const encrypt = value => 'encrypted:' + value;
   const decrypt = value => value.slice('encrypted:'.length);
   const controller = createCoolifyService({ db, encrypt, decrypt, request: remote.request });
   const connection = await controller.addConnection({
-    name: 'Eigene Coolify Instanz', baseUrl, token: fakeToken
+    name: 'Eigene Coolify Instanz',
+    baseUrl,
+    token: fakeToken
   });
   assert.equal(connection.baseUrl, baseUrl);
   assert.equal(JSON.stringify(await controller.listConnections()).includes(fakeToken), false);
@@ -173,16 +212,25 @@ test('unique Supabase per project, using the documented Coolify one-click servic
 });
 
 test('remote reconciliation after interrupted project/service API succeeds without second creation', async () => {
-  const { db, state } = memoryDb(), remote = coolifyMock();
-  const enc = value => 'encoded:' + value, dec = value => value.slice(8);
+  const { db, state } = memoryDb(),
+    remote = coolifyMock();
+  const enc = value => 'encoded:' + value,
+    dec = value => value.slice(8);
   const service = createCoolifyService({ db, encrypt: enc, decrypt: dec, request: remote.request });
   const connection = await service.addConnection({ name: 'Production', baseUrl, token: fakeToken });
   const created = await service.enqueue({ connectionId: connection.id, projectKey, name });
   // Simulate remote POSTs having succeeded, while database checkpoint writes were interrupted.
-  remote.state.projects.push({ uuid: 'project-one', name: 'SiteOps meine-app',
-    description: 'Managed by SiteOps / supabase / meine-app' });
-  remote.state.services.push({ uuid: 'supabase-one', name: 'siteops-supabase-meine-app',
-    description: 'Managed by SiteOps / supabase / meine-app', service_type: 'supabase' });
+  remote.state.projects.push({
+    uuid: 'project-one',
+    name: 'SiteOps meine-app',
+    description: 'Managed by SiteOps / supabase / meine-app'
+  });
+  remote.state.services.push({
+    uuid: 'supabase-one',
+    name: 'siteops-supabase-meine-app',
+    description: 'Managed by SiteOps / supabase / meine-app',
+    service_type: 'supabase'
+  });
   await service.tick();
   assert.equal(remote.state.projects.length, 1);
   assert.equal(remote.state.services.length, 1);
@@ -192,11 +240,16 @@ test('remote reconciliation after interrupted project/service API succeeds witho
 });
 
 test('preexisting Coolify resources with same name but wrong SiteOps marker are rejected', async () => {
-  const { db } = memoryDb(), remote = coolifyMock();
+  const { db } = memoryDb(),
+    remote = coolifyMock();
   const controller = createCoolifyService({ db, encrypt: x => x, decrypt: x => x, request: remote.request });
   const connection = await controller.addConnection({ name: 'Coolify', baseUrl, token: fakeToken });
   const job = await controller.enqueue({ connectionId: connection.id, projectKey, name });
-  remote.state.projects.push({ uuid: 'another-project', name: 'SiteOps meine-app', description: 'not managed by SiteOps' });
+  remote.state.projects.push({
+    uuid: 'another-project',
+    name: 'SiteOps meine-app',
+    description: 'not managed by SiteOps'
+  });
   await controller.tick();
   const status = await controller.status(job.id);
   assert.equal(status.state, 'needs_attention');
@@ -206,13 +259,24 @@ test('preexisting Coolify resources with same name but wrong SiteOps marker are 
 });
 
 test('API errors and project mismatch do not return secrets or modify an unrelated project', async () => {
-  const { db } = memoryDb(), remote = coolifyMock();
-  const controller = createCoolifyService({ db, encrypt: x => 'encrypted:' + x,
-    decrypt: x => x.slice(10), request: remote.request });
+  const { db } = memoryDb(),
+    remote = coolifyMock();
+  const controller = createCoolifyService({
+    db,
+    encrypt: x => 'encrypted:' + x,
+    decrypt: x => x.slice(10),
+    request: remote.request
+  });
   const connection = await controller.addConnection({ name: 'Production', baseUrl, token: fakeToken });
   await controller.enqueue({ connectionId: connection.id, projectKey, name });
-  await assert.rejects(() => controller.enqueue({
-    connectionId: connection.id, projectKey, name,
-    coolifyProjectUuid: 'different-existing-project'
-  }), /anderer Projekt- oder Serverzuordnung/);
+  await assert.rejects(
+    () =>
+      controller.enqueue({
+        connectionId: connection.id,
+        projectKey,
+        name,
+        coolifyProjectUuid: 'different-existing-project'
+      }),
+    /anderer Projekt- oder Serverzuordnung/
+  );
 });
