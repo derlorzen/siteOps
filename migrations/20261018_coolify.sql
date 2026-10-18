@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS coolify_supabase_instances (
   coolify_project_uuid VARCHAR(191) NULL,
   environment_name VARCHAR(100) NOT NULL DEFAULT 'production',
   server_uuid VARCHAR(191) NULL,
+  destination_uuid VARCHAR(191) NULL,
   service_uuid VARCHAR(191) NULL,
   state VARCHAR(40) NOT NULL DEFAULT 'queued',
   last_error VARCHAR(450) NULL,
