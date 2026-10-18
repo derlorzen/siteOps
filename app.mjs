@@ -7147,13 +7147,17 @@ async function start() {
       );
   });
   app.get('/coolify', async (_req, reply) => {
-    const [connections, instances] = await Promise.all([coolifyService.listConnections(), coolifyService.instances()]);
+    const [connections, instances, [siteopsProjects]] = await Promise.all([
+      coolifyService.listConnections(),
+      coolifyService.instances(),
+      db.query('SELECT id,name FROM customer_projects ORDER BY name')
+    ]);
     return reply
       .type('text/html')
       .send(
         page(
           'Coolify & Supabase',
-          renderCoolifyWorkspace(connections, instances, esc) + '<script defer src="/assets/coolify.js"></script>'
+          renderCoolifyWorkspace(connections, instances, esc, siteopsProjects) + '<script defer src="/assets/coolify.js"></script>'
         )
       );
   });
