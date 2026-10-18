@@ -26,6 +26,8 @@ import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/work
 import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
 import { createAllInklSslService, allinklSslRequestSchema } from './lib/allinkl-ssl.mjs';
 import { createAllInklService, allinklProvisionSchema, allinklDnsRecordSchema } from './lib/allinkl.mjs';
+import { createCoolifyService, coolifySupabaseSchema } from './lib/coolify.mjs';
+import { renderCoolifyWorkspace } from './lib/coolify-ui.mjs';
 import { renderAllInklWorkspace } from './lib/allinkl-ui.mjs';
 import { createWebsiteFactory, websiteCreateSchema } from './lib/website-factory.mjs';
 import { websiteProvisionSchema, prepareEmptyHostingTarget } from './lib/site-provisioning.mjs';
@@ -231,6 +233,7 @@ async function archiveIssuedInvoice(snapshot, pdf) {
 const billingController = createBillingController({ db, archive: archiveIssuedInvoice });
 const siteProjectService = createSiteProjectService(db);
 const connectionProfiles = createConnectionProfiles({ db, encrypt, decrypt });
+const coolifyService = createCoolifyService({ db, encrypt, decrypt });
 const allInklService = createAllInklService({ db, encrypt, decrypt, profiles: connectionProfiles, connectSite });
 const sslService = createAllInklSslService({ db, encrypt, decrypt, allInklService, connectSite });
 const websiteFactory = createWebsiteFactory({
@@ -4577,6 +4580,54 @@ function mcpServer() {
     async input => toolText(await sslService.enqueue(input))
   );
   s.registerTool(
+    'coolify_connections',
+    {
+      description: 'List saved Coolify connections (token never returned). API URL and token must be saved once through SiteOps /coolify dashboard, not pasted into ChatGPT.',
+      inputSchema: z.object({})
+    },
+    async () => toolText(await coolifyService.listConnections())
+  );
+  s.registerTool(
+    'coolify_connection_info',
+    {
+      description: 'Read connected Coolify projects and server choices, verify existing credentials. No resource creation or secret disclosure.',
+      inputSchema: z.object({ connectionId: z.uuid() })
+    },
+    async ({ connectionId }) => toolText(await coolifyService.connectionInfo(connectionId))
+  );
+  s.registerTool(
+    'coolify_supabase_list',
+    {
+      description: 'List stored dedicated self-hosted Supabase deployments per SiteOps project and their rollout states.',
+      inputSchema: z.object({})
+    },
+    async () => toolText(await coolifyService.instances())
+  );
+  s.registerTool(
+    'coolify_supabase_create',
+    {
+      description: 'Provision one dedicated Supabase one-click service on the saved Coolify installation for a project. Creates a separate Coolify project by default; optionally use a specified existing Coolify project, server and SiteOps customerProjectId. The projectKey must be stable and unique; repeated requests with the same key never create another service. This is an actual paid-resource deployment: use ONLY when the user explicitly asks to create a Supabase instance for a project.',
+      inputSchema: coolifySupabaseSchema
+    },
+    async input => toolText(await coolifyService.enqueue(input))
+  );
+  s.registerTool(
+    'coolify_supabase_status',
+    {
+      description: 'Get persisted Supabase deployment status and remote Coolify service metadata without secrets. deployment_requested does not prove a healthy Supabase API.',
+      inputSchema: z.object({ id: z.uuid() })
+    },
+    async ({ id }) => toolText(await coolifyService.status(id))
+  );
+  s.registerTool(
+    'coolify_supabase_retry',
+    {
+      description: 'Resume an interrupted Coolify Supabase provisioning job. Reconciles existing project and service before a new remote create request; never deletes existing resources.',
+      inputSchema: z.object({ id: z.uuid() })
+    },
+    async ({ id }) => toolText(await coolifyService.retry(id))
+  );
+  s.registerTool(
     'website_create_plan',
     {
       description:
@@ -5350,7 +5401,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/coolify">Coolify</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -5420,7 +5471,8 @@ function mcpInfoPage() {
       'Hosting / ALL-INKL',
       'website_create_plan, website_create, website_create_status, allinkl_ssl_list, allinkl_ssl_status, allinkl_ssl_enable, allinkl_accounts, allinkl_domains, allinkl_diagnostics, allinkl_dns_list, allinkl_dns_add, allinkl_dns_update, allinkl_provision, cms_install_allinkl'
     ],
-    ['Dateien', 'files_list, files_find, text_search, file_read'],
+    ['Coolify / Supabase', 'coolify_connections, coolify_connection_info, coolify_supabase_list, coolify_supabase_create, coolify_supabase_status, coolify_supabase_retry'],
+    ['Dateien', 'files_list, text_search, files_find, file_read'],
     ['Änderungen', 'change_preview, change_apply, history_list, history_diff, rollback_preview'],
     ['Backups', 'site_backup, backup_status, backups_list, backup_restore_preview']
   ];
@@ -5443,6 +5495,11 @@ function mcpInfoPage() {
     '<a class="btn" href="/hosting">Hosting & DNS verwalten →</a></div>' +
     '<p class="lead">KAS-Zugänge hinterlegen, gespeicherte FTP-/SFTP-Profile zuordnen, ' +
     'Subdomains für LorzCMS vorbereiten und DNS-Einträge verwalten.</p></section>';
+  html +=
+    '<section aria-labelledby="integrationsCoolifyHeading"><div class="sectionhead"><div>' +
+    '<span class="eyebrow">Container & Datenbank</span><h2 id="integrationsCoolifyHeading">Coolify & Supabase</h2></div>' +
+    '<a class="btn" href="/coolify">Coolify verwalten →</a></div>' +
+    '<p class="lead">Coolify-API sicher verbinden und je SiteOps-Projekt eine eigene Supabase-Instanz erstellen.</p></section>';
   html +=
     '<div class="metrics big mcp-metrics"><span>Streamable HTTP<em>Transport</em></span><span>OAuth 2.1<em>Primäre Auth</em></span><span>CIMD + DCR<em>Client Registration</em></span><span>PKCE S256<em>Authorization Code</em></span><span>' +
     (cfg.mcpToken ? 'aktiv' : 'aus') +
@@ -7060,7 +7117,7 @@ async function start() {
   registerSiteProjectRoutes(app, siteProjectService);
   app.addHook('preHandler', async (req, reply) => {
     if (
-      !['/api/hosting/allinkl/', '/api/website-factory/'].some(prefix => req.url.startsWith(prefix)) ||
+      !['/api/hosting/allinkl/', '/api/website-factory/', '/api/coolify/'].some(prefix => req.url.startsWith(prefix)) ||
       ['GET', 'HEAD'].includes(req.method)
     )
       return;
@@ -7080,6 +7137,19 @@ async function start() {
         )
       );
   });
+  app.get('/coolify', async (_req, reply) => {
+    const [connections, instances] = await Promise.all([coolifyService.listConnections(), coolifyService.instances()]);
+    return reply.type('text/html').send(page('Coolify & Supabase',
+      renderCoolifyWorkspace(connections, instances, esc) + '<script defer src="/assets/coolify.js"></script>'));
+  });
+  app.get('/api/coolify/connections', () => coolifyService.listConnections());
+  app.post('/api/coolify/connections', req => coolifyService.addConnection(req.body));
+  app.get('/api/coolify/connections/:id/info', req => coolifyService.connectionInfo(req.params.id));
+  app.get('/api/coolify/supabase', () => coolifyService.instances());
+  app.post('/api/coolify/supabase', (req, reply) =>
+    coolifyService.enqueue(req.body).then(item => reply.code(202).send(item)));
+  app.get('/api/coolify/supabase/:id', req => coolifyService.status(req.params.id));
+  app.post('/api/coolify/supabase/:id/retry', req => coolifyService.retry(req.params.id));
   app.post('/api/website-factory/plan', req => websiteFactory.plan(req.body));
   app.post('/api/website-factory/create', req => websiteFactory.create(req.body));
   app.get('/api/website-factory/:installationId', req => websiteFactory.status(req.params.installationId));
@@ -7450,6 +7520,7 @@ async function start() {
     startSyntheticWorker();
     cmsController.startWorker();
     sslService.startWorker();
+    coolifyService.startWorker();
   }
   await app.listen({ host: cfg.host, port: cfg.port });
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');
