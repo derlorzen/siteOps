@@ -83,7 +83,8 @@ function memoryDb() {
           siteops_project_id,
           coolify_project_uuid,
           environment_name,
-          server_uuid
+          server_uuid,
+          destination_uuid
         ] = params;
         if (!state.instances.some(x => x.connection_id === connection_id && x.project_key === project_key))
           state.instances.push({
@@ -95,6 +96,7 @@ function memoryDb() {
             coolify_project_uuid,
             environment_name,
             server_uuid,
+            destination_uuid,
             service_uuid: null,
             state: 'queued',
             last_error: null
@@ -199,6 +201,7 @@ test('unique Supabase per project, using the documented Coolify one-click servic
   assert.equal(service.server_uuid, 'server-one');
   assert.equal(service.environment_name, 'production');
   assert.equal(service.instant_deploy, false);
+  assert.equal(service.destination_uuid, undefined);
   assert.equal(service.force_domain_override, false);
   assert.equal(remote.state.starts.length, 1);
   const status = await controller.status(first.id);
@@ -207,6 +210,27 @@ test('unique Supabase per project, using the documented Coolify one-click servic
   assert.ok(!JSON.stringify(status).includes(fakeToken));
   assert.ok(!JSON.stringify(status).includes('service_role'));
   await controller.tick();
+  assert.equal(remote.state.services.length, 1);
+  assert.equal(remote.state.starts.length, 1);
+});
+
+test('explicit Coolify destination is persisted and forwarded without leaking project metadata', async () => {
+  const { db } = memoryDb(), remote = coolifyMock();
+  const ctl = createCoolifyService({
+    db,
+    encrypt: x => 'encrypted:' + x,
+    decrypt: x => x.slice(10),
+    request: remote.request
+  });
+  const connection = await ctl.addConnection({ name: 'Coolify', baseUrl, token: fakeToken });
+  const created = await ctl.enqueue({
+    connectionId: connection.id, projectKey, name,
+    destinationUuid: 'docker-main',
+    siteopsProjectId: '22222222-2222-4222-8222-222222222222'
+  });
+  assert.equal(created.destinationUuid, 'docker-main');
+  await ctl.tick();
+  assert.equal(remote.state.services[0].destination_uuid, 'docker-main');
   assert.equal(remote.state.services.length, 1);
   assert.equal(remote.state.starts.length, 1);
 });
