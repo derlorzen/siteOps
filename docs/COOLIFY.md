@@ -39,7 +39,7 @@ Ablauf:
 1. `coolify_supabase_create` erhält gespeicherte `connectionId`, einen
    **dauerhaft stabilen** `projectKey` (z. B. `kunden-app`), einen Namen
    und optional `siteopsProjectId`, `serverUuid`,
-   `coolifyProjectUuid` sowie `environmentName`.
+   `destinationUuid`, `coolifyProjectUuid` sowie `environmentName`.
 2. SiteOps speichert vor dem ersten externen Aufruf einen eigenen
    DB-Auftrag mit Unique-Key `(connectionId,projectKey)`.
    **Mehrfaches Aufrufen** mit derselben Projektkennung erzeugt keine
