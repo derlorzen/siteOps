@@ -54,7 +54,7 @@ function coolifyMock() {
     if (path === '/api/v1/services/supabase-one/databases' && options.method === 'GET') {
       return response(state.serviceDatabases || []);
     }
-    if (path.startsWith('/api/v1/services/supabase-one/logs?') && options.method === 'GET') {
+    if (path === '/api/v1/services/supabase-one/logs' && options.method === 'GET') {
       return response({ logs: state.serviceLogs || '' });
     }
     if (path.startsWith('/api/v1/services/') && !path.endsWith('/start') && options.method === 'GET') {
