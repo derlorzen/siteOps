@@ -3995,7 +3995,7 @@ const toolText = value => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }]
 });
 function mcpServer() {
-  const s = new McpServer({ name: 'lorzen-siteops', version: '1.2.0' });
+  const s = new McpServer({ name: 'lorzen-siteops', version: buildInfo.version });
   s.registerTool(
     'sites_list',
     {

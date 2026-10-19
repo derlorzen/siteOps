@@ -26,12 +26,13 @@ test('footer build fingerprint reflects the real deployed files, without Git met
     const first = await resolveBuildInfo({ root, environ: {} });
     const again = await resolveBuildInfo({ root, environ: {} });
     assert.deepEqual(first, again);
-    assert.equal(first.version, '1.2.0');
+    assert.equal(first.version, '1.2.0+build.' + first.build.slice(0, 8));
     assert.equal(first.commit, null);
     assert.match(first.build, /^[a-f0-9]{12}$/);
     await writeFile(join(root, 'public', 'crm-app.js'), 'changed deployment');
     const second = await resolveBuildInfo({ root, environ: {} });
     assert.notEqual(second.build, first.build);
+    assert.notEqual(second.version, first.version);
     assert.equal(second.fingerprint.length, 64);
   });
 });
