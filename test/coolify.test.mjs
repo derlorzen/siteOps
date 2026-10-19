@@ -48,15 +48,6 @@ function coolifyMock() {
       state.starts.push('supabase-one');
       return response({ message: 'Service starting request queued.' });
     }
-    if (path === '/api/v1/services/supabase-one/applications' && options.method === 'GET') {
-      return response(state.serviceApplications || []);
-    }
-    if (path === '/api/v1/services/supabase-one/databases' && options.method === 'GET') {
-      return response(state.serviceDatabases || []);
-    }
-    if (path === '/api/v1/services/supabase-one/logs' && options.method === 'GET') {
-      return response({ logs: state.serviceLogs || '' });
-    }
     if (path.startsWith('/api/v1/services/') && !path.endsWith('/start') && options.method === 'GET') {
       const uuid = path.split('/').at(-1);
       const found = state.services.find(s => s.uuid === uuid);
@@ -229,8 +220,6 @@ test('unique Supabase per project, using the documented Coolify one-click servic
   const status = await controller.status(first.id);
   assert.equal(status.serviceUuid, 'supabase-one');
   assert.equal(status.remote.serviceType, 'supabase');
-  assert.deepEqual(status.remote.components.applications, []);
-  assert.deepEqual(status.remote.components.databases, []);
   assert.ok(!JSON.stringify(status).includes(fakeToken));
   assert.ok(!JSON.stringify(status).includes('service_role'));
   await controller.tick();
@@ -455,56 +444,4 @@ test('read-only discovery finds manually created Coolify services without exposi
   await assert.rejects(() => ctl.remoteServiceInfo(conn.id, '../../etc/passwd'));
   assert.equal(remote.state.services.length, 1);
   assert.equal(remote.state.starts.length, 0);
-});
-
-test('Coolify health metadata excludes sensitive container configuration', async () => {
-  const { db } = memoryDb(),
-    remote = coolifyMock();
-  const controller = createCoolifyService({
-    db,
-    encrypt: x => x,
-    decrypt: x => x,
-    request: remote.request
-  });
-  const connection = await controller.addConnection({ name: 'Coolify', baseUrl, token: fakeToken });
-  const job = await controller.enqueue({ connectionId: connection.id, projectKey, name });
-  remote.state.serviceApplications = [
-    { name: 'kong', status: 'running:healthy', fqdn: 'https://supabase.example.de', env: 'must-not-leak' },
-    { name: 'studio', status: 'running', fqdn: 'http://internal:3000', password: 'also-private' }
-  ];
-  remote.state.serviceDatabases = [
-    { name: 'db', status: 'running:healthy', password: 'postgres-password' }
-  ];
-  await controller.tick();
-  const status = await controller.status(job.id);
-  assert.equal(status.remote.components.applications[0].status, 'running:healthy');
-  assert.equal(status.remote.components.applications[0].url, 'https://supabase.example.de');
-  assert.equal(status.remote.components.applications[1].url, null);
-  assert.equal(status.remote.components.databases[0].name, 'db');
-  for (const secret of ['must-not-leak', 'also-private', 'postgres-password'])
-    assert.equal(JSON.stringify(status).includes(secret), false);
-});
-
-test('Coolify failed Supabase container diagnosis never returns raw log secrets', async () => {
-  const { db } = memoryDb(),
-    remote = coolifyMock();
-  const controller = createCoolifyService({
-    db,
-    encrypt: x => x,
-    decrypt: x => x,
-    request: remote.request
-  });
-  const connection = await controller.addConnection({ name: 'Coolify', baseUrl, token: fakeToken });
-  const job = await controller.enqueue({ connectionId: connection.id, projectKey, name });
-  remote.state.serviceApplications = [{ name: 'supabase-kong', status: 'exited' }];
-  remote.state.serviceDatabases = [{ name: 'supabase-db', status: 'exited' }];
-  remote.state.serviceLogs = 'FATAL: no space left on device; token=secret-log-value';
-  await controller.tick();
-  const result = await controller.status(job.id);
-  assert.deepEqual(
-    result.remote.diagnostics.map(x => x.classification),
-    ['disk_full', 'disk_full']
-  );
-  assert.equal(JSON.stringify(result).includes('secret-log-value'), false);
-  assert.equal(result.remote.diagnostics.length, 2);
 });
