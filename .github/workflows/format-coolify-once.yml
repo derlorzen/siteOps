@@ -1,0 +1,35 @@
+name: One-time Coolify formatter
+
+on:
+  push:
+    paths:
+      - '.github/workflows/format-coolify-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Format only Coolify diagnostic files
+        run: npx prettier --write lib/coolify.mjs test/coolify.test.mjs
+      - name: Commit formatting changes
+        run: |
+          if git diff --quiet -- lib/coolify.mjs test/coolify.test.mjs; then
+            echo "Already formatted"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/coolify.mjs test/coolify.test.mjs
+          git commit -m "Format Coolify Supabase diagnostics"
+          git push
