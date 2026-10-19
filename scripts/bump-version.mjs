@@ -18,9 +18,7 @@ export async function bumpVersion(root = process.cwd()) {
   pkg.version = version;
   lock.version = version;
   lock.packages[''].version = version;
-  await Promise.all(
-    [pkg, lock].map((data, index) => writeFile(paths[index], JSON.stringify(data, null, 2) + '\n'))
-  );
+  await Promise.all([pkg, lock].map((data, index) => writeFile(paths[index], JSON.stringify(data, null, 2) + '\n')));
   return version;
 }
 

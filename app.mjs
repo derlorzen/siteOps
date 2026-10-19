@@ -7164,7 +7164,9 @@ async function start() {
         page(
           'Coolify & Supabase',
           renderCoolifyWorkspace(connections, instances, esc, siteopsProjects) +
-            '<script defer src="/assets/coolify.js?v=' + buildInfo.build + '"></script>'
+            '<script defer src="/assets/coolify.js?v=' +
+            buildInfo.build +
+            '"></script>'
         )
       );
   });
