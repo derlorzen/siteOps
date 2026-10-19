@@ -6937,6 +6937,12 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/allinkl.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/coolify.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/coolify.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/ops-workspace.js', async (_r, reply) =>
     reply
       .type('text/javascript')
@@ -7158,7 +7164,7 @@ async function start() {
         page(
           'Coolify & Supabase',
           renderCoolifyWorkspace(connections, instances, esc, siteopsProjects) +
-            '<script defer src="/assets/coolify.js"></script>'
+            '<script defer src="/assets/coolify.js?v=' + buildInfo.build + '"></script>'
         )
       );
   });
