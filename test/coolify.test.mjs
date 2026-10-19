@@ -408,3 +408,29 @@ test('Coolify browser script is served explicitly with fresh build URL', async (
   assert.match(script, /Verbindung prüfen/);
   assert.match(script, /ist gespeichert, aber die API-Prüfung scheitert/);
 });
+
+test('read-only discovery finds manually created Coolify services without exposing secrets', async () => {
+  const { db } = memoryDb(), remote = coolifyMock();
+  const ctl = createCoolifyService({
+    db, encrypt: s => 'encrypted:' + s, decrypt: s => s.slice('encrypted:'.length),
+    request: remote.request
+  });
+  const conn = await ctl.addConnection({ name: 'Saved Coolify', baseUrl, token: fakeToken });
+  remote.state.services.push({
+    uuid: 'manual-supabase-01', name: 'supabase schleishare',
+    service_type: 'supabase', environment_id: 1, server_id: 1,
+    docker_compose_raw: 'sensitive-secret', environment_variables: ['other-secret']
+  });
+  const listed = await ctl.remoteServices(conn.id);
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].name, 'supabase schleishare');
+  assert.equal(listed[0].serviceType, 'supabase');
+  assert.equal(JSON.stringify(listed).includes('sensitive-secret'), false);
+  assert.equal(JSON.stringify(listed).includes('other-secret'), false);
+  const detail = await ctl.remoteServiceInfo(conn.id, 'manual-supabase-01');
+  assert.equal(detail.uuid, 'manual-supabase-01');
+  assert.equal(JSON.stringify(detail).includes('sensitive-secret'), false);
+  await assert.rejects(() => ctl.remoteServiceInfo(conn.id, '../../etc/passwd'));
+  assert.equal(remote.state.services.length, 1);
+  assert.equal(remote.state.starts.length, 0);
+});
