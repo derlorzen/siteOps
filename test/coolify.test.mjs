@@ -54,6 +54,9 @@ function coolifyMock() {
     if (path === '/api/v1/services/supabase-one/databases' && options.method === 'GET') {
       return response(state.serviceDatabases || []);
     }
+    if (path.startsWith('/api/v1/services/supabase-one/logs?') && options.method === 'GET') {
+      return response({ logs: state.serviceLogs || '' });
+    }
     if (path.startsWith('/api/v1/services/') && !path.endsWith('/start') && options.method === 'GET') {
       const uuid = path.split('/').at(-1);
       const found = state.services.find(s => s.uuid === uuid);
@@ -480,4 +483,28 @@ test('Coolify health metadata excludes sensitive container configuration', async
   assert.equal(status.remote.components.databases[0].name, 'db');
   for (const secret of ['must-not-leak', 'also-private', 'postgres-password'])
     assert.equal(JSON.stringify(status).includes(secret), false);
+});
+
+test('Coolify failed Supabase container diagnosis never returns raw log secrets', async () => {
+  const { db } = memoryDb(),
+    remote = coolifyMock();
+  const controller = createCoolifyService({
+    db,
+    encrypt: x => x,
+    decrypt: x => x,
+    request: remote.request
+  });
+  const connection = await controller.addConnection({ name: 'Coolify', baseUrl, token: fakeToken });
+  const job = await controller.enqueue({ connectionId: connection.id, projectKey, name });
+  remote.state.serviceApplications = [{ name: 'supabase-kong', status: 'exited' }];
+  remote.state.serviceDatabases = [{ name: 'supabase-db', status: 'exited' }];
+  remote.state.serviceLogs = 'FATAL: no space left on device; token=secret-log-value';
+  await controller.tick();
+  const result = await controller.status(job.id);
+  assert.deepEqual(
+    result.remote.diagnostics.map(x => x.classification),
+    ['disk_full', 'disk_full']
+  );
+  assert.equal(JSON.stringify(result).includes('secret-log-value'), false);
+  assert.equal(result.remote.diagnostics.length, 2);
 });
