@@ -48,7 +48,11 @@ function coolifyMock() {
       state.starts.push('supabase-one');
       return response({ message: 'Service starting request queued.' });
     }
-    if (path === '/api/v1/services/supabase-one' && options.method === 'GET') return response(state.services[0]);
+    if (/^\\/api\\/v1\\/services\\/[a-zA-Z0-9_-]+$/.test(path) && options.method === 'GET') {
+      const uuid = path.split('/').at(-1);
+      const found = state.services.find(s => s.uuid === uuid);
+      return response(found || { message: 'Resource not found.' }, found ? 200 : 404);
+    }
     throw new Error('Unmocked Coolify endpoint: ' + options.method + ' ' + path);
   };
   return { state, request };
