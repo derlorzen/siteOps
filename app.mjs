@@ -4598,6 +4598,24 @@ function mcpServer() {
     async ({ connectionId }) => toolText(await coolifyService.connectionInfo(connectionId))
   );
   s.registerTool(
+    'coolify_services_list',
+    {
+      description:
+        'List existing Coolify services, including manually created Supabase stacks not managed by SiteOps. Read-only; returns IDs, names, types, timestamps only, never secrets or Docker Compose.',
+      inputSchema: z.object({ connectionId: z.uuid() })
+    },
+    async ({ connectionId }) => toolText(await coolifyService.remoteServices(connectionId))
+  );
+  s.registerTool(
+    'coolify_service_info',
+    {
+      description:
+        'Read metadata of one existing Coolify service by its UUID, including manually created Supabase stacks. Read-only; no secrets or Docker Compose.',
+      inputSchema: z.object({ connectionId: z.uuid(), serviceUuid: z.string().regex(/^[a-zA-Z0-9_-]{4,191}$/) })
+    },
+    async ({ connectionId, serviceUuid }) => toolText(await coolifyService.remoteServiceInfo(connectionId, serviceUuid))
+  );
+  s.registerTool(
     'coolify_supabase_list',
     {
       description:
@@ -5479,7 +5497,7 @@ function mcpInfoPage() {
     ],
     [
       'Coolify / Supabase',
-      'coolify_connections, coolify_connection_info, coolify_supabase_list, coolify_supabase_create, coolify_supabase_status, coolify_supabase_retry'
+      'coolify_connections, coolify_connection_info, coolify_services_list, coolify_service_info, coolify_supabase_list, coolify_supabase_create, coolify_supabase_status, coolify_supabase_retry'
     ],
     ['Dateien', 'files_list, text_search, files_find, file_read'],
     ['Änderungen', 'change_preview, change_apply, history_list, history_diff, rollback_preview'],
@@ -7174,6 +7192,10 @@ async function start() {
   app.post('/api/coolify/connections', req => coolifyService.addConnection(req.body));
   app.put('/api/coolify/connections/:id', req => coolifyService.updateConnection(req.params.id, req.body));
   app.get('/api/coolify/connections/:id/info', req => coolifyService.connectionInfo(req.params.id));
+  app.get('/api/coolify/connections/:id/services', req => coolifyService.remoteServices(req.params.id));
+  app.get('/api/coolify/connections/:id/services/:uuid', req =>
+    coolifyService.remoteServiceInfo(req.params.id, req.params.uuid)
+  );
   app.get('/api/coolify/supabase', () => coolifyService.instances());
   app.post('/api/coolify/supabase', (req, reply) =>
     coolifyService.enqueue(req.body).then(item => reply.code(202).send(item))
