@@ -46,6 +46,10 @@ jobs:
         run: npm run check
       - name: Lint
         run: npm run lint
+      - name: Preview exact Prettier patch for Coolify diagnostics
+        run: |
+          npx prettier --write lib/coolify.mjs test/coolify.test.mjs
+          git diff -- lib/coolify.mjs test/coolify.test.mjs
       - name: Format check
         run: npm run format:check
       - name: Install browser runner dependencies
