@@ -29,7 +29,7 @@
   function editMode(connection = null) {
     editingConnectionId = connection?.id || null;
     $('coolifyConnectHeading').textContent = connection ? 'Coolify-Verbindung bearbeiten' : 'Coolify verbinden';
-    $('coolifySave').textContent = connection ? 'Änderungen prüfen & speichern' : 'Verbindung prüfen & speichern';
+    $('coolifySave').textContent = connection ? 'Änderungen speichern' : 'Verbindung speichern';
     $('coolifyCancelEdit').hidden = !connection;
     const tokenField = connect.elements.namedItem('token');
     tokenField.required = !connection;
@@ -78,7 +78,22 @@
         saveStatus.textContent = 'Verbindung ' + item.name + ' ausgewählt. Gespeichertes Token bleibt erhalten.';
         connect.scrollIntoView({ block: 'start', behavior: 'smooth' });
       });
-      actions.append(edit);
+      const check = document.createElement('button');
+      check.type = 'button';
+      check.className = 'ghost';
+      check.textContent = 'Verbindung prüfen';
+      check.addEventListener('click', async () => {
+        check.disabled = true;
+        try {
+          const info = await api('/api/coolify/connections/' + encodeURIComponent(item.id) + '/info');
+          show('Coolify-Verbindung „' + item.name + '“ erreichbar: ' + info.servers.length + ' Server.');
+        } catch (error) {
+          show('Coolify-Verbindung „' + item.name + '“ ist gespeichert, aber die API-Prüfung scheitert: ' + error.message, true);
+        } finally {
+          check.disabled = false;
+        }
+      });
+      actions.append(edit, check);
       tr.append(actions);
       connectionRows.append(tr);
     }
@@ -98,7 +113,7 @@
     event.preventDefault();
     const button = connect.querySelector('[type=submit]');
     button.disabled = true;
-    saveStatus.textContent = 'Prüfe Coolify-API und speichere Verbindung …';
+    saveStatus.textContent = 'Speichere Coolify-Verbindung …';
     try {
       const body = Object.fromEntries(new FormData(connect));
       if (!body.defaultServerUuid) {
@@ -117,7 +132,7 @@
       // Do not reset or reload: the user should see which connection persisted.
       editMode(saved);
       saveStatus.textContent = 'Verbindung „' + saved.name + '“ erfolgreich gespeichert.';
-      show('Coolify-Verbindung „' + saved.name + '“ wurde geprüft und gespeichert.');
+      show('Coolify-Verbindung „' + saved.name + '“ wurde gespeichert. API-Erreichbarkeit wird separat geprüft.');
       try {
         await refreshConnections(saved.id);
       } catch (error) {
@@ -150,8 +165,7 @@
         result.projects.length +
         ' Coolify-Projekte gefunden. Neue Projektkennung = eigene Supabase-Instanz.';
     } catch (error) {
-      $('coolifyInfo').textContent = 'Coolify-Verbindung konnte nicht geprüft werden: ' + error.message;
-      show(error.message, true);
+      $('coolifyInfo').textContent = 'Gespeicherte Verbindung derzeit nicht erreichbar: ' + error.message;
     }
   }
   account?.addEventListener('change', () => void updateTargets());

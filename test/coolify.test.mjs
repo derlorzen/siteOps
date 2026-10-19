@@ -317,7 +317,7 @@ test('API errors and project mismatch do not return secrets or modify an unrelat
   );
 });
 
-test('updating Coolify connection keeps its token unless replaced, validates before writing and never leaks it', async () => {
+test('updating Coolify connection retains token, checks HTTPS URL syntax and never leaks it', async () => {
   const { db, state } = memoryDb();
   const remote = coolifyMock();
   const service = createCoolifyService({
@@ -377,4 +377,34 @@ test('saved Coolify connections are visible on the page and the submit script no
   assert.match(script, /refreshConnections\(saved\.id\)/);
   assert.match(script, /method: isEdit \? 'PUT' : 'POST'/);
   assert.match(script, /tokenField\.required = !connection/);
+});
+
+test('Coolify credentials remain saved when the remote API is offline', async () => {
+  const { db, state } = memoryDb();
+  const service = createCoolifyService({
+    db,
+    encrypt: x => 'encrypted:' + x,
+    decrypt: x => x.slice(10),
+    request: async () => {
+      throw new Error('Remote server offline');
+    }
+  });
+  const original = await service.addConnection({ name: 'Offline Coolify', baseUrl, token: fakeToken });
+  assert.equal((await service.listConnections())[0].id, original.id);
+  assert.equal(state.connections[0].encrypted_token, 'encrypted:' + fakeToken);
+  await assert.rejects(() => service.connectionInfo(original.id), /API nicht erreichbar/);
+  const edited = await service.updateConnection(original.id, { name: 'Offline Updated', baseUrl });
+  assert.equal(edited.name, 'Offline Updated');
+  assert.equal((await service.listConnections())[0].name, 'Offline Updated');
+  assert.equal(state.connections[0].encrypted_token, 'encrypted:' + fakeToken);
+});
+
+test('Coolify browser script is served explicitly with fresh build URL', async () => {
+  const app = await readFile(new URL('../app.mjs', import.meta.url), 'utf8');
+  assert.ok(app.includes("app.get('/assets/coolify.js'"));
+  assert.ok(app.includes("new URL('./public/coolify.js', import.meta.url)"));
+  assert.ok(app.includes('coolify.js?v='));
+  const script = await readFile(new URL('../public/coolify.js', import.meta.url), 'utf8');
+  assert.match(script, /Verbindung prüfen/);
+  assert.match(script, /ist gespeichert, aber die API-Prüfung scheitert/);
 });

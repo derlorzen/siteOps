@@ -13,17 +13,20 @@ genau einen separaten Supabase-One-Click-Service** anlegen.
    ausgehende IP des SiteOps-Hostings in der **IP Allowlist** freigeben.
 3. In SiteOps **Coolify** (`/coolify`) öffnen, eine ausschließlich per
    HTTPS erreichbare Coolify-Adresse, den Token und optional die
-   Standard-Coolify-Server-UUID speichern. Der Server prüft zuerst lesend
-   `GET /api/v1/projects`; nur danach speichert SiteOps das Token mit
-   `SITEOPS_MASTER_KEY` verschlüsselt. API-Tokens erscheinen weder in
-   MCP-Antworten noch in Statusabfragen.
+   Standard-Coolify-Server-UUID speichern. Das Token wird mit
+   `SITEOPS_MASTER_KEY` verschlüsselt. Das Speichern ist unabhängig davon,
+   ob der externe Coolify-Server momentan erreichbar ist. Über **Verbindung prüfen**
+   oder die Server-/Projektliste erfolgt anschließend ein lesender
+   `GET /api/v1/projects` und `GET /api/v1/servers`. Eine fehlgeschlagene
+   API-Prüfung löscht die gespeicherte Verbindung nicht.
+   API-Tokens erscheinen weder in MCP-Antworten noch in Statusabfragen.
 4. In Coolify ausreichend Rechenleistung, Container-Storage und Backups
    bereitstellen. Ein eigener Supabase-Stack besteht aus mehreren
    Diensten (PostgreSQL, Auth, REST, Storage, Studio und weiteren
    Komponenten der gewählten Coolify-Vorlage). Jeder Stack benötigt
    eigenen Speicher und eigene Ressourcen.
 
-Nach dem Speichern zeigt der Bereich **Gespeicherte Coolify-Verbindungen** die bestätigten Einträge dauerhaft an; das Formular wird nicht neu geladen oder kommentarlos geleert. Über **Bearbeiten** lassen sich Bezeichnung, URL, Standardserver und bei Bedarf auch das Token aktualisieren. Das Token ist niemals auslesbar; beim Bearbeiten kann das Feld leer bleiben, dann bleibt das bisherige Token verschlüsselt gespeichert. Auch beim Aktualisieren prüft SiteOps den API-Zugriff, bevor es Daten ersetzt. Bei Fehlern bleiben die eingegebenen Werte im Formular stehen und die Fehlermeldung wird sichtbar ausgegeben.
+Nach dem Speichern zeigt der Bereich **Gespeicherte Coolify-Verbindungen** die bestätigten Einträge dauerhaft an; das Formular wird nicht neu geladen oder kommentarlos geleert. Über **Bearbeiten** lassen sich Bezeichnung, URL, Standardserver und bei Bedarf auch das Token aktualisieren. Das Token ist niemals auslesbar; beim Bearbeiten kann das Feld leer bleiben, dann bleibt das bisherige Token verschlüsselt gespeichert. Änderungen werden unabhängig von der API-Erreichbarkeit gespeichert. Ein gesonderter API-Test zeigt Berechtigungs- oder Erreichbarkeitsprobleme an, ohne den gespeicherten Eintrag zu löschen. Bei Speicherfehlern bleiben die eingegebenen Werte im Formular stehen.
 
 Die Einrichtung erfordert keine API-Zugangsdaten im Chat. Auch das Backend
 von SiteOps bleibt auf seinem bestehenden Hosting; lediglich die neue
