@@ -7164,6 +7164,7 @@ async function start() {
   });
   app.get('/api/coolify/connections', () => coolifyService.listConnections());
   app.post('/api/coolify/connections', req => coolifyService.addConnection(req.body));
+  app.put('/api/coolify/connections/:id', req => coolifyService.updateConnection(req.params.id, req.body));
   app.get('/api/coolify/connections/:id/info', req => coolifyService.connectionInfo(req.params.id));
   app.get('/api/coolify/supabase', () => coolifyService.instances());
   app.post('/api/coolify/supabase', (req, reply) =>

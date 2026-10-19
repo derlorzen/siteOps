@@ -19,25 +19,117 @@
     return data;
   }
   const connect = $('coolifyConnect');
+  const saveStatus = $('coolifySaveStatus');
+  const connectionRows = $('coolifyConnectionsRows');
+  const account = $('coolifyConnection');
+  const server = $('coolifyServer');
+  const project = $('coolifyProject');
+  let savedConnections = [];
+  let editingConnectionId = null;
+  function editMode(connection = null) {
+    editingConnectionId = connection?.id || null;
+    $('coolifyConnectHeading').textContent = connection ? 'Coolify-Verbindung bearbeiten' : 'Coolify verbinden';
+    $('coolifySave').textContent = connection ? 'Änderungen prüfen & speichern' : 'Verbindung prüfen & speichern';
+    $('coolifyCancelEdit').hidden = !connection;
+    const tokenField = connect.elements.namedItem('token');
+    tokenField.required = !connection;
+    tokenField.value = '';
+    $('coolifyTokenHint').textContent = connection
+      ? '(leer lassen, um das gespeicherte Token beizubehalten)'
+      : '(wird verschlüsselt gespeichert)';
+    if (connection) {
+      connect.elements.namedItem('name').value = connection.name;
+      connect.elements.namedItem('baseUrl').value = connection.baseUrl;
+      connect.elements.namedItem('defaultServerUuid').value = connection.defaultServerUuid || '';
+    }
+  }
+  $('coolifyCancelEdit')?.addEventListener('click', () => {
+    connect.reset();
+    editMode();
+    saveStatus.textContent = '';
+  });
+  async function refreshConnections(preferredId = null) {
+    const records = await api('/api/coolify/connections');
+    savedConnections = records;
+    const selection = preferredId || account.value;
+    connectionRows.replaceChildren();
+    account.replaceChildren(new Option('Verbindung wählen', ''));
+    for (const item of records) {
+      account.add(new Option(item.name + ' · ' + item.baseUrl, item.id));
+      const tr = document.createElement('tr');
+      for (const [label, value] of [
+        ['Bezeichnung', item.name],
+        ['API-Adresse', item.baseUrl],
+        ['Server-UUID', item.defaultServerUuid || 'Automatisch']
+      ]) {
+        const td = document.createElement('td');
+        td.dataset.label = label;
+        td.textContent = value;
+        tr.append(td);
+      }
+      const actions = document.createElement('td');
+      actions.dataset.label = 'Aktionen';
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'ghost';
+      edit.textContent = 'Bearbeiten';
+      edit.addEventListener('click', () => {
+        editMode(item);
+        saveStatus.textContent = 'Verbindung ' + item.name + ' ausgewählt. Gespeichertes Token bleibt erhalten.';
+        connect.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+      actions.append(edit);
+      tr.append(actions);
+      connectionRows.append(tr);
+    }
+    if (!records.length) {
+      const tr = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 4;
+      cell.textContent = 'Noch keine Coolify-Verbindung gespeichert.';
+      tr.append(cell);
+      connectionRows.append(tr);
+    }
+    if (selection && records.some(record => record.id === selection)) account.value = selection;
+    else if (records.length === 1) account.value = records[0].id;
+    await updateTargets();
+  }
   connect?.addEventListener('submit', async event => {
     event.preventDefault();
     const button = connect.querySelector('[type=submit]');
     button.disabled = true;
+    saveStatus.textContent = 'Prüfe Coolify-API und speichere Verbindung …';
     try {
       const body = Object.fromEntries(new FormData(connect));
-      if (!body.defaultServerUuid) delete body.defaultServerUuid;
-      await api('/api/coolify/connections', { method: 'POST', body: JSON.stringify(body) });
-      connect.reset();
-      window.location.reload();
+      if (!body.defaultServerUuid) {
+        if (editingConnectionId) body.defaultServerUuid = null;
+        else delete body.defaultServerUuid;
+      }
+      if (!body.token) delete body.token;
+      const isEdit = Boolean(editingConnectionId);
+      const endpoint = isEdit
+        ? '/api/coolify/connections/' + encodeURIComponent(editingConnectionId)
+        : '/api/coolify/connections';
+      const saved = await api(endpoint, {
+        method: isEdit ? 'PUT' : 'POST',
+        body: JSON.stringify(body)
+      });
+      // Do not reset or reload: the user should see which connection persisted.
+      editMode(saved);
+      saveStatus.textContent = 'Verbindung „' + saved.name + '“ erfolgreich gespeichert.';
+      show('Coolify-Verbindung „' + saved.name + '“ wurde geprüft und gespeichert.');
+      try {
+        await refreshConnections(saved.id);
+      } catch (error) {
+        show('Gespeichert, aber die Verbindungsliste konnte nicht aktualisiert werden: ' + error.message, true);
+      }
     } catch (error) {
+      saveStatus.textContent = 'Speichern fehlgeschlagen: ' + error.message;
       show(error.message, true);
     } finally {
       button.disabled = false;
     }
   });
-  const account = $('coolifyConnection');
-  const server = $('coolifyServer');
-  const project = $('coolifyProject');
   let requestNo = 0;
   async function updateTargets() {
     const seq = ++requestNo;
@@ -63,10 +155,9 @@
     }
   }
   account?.addEventListener('change', () => void updateTargets());
-  if (account?.options.length === 2) {
-    account.selectedIndex = 1;
-    void updateTargets();
-  }
+  void refreshConnections().catch(error => {
+    show('Gespeicherte Coolify-Verbindungen konnten nicht geladen werden: ' + error.message, true);
+  });
   $('coolifySupabaseCreate')?.addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget,

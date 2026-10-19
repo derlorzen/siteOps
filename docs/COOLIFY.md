@@ -23,6 +23,8 @@ genau einen separaten Supabase-One-Click-Service** anlegen.
    Komponenten der gewählten Coolify-Vorlage). Jeder Stack benötigt
    eigenen Speicher und eigene Ressourcen.
 
+Nach dem Speichern zeigt der Bereich **Gespeicherte Coolify-Verbindungen** die bestätigten Einträge dauerhaft an; das Formular wird nicht neu geladen oder kommentarlos geleert. Über **Bearbeiten** lassen sich Bezeichnung, URL, Standardserver und bei Bedarf auch das Token aktualisieren. Das Token ist niemals auslesbar; beim Bearbeiten kann das Feld leer bleiben, dann bleibt das bisherige Token verschlüsselt gespeichert. Auch beim Aktualisieren prüft SiteOps den API-Zugriff, bevor es Daten ersetzt. Bei Fehlern bleiben die eingegebenen Werte im Formular stehen und die Fehlermeldung wird sichtbar ausgegeben.
+
 Die Einrichtung erfordert keine API-Zugangsdaten im Chat. Auch das Backend
 von SiteOps bleibt auf seinem bestehenden Hosting; lediglich die neue
 Supabase-Instanz wird auf dem in Coolify registrierten Server installiert.
@@ -84,6 +86,7 @@ bestehenden Container oder Domains.
 
 **Authentifizierte HTTP-API:**
 - `GET|POST /api/coolify/connections`
+- `PUT /api/coolify/connections/:id` (bestehende Verbindung validiert aktualisieren, Token optional)
 - `GET /api/coolify/connections/:id/info`
 - `GET|POST /api/coolify/supabase`
 - `GET /api/coolify/supabase/:id`

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { coolifyBaseUrl, createCoolifyClient, createCoolifyService, coolifySupabaseSchema } from '../lib/coolify.mjs';
+import { renderCoolifyWorkspace } from '../lib/coolify-ui.mjs';
 
 const connectionId = '11111111-1111-4111-8111-111111111111';
 const fakeToken = 'secret-test-token-do-not-expose';
@@ -71,6 +73,13 @@ function memoryDb() {
       if (normalized.startsWith('insert into coolify_connections')) {
         const [id, name, base_url, encrypted_token, default_server_uuid] = params;
         state.connections.push({ id, name, base_url, encrypted_token, default_server_uuid });
+        return [{ affectedRows: 1 }];
+      }
+      if (normalized.startsWith('update coolify_connections set')) {
+        const [name, base_url, encrypted_token, default_server_uuid, id] = params;
+        const record = state.connections.find(c => c.id === id);
+        if (!record) return [{ affectedRows: 0 }];
+        Object.assign(record, { name, base_url, encrypted_token, default_server_uuid });
         return [{ affectedRows: 1 }];
       }
       if (normalized.startsWith('select id from customer_projects')) return [[{ id: params[0] }]];
@@ -306,4 +315,66 @@ test('API errors and project mismatch do not return secrets or modify an unrelat
       }),
     /anderer Projekt- oder Serverzuordnung/
   );
+});
+
+test('updating Coolify connection keeps its token unless replaced, validates before writing and never leaks it', async () => {
+  const { db, state } = memoryDb();
+  const remote = coolifyMock();
+  const service = createCoolifyService({
+    db,
+    encrypt: value => 'enc:' + value,
+    decrypt: value => value.slice(4),
+    request: remote.request
+  });
+  const original = await service.addConnection({
+    name: 'Coolify Test',
+    baseUrl,
+    token: fakeToken,
+    defaultServerUuid: 'server-one'
+  });
+  const storedEncrypted = state.connections[0].encrypted_token;
+  const modified = await service.updateConnection(original.id, {
+    name: 'Coolify Produktiv',
+    baseUrl: baseUrl + '/',
+    defaultServerUuid: null
+  });
+  assert.equal(modified.name, 'Coolify Produktiv');
+  assert.equal(modified.defaultServerUuid, null);
+  assert.equal(state.connections[0].encrypted_token, storedEncrypted);
+  assert.equal(modified.baseUrl, baseUrl);
+  assert.ok(!JSON.stringify(await service.listConnections()).includes(fakeToken));
+  const saved = await service.listConnections();
+  assert.equal(saved[0].name, 'Coolify Produktiv');
+  assert.equal(saved[0].defaultServerUuid, null);
+  assert.ok(state.q.some(item => item.sql.startsWith('update coolify_connections')));
+
+  await assert.rejects(
+    () =>
+      service.updateConnection(original.id, { name: 'Invalid endpoint', baseUrl: 'https://coolify.example.de/api/v1' }),
+    /HTTPS-URL ohne Pfad/
+  );
+  assert.equal(state.connections[0].name, 'Coolify Produktiv');
+  await assert.rejects(
+    () => service.updateConnection('22222222-2222-4222-8222-222222222222', { name: 'Other', baseUrl }),
+    /nicht gefunden/
+  );
+});
+
+test('saved Coolify connections are visible on the page and the submit script no longer silently reloads', async () => {
+  const html = renderCoolifyWorkspace(
+    [{ id: connectionId, name: 'Coolify Produktiv', baseUrl, defaultServerUuid: 'server-one' }],
+    [],
+    x => String(x).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+  );
+  assert.match(html, /Gespeicherte Coolify-Verbindungen/);
+  assert.match(html, /data-coolify-edit/);
+  assert.match(html, /Coolify Produktiv/);
+  assert.match(html, /id="coolifySaveStatus"/);
+  assert.match(html, /id="coolifyCancelEdit"/);
+  assert.doesNotMatch(html, /secret-test-token/);
+  const script = await readFile(new URL('../public/coolify.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(script, /window\.location\.reload/);
+  assert.match(script, /refreshConnections\(saved\.id\)/);
+  assert.match(script, /method: isEdit \? 'PUT' : 'POST'/);
+  assert.match(script, /tokenField\.required = !connection/);
 });
