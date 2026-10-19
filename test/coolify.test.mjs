@@ -414,16 +414,23 @@ test('Coolify browser script is served explicitly with fresh build URL', async (
 });
 
 test('read-only discovery finds manually created Coolify services without exposing secrets', async () => {
-  const { db } = memoryDb(), remote = coolifyMock();
+  const { db } = memoryDb(),
+    remote = coolifyMock();
   const ctl = createCoolifyService({
-    db, encrypt: s => 'encrypted:' + s, decrypt: s => s.slice('encrypted:'.length),
+    db,
+    encrypt: s => 'encrypted:' + s,
+    decrypt: s => s.slice('encrypted:'.length),
     request: remote.request
   });
   const conn = await ctl.addConnection({ name: 'Saved Coolify', baseUrl, token: fakeToken });
   remote.state.services.push({
-    uuid: 'manual-supabase-01', name: 'supabase schleishare',
-    service_type: 'supabase', environment_id: 1, server_id: 1,
-    docker_compose_raw: 'sensitive-secret', environment_variables: ['other-secret']
+    uuid: 'manual-supabase-01',
+    name: 'supabase schleishare',
+    service_type: 'supabase',
+    environment_id: 1,
+    server_id: 1,
+    docker_compose_raw: 'sensitive-secret',
+    environment_variables: ['other-secret']
   });
   const listed = await ctl.remoteServices(conn.id);
   assert.equal(listed.length, 1);
