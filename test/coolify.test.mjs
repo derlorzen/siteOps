@@ -321,40 +321,51 @@ test('updating Coolify connection keeps its token unless replaced, validates bef
   const { db, state } = memoryDb();
   const remote = coolifyMock();
   const service = createCoolifyService({
-    db, encrypt: value => 'enc:' + value, decrypt: value => value.slice(4), request: remote.request
+    db,
+    encrypt: value => 'enc:' + value,
+    decrypt: value => value.slice(4),
+    request: remote.request
   });
   const original = await service.addConnection({
-    name: 'Coolify Test', baseUrl, token: fakeToken, defaultServerUuid: 'server-one'
+    name: 'Coolify Test',
+    baseUrl,
+    token: fakeToken,
+    defaultServerUuid: 'server-one'
   });
   const storedEncrypted = state.connections[0].encrypted_token;
   const modified = await service.updateConnection(original.id, {
-    name: 'Coolify Produktiv', baseUrl: baseUrl + '/', defaultServerUuid: null
+    name: 'Coolify Produktiv',
+    baseUrl: baseUrl + '/',
+    defaultServerUuid: null
   });
   assert.equal(modified.name, 'Coolify Produktiv');
   assert.equal(modified.defaultServerUuid, null);
   assert.equal(state.connections[0].encrypted_token, storedEncrypted);
   assert.equal(modified.baseUrl, baseUrl);
-  assert.ok(!(JSON.stringify(await service.listConnections())).includes(fakeToken));
+  assert.ok(!JSON.stringify(await service.listConnections()).includes(fakeToken));
   const saved = await service.listConnections();
   assert.equal(saved[0].name, 'Coolify Produktiv');
   assert.equal(saved[0].defaultServerUuid, null);
   assert.ok(state.q.some(item => item.sql.startsWith('update coolify_connections')));
 
   await assert.rejects(
-    () => service.updateConnection(original.id, { name: 'Invalid endpoint', baseUrl: 'https://coolify.example.de/api/v1' }),
+    () =>
+      service.updateConnection(original.id, { name: 'Invalid endpoint', baseUrl: 'https://coolify.example.de/api/v1' }),
     /HTTPS-URL ohne Pfad/
   );
   assert.equal(state.connections[0].name, 'Coolify Produktiv');
   await assert.rejects(
-    () => service.updateConnection('22222222-2222-4222-8222-222222222222',
-      { name: 'Other', baseUrl }), /nicht gefunden/
+    () => service.updateConnection('22222222-2222-4222-8222-222222222222', { name: 'Other', baseUrl }),
+    /nicht gefunden/
   );
 });
 
 test('saved Coolify connections are visible on the page and the submit script no longer silently reloads', async () => {
-  const html = renderCoolifyWorkspace([
-    { id: connectionId, name: 'Coolify Produktiv', baseUrl, defaultServerUuid: 'server-one' }
-  ], [], x => String(x).replaceAll('&','&amp;').replaceAll('<','&lt;'));
+  const html = renderCoolifyWorkspace(
+    [{ id: connectionId, name: 'Coolify Produktiv', baseUrl, defaultServerUuid: 'server-one' }],
+    [],
+    x => String(x).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+  );
   assert.match(html, /Gespeicherte Coolify-Verbindungen/);
   assert.match(html, /data-coolify-edit/);
   assert.match(html, /Coolify Produktiv/);
