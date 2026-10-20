@@ -44,7 +44,13 @@ function setup() {
     }
     if (path === '/api/v1/github-apps')
       return apiResult([
-        { uuid: 'gh-app-one', name: 'Lorzen GitHub', organization: 'derlorzen', is_public: false, client_secret: 'LEAK' }
+        {
+          uuid: 'gh-app-one',
+          name: 'Lorzen GitHub',
+          organization: 'derlorzen',
+          is_public: false,
+          client_secret: 'LEAK'
+        }
       ]);
     if (path === '/api/v1/security/keys')
       return apiResult([
