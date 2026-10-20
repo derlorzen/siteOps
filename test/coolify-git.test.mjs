@@ -25,7 +25,7 @@ const input = {
 };
 
 function setup() {
-  const data = { projects: [], apps: [], posts: [], deployments: [] };
+  const data = { projects: [], apps: [], posts: [], deployments: [], envs: [] };
   const apiResult = (body, status = 200) => ({
     ok: status >= 200 && status < 300,
     status,
@@ -44,6 +44,10 @@ function setup() {
     }
     if (path === '/api/v1/servers') return apiResult([{ uuid: 'server-one', name: 'Docker A' }]);
     if (path === '/api/v1/applications' && options.method === 'GET') return apiResult(data.apps);
+    if (path.endsWith('/envs/bulk') && options.method === 'PATCH') {
+      data.envs.push({ path, body: JSON.parse(options.body) });
+      return apiResult({ message: 'ok' });
+    }
     if (path.startsWith('/api/v1/applications/') && options.method === 'POST') {
       if (path.endsWith('/start')) {
         data.deployments.push(path);
@@ -184,6 +188,64 @@ test('rejects unsafe credentials in repository URLs and unknown project/server',
     () => service.createApplication({ ...input, serverUuid: 'server-wrong' }),
     /gültigen Coolify-Server/
   );
+});
+
+test('Compose apps get service domains, compose path and variables before the deployment', async () => {
+  const { service, data } = setup();
+  data.projects.push({ uuid: projectUuid, name: 'My Project' });
+  const command = {
+    ...input,
+    buildPack: 'dockercompose',
+    portsExposes: '8080',
+    dockerComposeLocation: '/docker-compose.yml',
+    dockerComposeDomains: [{ service: 'app', domain: 'https://shop.example.de:8080' }],
+    environment: [
+      { key: 'APP_KEY', value: 'base64:TOP-SECRET-VALUE' },
+      { key: 'APP_URL', value: 'https://shop.example.de' }
+    ],
+    deployNow: true
+  };
+  const result = await service.createApplication(command);
+  assert.equal(result.deploymentRequested, true);
+  assert.deepEqual(result.environmentKeys, ['APP_KEY', 'APP_URL']);
+  assert.doesNotMatch(JSON.stringify(result), /TOP-SECRET/);
+  const create = data.posts.find(x => x.path === '/api/v1/applications/public');
+  assert.equal(create.body.instant_deploy, false);
+  assert.equal(create.body.docker_compose_location, '/docker-compose.yml');
+  assert.deepEqual(create.body.docker_compose_domains, [{ name: 'app', domain: 'https://shop.example.de:8080' }]);
+  assert.equal(create.body.domains, undefined);
+  assert.doesNotMatch(create.body.description, /TOP-SECRET/);
+  assert.equal(data.envs.length, 1);
+  assert.equal(data.envs[0].path, '/api/v1/applications/' + appUuid + '/envs/bulk');
+  assert.equal(data.envs[0].body.data[0].key, 'APP_KEY');
+  assert.equal(data.envs[0].body.data[0].is_literal, true);
+  const order = data.posts.map(x => x.method + ' ' + x.path);
+  assert.ok(
+    order.indexOf('PATCH /api/v1/applications/' + appUuid + '/envs/bulk') <
+      order.indexOf('POST /api/v1/applications/' + appUuid + '/start')
+  );
+  const again = await service.createApplication(command);
+  assert.equal(again.created, false);
+  assert.equal(data.envs.length, 1);
+  await assert.rejects(
+    () => service.createApplication({ ...command, environment: [{ key: 'OTHER', value: 'x' }] }),
+    /abweichender/
+  );
+  for (const bad of [
+    { ...command, buildPack: 'nixpacks' },
+    { ...command, domain: 'https://shop.example.de' },
+    { ...command, environment: [{ key: 'lower', value: 'x' }] },
+    {
+      ...command,
+      environment: [
+        { key: 'A', value: '1' },
+        { key: 'A', value: '2' }
+      ]
+    },
+    { ...command, dockerComposeDomains: [{ service: 'app', domain: 'http://shop.example.de' }] },
+    { ...command, dockerComposeLocation: '/compose.json' }
+  ])
+    assert.equal(coolifyGitApplicationSchema.safeParse(bad).success, false);
 });
 
 test('Coolify dashboard and MCP publish regular projects and Git apps', async () => {

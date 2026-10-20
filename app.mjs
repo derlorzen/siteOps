@@ -4655,7 +4655,7 @@ function mcpServer() {
     'coolify_app_create',
     {
       description:
-        'Create a Git-based Coolify app inside an existing Coolify project. Supports public HTTPS Git, pre-configured private deploy-key UUID or private GitHub App UUID, branch, build pack, server, domain and optional immediate deployment. AppKey prevents duplicate creation and rejects conflicting configuration. Requires explicit request to create the app; deployNow only when the user explicitly requests deployment. Never creates credentials or alters existing apps.',
+        'Create a Git-based Coolify app inside an existing Coolify project. Supports public HTTPS Git, pre-configured private deploy-key UUID or private GitHub App UUID, branch, build pack, server, domain, docker compose file path (dockerComposeLocation), per-service compose domains (dockerComposeDomains, e.g. service app with https://host:8080) and environment variables (set before any deployment; values are sent only to Coolify, never stored or returned) and optional immediate deployment. AppKey prevents duplicate creation and rejects conflicting configuration. Requires explicit request to create the app; deployNow only when the user explicitly requests deployment. Never creates credentials or alters existing apps.',
       inputSchema: coolifyGitApplicationSchema
     },
     async input => toolText(await coolifyService.createApplication(input))

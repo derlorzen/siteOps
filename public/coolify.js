@@ -259,9 +259,20 @@
     event.preventDefault();
     const form = event.currentTarget, button = form.querySelector('[type=submit]');
     const data = Object.fromEntries(new FormData(form));
-    for (const key of ['serverUuid', 'destinationUuid', 'sourceUuid', 'domain', 'baseDirectory', 'publishDirectory', 'dockerfileLocation']) {
+    for (const key of ['serverUuid', 'destinationUuid', 'sourceUuid', 'domain', 'baseDirectory', 'publishDirectory', 'dockerfileLocation', 'dockerComposeLocation']) {
       if (!data[key]) delete data[key];
     }
+    const lines = value => String(value || '').split('\n').map(line => line.trim()).filter(Boolean);
+    const pairs = value => lines(value).map(line => {
+      const at = line.indexOf('=');
+      return at > 0 ? [line.slice(0, at).trim(), line.slice(at + 1)] : [line, ''];
+    });
+    const domains = pairs(data.dockerComposeDomains).map(([service, domain]) => ({ service, domain: domain.trim() }));
+    const env = pairs(data.environment).map(([key, value]) => ({ key, value }));
+    delete data.dockerComposeDomains;
+    delete data.environment;
+    if (domains.length) data.dockerComposeDomains = domains;
+    if (env.length) data.environment = env;
     data.autoDeploy = form.elements.namedItem('autoDeploy').checked;
     data.deployNow = form.elements.namedItem('deployNow').checked;
     if (!confirm('Git-App „' + data.name + '“ aus ' + data.gitRepository + ' (' + data.gitBranch + ')' +
