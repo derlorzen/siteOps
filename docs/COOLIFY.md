@@ -86,13 +86,17 @@ keinen Docker-Socket.
 - **Regeln:** Befehl und Argumente dürfen nur aus Buchstaben, Ziffern und `_ . : = @ / + -`
   bestehen, ohne Leerzeichen innerhalb eines Tokens, Anführungszeichen, `;`, `|`, `&`, `$`
   oder Backticks. Maximal 12 Befehlsteile und 8 Argumente. Nicht erlaubt sind Shells und
-  Netzwerk-/Löschwerkzeuge als Befehl sowie `tinker`, `-r`, `-e`, `-c` und ähnliche Schalter.
+  Netzwerk-/Löschwerkzeuge als Befehl, Wrapper wie `nice`, `timeout` oder `find`, ein führendes
+  `VAR=wert` sowie `tinker`, `-r`, `-e`, `-c` und ähnliche Schalter.
   Passwörter mit Sonderzeichen sind deshalb als Argument nicht möglich.
 - **Ablauf:** SiteOps legt in Coolify eine **deaktivierte** Scheduled Task mit dem festen Befehl an
   (Name `siteops-cmd-<Hash>`, gleiche Befehle verwenden dieselbe Task), startet sie über
   `POST /applications/{uuid}/scheduled-tasks/{task}/execute` und liest die Ausführung aus der
   Ausführungsliste. Der Coolify-Token braucht dafür die Berechtigung *deploy*; für Logs
   *read:sensitive*.
+- **Task-Prüfung:** Eine vorhandene Task wird nur genutzt, wenn Befehl, Container, Zeitplan, Timeout
+  und „deaktiviert“ exakt der Vorgabe entsprechen. Sonst bricht SiteOps ab; die Task in Coolify
+  löschen, dann legt SiteOps sie neu an. Läufe desselben Befehls werden nacheinander ausgeführt.
 - **Protokoll:** Jeder Lauf wird mit Schlüssel und **Anzahl** der Argumente gespeichert, nie mit den
   Werten. Argumente stehen aber im Befehl der Coolify-Task. Keine Geheimnisse als Argumente
   übergeben, wenn es vermeidbar ist.

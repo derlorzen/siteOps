@@ -34,7 +34,7 @@ function setup({ executionStatus = 'success', never = false } = {}) {
         state.executions.unshift({
           uuid: 'exec-' + (state.executions.length + 1),
           status: executionStatus,
-          message: 'done Bearer abc123 ok'
+          message: 'done Bearer abc123 ok exec-' + (state.executions.length + 1)
         });
       return apiResult({ message: 'ok' });
     }
@@ -43,7 +43,27 @@ function setup({ executionStatus = 'success', never = false } = {}) {
     if (path === base + '/restart') return apiResult({ message: 'Restart request queued.', deployment_uuid: 'dep-1' });
     throw new Error('Unexpected Coolify request ' + options.method + ' ' + path);
   };
+  let lockTail = Promise.resolve();
   const db = {
+    getConnection: async () => {
+      let release;
+      return {
+        query: async sql => {
+          if (sql.startsWith('SELECT GET_LOCK')) {
+            const previous = lockTail;
+            lockTail = new Promise(resolve => (release = resolve));
+            await previous;
+            return [[{ acquired: 1 }]];
+          }
+          if (sql.startsWith('SELECT RELEASE_LOCK')) {
+            release();
+            return [[{ acquired: 1 }]];
+          }
+          throw new Error('Unexpected lock SQL');
+        },
+        release() {}
+      };
+    },
     query: async (sql, params = []) => {
       if (sql.startsWith('INSERT INTO coolify_commands')) {
         if (state.commands.some(c => c[1] === params[1] && c[2] === params[2] && c[3] === params[3]))
@@ -124,7 +144,14 @@ test('command validation rejects shells, metacharacters and code-execution flags
     '/bin/ls',
     '-rf',
     'cat ../etc/passwd',
-    'docker ps'
+    'docker ps',
+    'MODE=prod rm -rf /data',
+    'A=1 php artisan about',
+    'nice rm x',
+    'nohup php artisan about',
+    'timeout 5 php artisan about',
+    'command rm x',
+    'find x'
   ])
     assert.throws(() => validateCommand(bad), undefined, bad);
   assert.throws(() => validateCommand('a b c d e f g h i j k l m'), /leer oder zu lang/);
@@ -229,4 +256,34 @@ test('restart queues a Coolify restart for a known application only', async () =
   assert.equal(result.state, 'restart_requested');
   assert.equal(result.deploymentUuid, 'dep-1');
   await assert.rejects(() => service.restart({ connectionId, applicationUuid: 'unknown-app' }), /nicht in dieser/);
+});
+
+test('a reused task that drifted from the SiteOps configuration is not executed', async () => {
+  for (const change of [
+    { enabled: true },
+    { container: 'worker' },
+    { frequency: '* * * * *' },
+    { timeout: 36000 },
+    { command: 'php artisan about' }
+  ]) {
+    const { service, state } = setup();
+    await define(service);
+    const run = () => service.runCommand({ connectionId, applicationUuid: appUuid, commandKey: 'create-user' });
+    await run();
+    Object.assign(state.tasks[0], change);
+    const executeCalls = () => state.calls.filter(c => c.path.endsWith('/execute')).length;
+    const before = executeCalls();
+    await assert.rejects(run, /weicht von der Vorgabe ab/, JSON.stringify(change));
+    assert.equal(executeCalls(), before);
+    assert.equal(state.runs.at(-1).state, 'error');
+  }
+});
+
+test('concurrent runs of the same command each get their own Coolify execution', async () => {
+  const { service } = setup();
+  await define(service);
+  const run = () => service.runCommand({ connectionId, applicationUuid: appUuid, commandKey: 'create-user' });
+  const [a, b] = await Promise.all([run(), run()]);
+  assert.notEqual(a.output, b.output);
+  assert.notEqual(a.runId, b.runId);
 });
