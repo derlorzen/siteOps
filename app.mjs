@@ -4634,6 +4634,15 @@ function mcpServer() {
     async input => toolText(await coolifyService.createProject(input))
   );
   s.registerTool(
+    'coolify_sources_list',
+    {
+      description:
+        'List Git sources already connected in Coolify (GitHub Apps and deploy keys) with UUID, name and type, to choose sourceType and sourceUuid for coolify_app_create with a private repository. Read-only; never returns key material or secrets.',
+      inputSchema: z.object({ connectionId: z.uuid() })
+    },
+    async ({ connectionId }) => toolText(await coolifyService.sources(connectionId))
+  );
+  s.registerTool(
     'coolify_apps_list',
     {
       description:
@@ -5554,7 +5563,7 @@ function mcpInfoPage() {
     ],
     [
       'Coolify / Supabase',
-      'coolify_connections, coolify_connection_info, coolify_services_list, coolify_service_info, coolify_supabase_list, coolify_supabase_create, coolify_supabase_status, coolify_supabase_retry'
+      'coolify_connections, coolify_connection_info, coolify_sources_list, coolify_services_list, coolify_service_info, coolify_supabase_list, coolify_supabase_create, coolify_supabase_status, coolify_supabase_retry'
     ],
     ['Dateien', 'files_list, text_search, files_find, file_read'],
     ['Änderungen', 'change_preview, change_apply, history_list, history_diff, rollback_preview'],
@@ -7254,6 +7263,7 @@ async function start() {
     coolifyService.remoteServiceInfo(req.params.id, req.params.uuid)
   );
   app.get('/api/coolify/connections/:id/projects', req => coolifyService.projects(req.params.id));
+  app.get('/api/coolify/connections/:id/sources', req => coolifyService.sources(req.params.id));
   app.post('/api/coolify/projects', req => coolifyService.createProject(req.body));
   app.get('/api/coolify/connections/:id/applications', req => coolifyService.applications(req.params.id));
   app.get('/api/coolify/connections/:id/applications/:uuid', req =>

@@ -42,6 +42,21 @@ function setup() {
       data.projects.push(project);
       return apiResult(project, 201);
     }
+    if (path === '/api/v1/github-apps')
+      return apiResult([
+        {
+          uuid: 'gh-app-one',
+          name: 'Lorzen GitHub',
+          organization: 'derlorzen',
+          is_public: false,
+          client_secret: 'LEAK'
+        }
+      ]);
+    if (path === '/api/v1/security/keys')
+      return apiResult([
+        { uuid: 'key-one', name: 'deploy', description: 'Marktschreier', private_key: 'DO-NOT-LEAK-KEY' },
+        { uuid: 'key-app', name: 'github-app-key', is_git_related: true, private_key: 'DO-NOT-LEAK-APP-KEY' }
+      ]);
     if (path === '/api/v1/servers') return apiResult([{ uuid: 'server-one', name: 'Docker A' }]);
     if (path === '/api/v1/applications' && options.method === 'GET') return apiResult(data.apps);
     if (path.endsWith('/envs/bulk') && options.method === 'PATCH') {
@@ -270,4 +285,18 @@ test('Coolify dashboard and MCP publish regular projects and Git apps', async ()
   assert.match(ui, /coolifyAppProject/);
   assert.match(script, /updateAppTargets/);
   assert.match(script, /refreshApps/);
+});
+
+test('git sources list exposes only uuid, name and type, never key material', async () => {
+  const { service } = setup();
+  const result = await service.sources(connectionId);
+  assert.deepEqual(
+    result.map(x => [x.sourceType, x.uuid, x.name]),
+    [
+      ['private-github-app', 'gh-app-one', 'Lorzen GitHub'],
+      ['private-deploy-key', 'key-one', 'deploy']
+    ]
+  );
+  const text = JSON.stringify(result);
+  assert.doesNotMatch(text, /LEAK/);
 });
