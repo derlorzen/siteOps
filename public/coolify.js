@@ -54,8 +54,14 @@
     const selection = preferredId || account.value;
     connectionRows.replaceChildren();
     account.replaceChildren(new Option('Verbindung wählen', ''));
+    const previousProjectConnection = projectConnection.value;
+    const previousAppConnection = appConnection.value;
+    projectConnection.replaceChildren(new Option('Verbindung wählen', ''));
+    appConnection.replaceChildren(new Option('Verbindung wählen', ''));
     for (const item of records) {
       account.add(new Option(item.name + ' · ' + item.baseUrl, item.id));
+      projectConnection.add(new Option(item.name + ' · ' + item.baseUrl, item.id));
+      appConnection.add(new Option(item.name + ' · ' + item.baseUrl, item.id));
       const tr = document.createElement('tr');
       for (const [label, value] of [
         ['Bezeichnung', item.name],
@@ -107,7 +113,10 @@
     }
     if (selection && records.some(record => record.id === selection)) account.value = selection;
     else if (records.length === 1) account.value = records[0].id;
-    await updateTargets();
+    const ids = records.map(record => record.id);
+    projectConnection.value = ids.includes(previousProjectConnection) ? previousProjectConnection : (ids.length === 1 ? ids[0] : '');
+    appConnection.value = ids.includes(previousAppConnection) ? previousAppConnection : (ids.length === 1 ? ids[0] : '');
+    await Promise.all([updateTargets(), updateAppTargets()]);
   }
   connect?.addEventListener('submit', async event => {
     event.preventDefault();
@@ -172,6 +181,164 @@
   void refreshConnections().catch(error => {
     show('Gespeicherte Coolify-Verbindungen konnten nicht geladen werden: ' + error.message, true);
   });
+
+  // Regular Coolify projects and Git-based applications.
+  const projectConnection = $('coolifyProjectConnection');
+  const appConnection = $('coolifyAppConnection');
+  const appProject = $('coolifyAppProject');
+  const appServer = $('coolifyAppServer');
+  const sourceType = $('coolifyGitSource');
+  const gitCredentialLabel = $('coolifyGitCredentialLabel');
+  const gitCredential = gitCredentialLabel?.querySelector('input');
+  const appInfo = $('coolifyGitInfo');
+  const appsRows = $('coolifyAppsRows');
+  let appTargetsRequest = 0;
+
+  function updateGitCredential() {
+    const needsCredential = sourceType.value !== 'public';
+    gitCredentialLabel.hidden = !needsCredential;
+    gitCredential.disabled = !needsCredential;
+    gitCredential.required = needsCredential;
+    if (!needsCredential) gitCredential.value = '';
+  }
+  sourceType?.addEventListener('change', updateGitCredential);
+  updateGitCredential();
+
+  async function updateAppTargets() {
+    const seq = ++appTargetsRequest;
+    const previousProject = appProject.value;
+    appProject.replaceChildren(new Option('Projekt wählen', ''));
+    appServer.replaceChildren(new Option('Automatisch bei einem Server', ''));
+    appProject.disabled = appServer.disabled = !appConnection.value;
+    if (!appConnection.value) {
+      appInfo.textContent = 'Zuerst eine gespeicherte Verbindung auswählen.';
+      return;
+    }
+    appInfo.textContent = 'Lade Coolify-Projekte und Server …';
+    try {
+      const info = await api('/api/coolify/connections/' + encodeURIComponent(appConnection.value) + '/info');
+      if (seq !== appTargetsRequest) return;
+      for (const entry of info.projects) appProject.add(new Option(entry.name + ' · ' + entry.uuid, entry.uuid));
+      for (const entry of info.servers) appServer.add(new Option(entry.name + ' · ' + entry.uuid, entry.uuid));
+      if (info.projects.some(item => item.uuid === previousProject)) appProject.value = previousProject;
+      if (info.defaultServerUuid) appServer.value = info.defaultServerUuid;
+      appInfo.textContent = info.projects.length + ' Projekte und ' + info.servers.length + ' Server verfügbar.';
+    } catch (error) {
+      if (seq === appTargetsRequest) appInfo.textContent = 'Coolify-API nicht erreichbar: ' + error.message;
+    }
+  }
+  appConnection?.addEventListener('change', () => void updateAppTargets());
+  projectConnection?.addEventListener('change', () => {
+    if (projectConnection.value && !appConnection.value) {
+      appConnection.value = projectConnection.value;
+      void updateAppTargets();
+    }
+  });
+
+  $('coolifyProjectCreate')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget, button = form.querySelector('[type=submit]');
+    if (!confirm('Neues Coolify-Projekt anlegen?')) return;
+    button.disabled = true;
+    try {
+      const result = await api('/api/coolify/projects', {
+        method: 'POST',
+        body: JSON.stringify(Object.fromEntries(new FormData(form)))
+      });
+      show('Coolify-Projekt „' + result.name + '“ ' + (result.created ? 'angelegt' : 'bereits vorhanden') + ' · UUID ' + result.uuid);
+      appConnection.value = projectConnection.value;
+      await Promise.all([updateAppTargets(), updateTargets()]);
+    } catch (error) {
+      show('Projekt konnte nicht angelegt werden: ' + error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $('coolifyGitAppCreate')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget, button = form.querySelector('[type=submit]');
+    const data = Object.fromEntries(new FormData(form));
+    for (const key of ['serverUuid', 'destinationUuid', 'sourceUuid', 'domain', 'baseDirectory', 'publishDirectory', 'dockerfileLocation']) {
+      if (!data[key]) delete data[key];
+    }
+    data.autoDeploy = form.elements.namedItem('autoDeploy').checked;
+    data.deployNow = form.elements.namedItem('deployNow').checked;
+    if (!confirm('Git-App „' + data.name + '“ aus ' + data.gitRepository + ' (' + data.gitBranch + ')' +
+      (data.deployNow ? ' anlegen und sofort deployen?' : ' anlegen, ohne sofortiges Deployment?'))) return;
+    button.disabled = true;
+    try {
+      const result = await api('/api/coolify/applications', { method: 'POST', body: JSON.stringify(data) });
+      show('Git-Anwendung „' + result.name + '“ ' + (result.created ? 'angelegt' : 'bereits vorhanden') +
+        ' · UUID ' + result.uuid + (result.deploymentRequested ? ' · Deployment angefordert' : ''));
+      await refreshApps();
+    } catch (error) {
+      show('Git-Anwendung konnte nicht angelegt werden: ' + error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  async function refreshApps() {
+    if (!appConnection.value) {
+      appInfo.textContent = 'Bitte eine Coolify-Verbindung wählen.';
+      return;
+    }
+    try {
+      const result = await api('/api/coolify/connections/' + encodeURIComponent(appConnection.value) + '/applications');
+      appsRows.replaceChildren();
+      for (const item of result) {
+        const row = document.createElement('tr');
+        for (const [label, value] of [
+          ['Anwendung', item.name + ' · ' + item.uuid],
+          ['Git-Quelle', item.gitRepository + ' · ' + item.gitBranch],
+          ['Status', item.status || 'Nicht verfügbar']
+        ]) {
+          const cell = document.createElement('td');
+          cell.dataset.label = label;
+          cell.textContent = value;
+          row.append(cell);
+        }
+        const cell = document.createElement('td');
+        cell.dataset.label = 'Aktionen';
+        const deploy = document.createElement('button');
+        deploy.type = 'button';
+        deploy.className = 'ghost';
+        deploy.textContent = 'Deployen';
+        deploy.addEventListener('click', async () => {
+          if (!confirm('Deployment für „' + item.name + '“ starten?')) return;
+          deploy.disabled = true;
+          try {
+            const request = await api('/api/coolify/applications/' + encodeURIComponent(item.uuid) + '/deploy', {
+              method: 'POST',
+              body: JSON.stringify({ connectionId: appConnection.value })
+            });
+            show('Deployment für „' + item.name + '“ angefordert' +
+              (request.deploymentUuid ? ' · ' + request.deploymentUuid : '') +
+              '. Das bestätigt noch keinen erfolgreichen Start.');
+          } catch (error) {
+            show('Deployment fehlgeschlagen: ' + error.message, true);
+          } finally {
+            deploy.disabled = false;
+          }
+        });
+        cell.append(deploy);
+        row.append(cell);
+        appsRows.append(row);
+      }
+      if (!result.length) {
+        const row = document.createElement('tr'), cell = document.createElement('td');
+        cell.colSpan = 4;
+        cell.textContent = 'Noch keine Git-Anwendungen auf dieser Coolify-Verbindung.';
+        row.append(cell);
+        appsRows.append(row);
+      }
+    } catch (error) {
+      show('Coolify-Anwendungen konnten nicht geladen werden: ' + error.message, true);
+    }
+  }
+  $('coolifyAppsRefresh')?.addEventListener('click', () => void refreshApps());
+
   $('coolifySupabaseCreate')?.addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget,

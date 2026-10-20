@@ -32,6 +32,45 @@ Die Einrichtung erfordert keine API-Zugangsdaten im Chat. Auch das Backend
 von SiteOps bleibt auf seinem bestehenden Hosting; lediglich die neue
 Supabase-Instanz wird auf dem in Coolify registrierten Server installiert.
 
+
+## Normale Projekte und Git-Anwendungen
+
+SiteOps kann über dieselbe gespeicherte Coolify-Verbindung **normale Coolify-Projekte**
+und darin Anwendungen aus Git-Repositories erstellen. Die Oberfläche \`/coolify\` bietet
+dafür zwei eigene Formulare und eine Liste bestehender Anwendungen.
+
+- \`coolify_projects_list\`: bestehende Projekte lesen.
+- \`coolify_project_create\`: eigenständiges Projekt anhand stabiler \`projectKey\` erstellen.
+  Wiederholte Aufrufe verwenden nur eindeutig SiteOps-markierte Projekte.
+- \`coolify_apps_list\` / \`coolify_app_info\`: bestehende Git-Anwendungen ohne Secrets auflisten.
+- \`coolify_app_create\`: neues Git-Repository mit \`projectUuid\`, \`appKey\`,
+  Name, Branch, Buildpack, Port, Zielserver, Umgebung und optional Domain,
+  Build-Verzeichnissen sowie Docker-Destination anlegen.
+- \`coolify_app_deploy\`: vorhandene App nur auf ausdrücklichen Auftrag deployen.
+
+Die Git-Quellen sind \`public\` (öffentliches HTTPS-Repository),
+\`private-deploy-key\` (bestehende private Key-UUID in Coolify) oder
+\`private-github-app\` (bestehende GitHub-App-UUID in Coolify).
+SiteOps überträgt **keine Git-Zugriffstokens oder privaten Schlüssel**; private
+Quellen müssen vorher direkt in Coolify verbunden sein.
+
+Die Kennung ist pro Verbindung + Coolify-Projekt stabil. Vor dem Schreiben prüft
+SiteOps auf gleichnamige fremde Ressourcen und eindeutig markierte vorhandene
+Apps. Wiederholung mit derselben Konfiguration führt zu keiner Doppelanlage
+oder automatischen erneuten Bereitstellung. Ein Konfigurationskonflikt wird
+abgelehnt. Ein Deployment wird nur gestartet, wenn \`deployNow=true\` beim
+expliziten Erstellen angegeben ist oder \`coolify_app_deploy\` ausdrücklich
+aufgerufen wird. \`deployment_requested\` ist kein Healthcheck und bestätigt
+keinen erfolgreichen Start. Domainkonflikte werden **niemals erzwungen**.
+
+Die API verwendet die offiziellen Coolify-Endpunkte:
+\`POST /api/v1/projects\`,
+\`POST /api/v1/applications/public\`,
+\`POST /api/v1/applications/private-deploy-key\`,
+\`POST /api/v1/applications/private-github-app\`,
+\`POST /api/v1/applications/{uuid}/start\`.
+Ein projektbezogener \`production\`-Environment-Name muss in Coolify vorhanden sein.
+
 ## Eine Instanz pro Projekt
 
 Beispiel:
@@ -91,12 +130,20 @@ bestehenden Container oder Domains.
 - `GET|POST /api/coolify/connections`
 - `PUT /api/coolify/connections/:id` (bestehende Verbindung validiert aktualisieren, Token optional)
 - `GET /api/coolify/connections/:id/info`
+- `GET /api/coolify/connections/:id/projects`
+- `POST /api/coolify/projects`
+- `GET /api/coolify/connections/:id/applications`
+- `GET /api/coolify/connections/:id/applications/:uuid`
+- `POST /api/coolify/applications`
+- `POST /api/coolify/applications/:uuid/deploy`
 - `GET|POST /api/coolify/supabase`
 - `GET /api/coolify/supabase/:id`
 - `POST /api/coolify/supabase/:id/retry`
 
 **MCP (OAuth):**
 - `coolify_connections`, `coolify_connection_info`
+- `coolify_projects_list`, `coolify_project_create`
+- `coolify_apps_list`, `coolify_app_info`, `coolify_app_create`, `coolify_app_deploy`
 - `coolify_supabase_list`, `coolify_supabase_create`,
   `coolify_supabase_status`, `coolify_supabase_retry`
 
