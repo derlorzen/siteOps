@@ -71,6 +71,32 @@ Die API verwendet die offiziellen Coolify-Endpunkte:
 \`POST /api/v1/applications/{uuid}/start\`.
 Ein projektbezogener \`production\`-Environment-Name muss in Coolify vorhanden sein.
 
+## Eingeschränktes Terminal (Allowlist)
+
+SiteOps führt Befehle in Anwendungen **nur** aus, wenn ein Administrator sie vorher auf eine
+Allowlist gesetzt hat, und nur über Coolify selbst. Es gibt keine Shell, keinen SSH-Zugang und
+keinen Docker-Socket.
+
+- **Allowlist pflegen** (nur Dashboard-API, nie über MCP, damit eine KI sich keine Rechte selbst gibt):
+  `POST /api/coolify/commands` mit `connectionId`, `applicationUuid`, `commandKey`, `label`,
+  `command`, optional `container` (Compose-Dienst, z. B. `app`) und `allowArgs`.
+  `GET /api/coolify/connections/:id/commands` listet, `DELETE /api/coolify/commands/:id` entfernt.
+- **MCP-Tools:** `coolify_command_list`, `coolify_command_run` (Schlüssel aus der Liste plus
+  optionale Argumente), `coolify_app_logs` (1–500 Zeilen), `coolify_app_restart`.
+- **Regeln:** Befehl und Argumente dürfen nur aus Buchstaben, Ziffern und `_ . : = @ / + -`
+  bestehen, ohne Leerzeichen innerhalb eines Tokens, Anführungszeichen, `;`, `|`, `&`, `$`
+  oder Backticks. Maximal 12 Befehlsteile und 8 Argumente. Nicht erlaubt sind Shells und
+  Netzwerk-/Löschwerkzeuge als Befehl sowie `tinker`, `-r`, `-e`, `-c` und ähnliche Schalter.
+  Passwörter mit Sonderzeichen sind deshalb als Argument nicht möglich.
+- **Ablauf:** SiteOps legt in Coolify eine **deaktivierte** Scheduled Task mit dem festen Befehl an
+  (Name `siteops-cmd-<Hash>`, gleiche Befehle verwenden dieselbe Task), startet sie über
+  `POST /applications/{uuid}/scheduled-tasks/{task}/execute` und liest die Ausführung aus der
+  Ausführungsliste. Der Coolify-Token braucht dafür die Berechtigung *deploy*; für Logs
+  *read:sensitive*.
+- **Protokoll:** Jeder Lauf wird mit Schlüssel und **Anzahl** der Argumente gespeichert, nie mit den
+  Werten. Argumente stehen aber im Befehl der Coolify-Task. Keine Geheimnisse als Argumente
+  übergeben, wenn es vermeidbar ist.
+
 ## Eine Instanz pro Projekt
 
 Beispiel:

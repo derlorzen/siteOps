@@ -28,6 +28,7 @@ import { createAllInklSslService, allinklSslRequestSchema } from './lib/allinkl-
 import { createAllInklService, allinklProvisionSchema, allinklDnsRecordSchema } from './lib/allinkl.mjs';
 import { createCoolifyService, coolifySupabaseSchema } from './lib/coolify.mjs';
 import { coolifyProjectCreateSchema, coolifyGitApplicationSchema } from './lib/coolify-git.mjs';
+import { coolifyCommandRunSchema, coolifyLogsSchema, coolifyRestartSchema } from './lib/coolify-exec.mjs';
 import { renderCoolifyWorkspace } from './lib/coolify-ui.mjs';
 import { renderAllInklWorkspace } from './lib/allinkl-ui.mjs';
 import { createWebsiteFactory, websiteCreateSchema } from './lib/website-factory.mjs';
@@ -4670,6 +4671,42 @@ function mcpServer() {
     async input => toolText(await coolifyService.createApplication(input))
   );
   s.registerTool(
+    'coolify_command_list',
+    {
+      description:
+        'List the allowlisted commands of one Coolify application (key, label, fixed command, container, whether extra arguments are allowed). Read-only. The allowlist can only be changed by an administrator in the SiteOps dashboard, never through this tool.',
+      inputSchema: z.object({ connectionId: z.uuid(), applicationUuid: z.string().regex(/^[a-zA-Z0-9_-]{4,191}$/) })
+    },
+    async input => toolText(await coolifyService.listCommands(input))
+  );
+  s.registerTool(
+    'coolify_command_run',
+    {
+      description:
+        'Run one allowlisted command in a Coolify application through a Coolify scheduled task (no shell, no free input). Takes the commandKey from coolify_command_list and optional plain arguments if the entry allows them (letters, digits and _ . : = @ / + - only). Real execution inside the app container; call ONLY when the user explicitly asks to run that command. Returns status and output, or status running if Coolify has not answered yet.',
+      inputSchema: coolifyCommandRunSchema
+    },
+    async input => toolText(await coolifyService.runCommand(input))
+  );
+  s.registerTool(
+    'coolify_app_logs',
+    {
+      description:
+        'Read the last lines (1-500, default 100) of an application log from Coolify, optionally for one compose service. Read-only; output is capped and Bearer tokens are redacted.',
+      inputSchema: coolifyLogsSchema
+    },
+    async input => toolText(await coolifyService.logs(input))
+  );
+  s.registerTool(
+    'coolify_app_restart',
+    {
+      description:
+        'Restart an existing Coolify application. Creates a real restart job; call ONLY when the user explicitly asks to restart this app.',
+      inputSchema: coolifyRestartSchema
+    },
+    async input => toolText(await coolifyService.restart(input))
+  );
+  s.registerTool(
     'coolify_app_deploy',
     {
       description:
@@ -5563,7 +5600,7 @@ function mcpInfoPage() {
     ],
     [
       'Coolify / Supabase',
-      'coolify_connections, coolify_connection_info, coolify_sources_list, coolify_services_list, coolify_service_info, coolify_supabase_list, coolify_supabase_create, coolify_supabase_status, coolify_supabase_retry'
+      'coolify_connections, coolify_connection_info, coolify_sources_list, coolify_command_list, coolify_command_run, coolify_app_logs, coolify_app_restart, coolify_services_list, coolify_service_info, coolify_supabase_list, coolify_supabase_create, coolify_supabase_status, coolify_supabase_retry'
     ],
     ['Dateien', 'files_list, text_search, files_find, file_read'],
     ['Änderungen', 'change_preview, change_apply, history_list, history_diff, rollback_preview'],
@@ -7272,6 +7309,23 @@ async function start() {
   app.post('/api/coolify/applications', req => coolifyService.createApplication(req.body));
   app.post('/api/coolify/applications/:uuid/deploy', req =>
     coolifyService.deployApplication({ connectionId: req.body?.connectionId, applicationUuid: req.params.uuid })
+  );
+  app.get('/api/coolify/connections/:id/commands', req =>
+    coolifyService.listCommands({ connectionId: req.params.id, applicationUuid: req.query?.applicationUuid })
+  );
+  app.post('/api/coolify/commands', req => coolifyService.defineCommand(req.body));
+  app.delete('/api/coolify/commands/:id', req => coolifyService.deleteCommand(req.params.id));
+  app.post('/api/coolify/commands/run', req => coolifyService.runCommand(req.body));
+  app.get('/api/coolify/connections/:id/applications/:uuid/logs', req =>
+    coolifyService.logs({
+      connectionId: req.params.id,
+      applicationUuid: req.params.uuid,
+      lines: req.query?.lines ? Number(req.query.lines) : undefined,
+      serviceName: req.query?.serviceName
+    })
+  );
+  app.post('/api/coolify/applications/:uuid/restart', req =>
+    coolifyService.restart({ connectionId: req.body?.connectionId, applicationUuid: req.params.uuid })
   );
   app.get('/api/coolify/supabase', () => coolifyService.instances());
   app.post('/api/coolify/supabase', (req, reply) =>
