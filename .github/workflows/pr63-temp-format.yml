@@ -1,0 +1,30 @@
+name: Temporary Coolify Git Formatter
+
+on:
+  push:
+    branches: [feat/coolify-git-project-apps]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: "!contains(github.event.head_commit.message, 'style: format Coolify Git')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install formatter
+        run: npm install --ignore-scripts
+      - name: Apply repository formatting
+        run: npx prettier --write app.mjs lib/coolify-git.mjs test/coolify-git.test.mjs
+      - name: Commit formatting
+        run: |
+          git config user.name "SiteOps CI Formatter"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app.mjs lib/coolify-git.mjs test/coolify-git.test.mjs
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "style: format Coolify Git"
+          git push origin HEAD:feat/coolify-git-project-apps
