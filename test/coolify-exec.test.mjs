@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createCoolifyExecService, validateArgs, validateCommand } from '../lib/coolify-exec.mjs';
+import { BLOCKED_EXECUTABLES, BLOCKED_TOKENS, isBlockedExecutable, isBlockedToken } from '../lib/coolify-blacklist.mjs';
 import { createCoolifyClient } from '../lib/coolify.mjs';
 
 const connectionId = '11111111-1111-4111-8111-111111111111';
@@ -168,7 +169,7 @@ test('defining a command validates it and rejects duplicates', async () => {
   assert.equal(created.commandKey, 'create-user');
   assert.equal(created.allowArgs, true);
   await assert.rejects(() => define(service), /bereits/);
-  await assert.rejects(() => define(service, { commandKey: 'other-one', command: 'bash -c id' }), /nicht erlaubt/);
+  await assert.rejects(() => define(service, { commandKey: 'other-one', command: 'bash -c id' }), /Blacklist/);
 });
 
 test('only allowlisted commands run, via a disabled Coolify task', async () => {
@@ -286,4 +287,71 @@ test('concurrent runs of the same command each get their own Coolify execution',
   const [a, b] = await Promise.all([run(), run()]);
   assert.notEqual(a.output, b.output);
   assert.notEqual(a.runId, b.runId);
+});
+
+test('every blacklisted executable is refused as a command, also with a path or different case', () => {
+  assert.ok(BLOCKED_EXECUTABLES.size > 100);
+  for (const name of BLOCKED_EXECUTABLES) {
+    assert.equal(isBlockedExecutable(name), true, name);
+    assert.equal(isBlockedExecutable(name.toUpperCase()), true, name);
+    assert.equal(isBlockedExecutable('/usr/bin/' + name), true, name);
+    assert.throws(() => validateCommand(name + ' --help'), /Blacklist/, name);
+  }
+  for (const name of ['mkfs.ext4', 'mkfs', 'python3.12', 'perl5', 'pip3.11'])
+    assert.throws(() => validateCommand(name + ' x'), /Blacklist/, name);
+});
+
+test('blacklisted subcommands, flags and secret paths are refused as command parts and arguments', () => {
+  for (const token of BLOCKED_TOKENS) {
+    assert.equal(isBlockedToken(token), true, token);
+    assert.throws(() => validateArgs([token]), /Blacklist/, token);
+    assert.throws(() => validateCommand('php artisan ' + token), /Blacklist/, token);
+  }
+  for (const token of [
+    '/etc/passwd',
+    '/etc/shadow',
+    '/proc/self/environ',
+    '/var/run/docker.sock',
+    '/root/.ssh/id_rsa',
+    '.env',
+    '/var/www/html/.env',
+    '.env.production',
+    '--path=/etc/hosts',
+    '--file=.env',
+    '--mode=tinker'
+  ]) {
+    assert.equal(isBlockedToken(token), true, token);
+    assert.throws(() => validateArgs([token]), /Blacklist/, token);
+  }
+});
+
+test('harmless commands and arguments are not blacklisted', () => {
+  for (const command of [
+    'php artisan marktschreier:user',
+    'php artisan about',
+    'php artisan queue:work --stop-when-empty',
+    'php artisan cache:clear',
+    'ls -la',
+    'pwd',
+    'whoami',
+    'date',
+    'df -h',
+    'ps aux'
+  ])
+    assert.equal(validateCommand(command), command);
+  assert.deepEqual(validateArgs(['Benny', 'benny@example.de', '--role=admin']), [
+    'Benny',
+    'benny@example.de',
+    '--role=admin'
+  ]);
+});
+
+test('a blacklisted command that was stored earlier is still refused at run time', async () => {
+  const { service, state } = setup();
+  state.commands.push(['id-1', connectionId, appUuid, 'old-entry', 'Alt', 'rm -rf data', null, 0]);
+  await assert.rejects(
+    () => service.runCommand({ connectionId, applicationUuid: appUuid, commandKey: 'old-entry' }),
+    /Blacklist/
+  );
+  assert.equal(state.calls.filter(c => c.path.endsWith('/execute')).length, 0);
 });

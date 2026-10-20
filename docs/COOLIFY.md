@@ -85,10 +85,25 @@ keinen Docker-Socket.
   optionale Argumente), `coolify_app_logs` (1–500 Zeilen), `coolify_app_restart`.
 - **Regeln:** Befehl und Argumente dürfen nur aus Buchstaben, Ziffern und `_ . : = @ / + -`
   bestehen, ohne Leerzeichen innerhalb eines Tokens, Anführungszeichen, `;`, `|`, `&`, `$`
-  oder Backticks. Maximal 12 Befehlsteile und 8 Argumente. Nicht erlaubt sind Shells und
-  Netzwerk-/Löschwerkzeuge als Befehl, Wrapper wie `nice`, `timeout` oder `find`, ein führendes
-  `VAR=wert` sowie `tinker`, `-r`, `-e`, `-c` und ähnliche Schalter.
-  Passwörter mit Sonderzeichen sind deshalb als Argument nicht möglich.
+  oder Backticks. Maximal 12 Befehlsteile und 8 Argumente. Das erste Token muss ein schlichter
+  Programmname sein, ein führendes `VAR=wert` wird abgelehnt. Passwörter mit Sonderzeichen sind
+  deshalb als Argument nicht möglich.
+- **Blacklist (nie ausführbar):** `lib/coolify-blacklist.mjs`. Sie gilt unabhängig von der Allowlist,
+  beim Anlegen, bei jedem Argument und vor jedem Lauf erneut, also auch für früher gespeicherte
+  Einträge. Groß-/Kleinschreibung und Pfade (`/usr/bin/rm`) ändern nichts.
+  - *Als Befehl gesperrt:* Shells und Interpreter (sh, bash, python, perl, node, awk, sed, vi, less …),
+    Wrapper (env, xargs, nice, timeout, find, git, make …), Rechte (sudo, su, chroot …),
+    Löschen und Ändern (rm, dd, mv, cp, chmod, chown, tar, tee, mkfs.* …), Dateien und Secrets lesen
+    (cat, head, tail, grep, printenv, export …), Netzwerk (curl, wget, nc, ssh, scp, rsync …),
+    System und Prozesse (kill, reboot, systemctl, mount, iptables, crontab …), Container und Pakete
+    (docker, kubectl, apt, pip, npm, composer …) und Datenbank-Clients (mysql, psql, redis-cli …).
+  - *Überall gesperrt (auch als Argument):* `tinker`, `-r`, `-e`, `-c`, `-a`, `-d` und ähnliche Schalter,
+    zerstörerische artisan-Befehle (`db:wipe`, `migrate:fresh`, `migrate:reset`, `migrate:refresh`,
+    `migrate:rollback`, `db:seed`, `key:generate`, `down`), `flushall`/`flushdb` sowie Pfade und
+    Dateien mit Secrets oder Host-Zugriff (`/etc`, `/proc`, `/sys`, `/dev`, `/root`, `docker.sock`,
+    `.env`, SSH-Schlüssel, `passwd`, `shadow`), auch als Wert von `--option=wert`.
+  - Neue Einträge hinzufügen: Liste in `lib/coolify-blacklist.mjs` erweitern. Die Tests prüfen jeden
+    Eintrag automatisch.
 - **Ablauf:** SiteOps legt in Coolify eine **deaktivierte** Scheduled Task mit dem festen Befehl an
   (Name `siteops-cmd-<Hash>`, gleiche Befehle verwenden dieselbe Task), startet sie über
   `POST /applications/{uuid}/scheduled-tasks/{task}/execute` und liest die Ausführung aus der
