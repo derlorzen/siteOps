@@ -150,3 +150,22 @@ bestehenden Container oder Domains.
 **Referenzen:** [Coolify API](https://coolify.io/docs/api/overview),
 [Service erstellen](https://coolify.io/docs/api/endpoints/services/create-service),
 [Supabase in Coolify](https://coolify.io/docs/services/supabase).
+
+## Docker-Compose-Anwendungen mit Variablen
+
+`coolify_app_create` (und das Formular unter `/coolify`) unterstützt für
+`buildPack: "dockercompose"` zusätzlich:
+
+- `dockerComposeLocation`: Pfad der Compose-Datei im Repository,
+  zum Beispiel `/docker-compose.yml`.
+- `dockerComposeDomains`: Domains je Compose-Dienst, etwa
+  `[{ "service": "app", "domain": "https://app.example.de:8080" }]`.
+  Der Port nennt den Container-Port, an den Coolify weiterleitet.
+  Das Feld `domain` ist bei Compose nicht zulässig.
+- `environment`: Liste aus `{ key, value, buildTime? }` (`buildTime` standardmäßig `true` wie in Coolify). SiteOps legt die
+  Anwendung ohne Sofort-Deployment an, setzt die Variablen über
+  `PATCH /api/v1/applications/{uuid}/envs/bulk` und startet erst danach
+  ein angefordertes Deployment. Die Werte werden weder gespeichert noch
+  protokolliert noch zurückgegeben; in den Konfigurations-Fingerabdruck
+  gehen nur Variablennamen und `buildTime` ein. Bei einem erneuten Aufruf mit gleichem
+  `appKey` bleibt die bestehende Anwendung samt Variablen unverändert.
