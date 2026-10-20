@@ -219,6 +219,7 @@ test('Compose apps get service domains, compose path and variables before the de
   assert.equal(data.envs[0].path, '/api/v1/applications/' + appUuid + '/envs/bulk');
   assert.equal(data.envs[0].body.data[0].key, 'APP_KEY');
   assert.equal(data.envs[0].body.data[0].is_literal, true);
+  assert.equal(data.envs[0].body.data[0].is_buildtime, true);
   const order = data.posts.map(x => x.method + ' ' + x.path);
   assert.ok(
     order.indexOf('PATCH /api/v1/applications/' + appUuid + '/envs/bulk') <
@@ -229,6 +230,14 @@ test('Compose apps get service domains, compose path and variables before the de
   assert.equal(data.envs.length, 1);
   await assert.rejects(
     () => service.createApplication({ ...command, environment: [{ key: 'OTHER', value: 'x' }] }),
+    /abweichender/
+  );
+  await assert.rejects(
+    () =>
+      service.createApplication({
+        ...command,
+        environment: command.environment.map(item => ({ ...item, buildTime: false }))
+      }),
     /abweichender/
   );
   for (const bad of [

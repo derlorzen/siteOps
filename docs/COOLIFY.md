@@ -162,10 +162,10 @@ bestehenden Container oder Domains.
   `[{ "service": "app", "domain": "https://app.example.de:8080" }]`.
   Der Port nennt den Container-Port, an den Coolify weiterleitet.
   Das Feld `domain` ist bei Compose nicht zulässig.
-- `environment`: Liste aus `{ key, value, buildTime? }`. SiteOps legt die
+- `environment`: Liste aus `{ key, value, buildTime? }` (`buildTime` standardmäßig `true` wie in Coolify). SiteOps legt die
   Anwendung ohne Sofort-Deployment an, setzt die Variablen über
   `PATCH /api/v1/applications/{uuid}/envs/bulk` und startet erst danach
   ein angefordertes Deployment. Die Werte werden weder gespeichert noch
   protokolliert noch zurückgegeben; in den Konfigurations-Fingerabdruck
-  gehen nur die Variablennamen ein. Bei einem erneuten Aufruf mit gleichem
+  gehen nur Variablennamen und `buildTime` ein. Bei einem erneuten Aufruf mit gleichem
   `appKey` bleibt die bestehende Anwendung samt Variablen unverändert.
