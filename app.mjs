@@ -4627,7 +4627,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_project_create',
     {
-      description: 'Create a regular Coolify project using a unique projectKey. Idempotent: same key reuses only a SiteOps-owned project. Real remote write; call ONLY on explicit project creation intent. Does not deploy an application.',
+      description:
+        'Create a regular Coolify project using a unique projectKey. Idempotent: same key reuses only a SiteOps-owned project. Real remote write; call ONLY on explicit project creation intent. Does not deploy an application.',
       inputSchema: coolifyProjectCreateSchema
     },
     async input => toolText(await coolifyService.createProject(input))
@@ -4635,7 +4636,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_apps_list',
     {
-      description: 'Read existing Git applications of a saved Coolify connection, including manually created apps. Returns only safe fields; never environment secrets.',
+      description:
+        'Read existing Git applications of a saved Coolify connection, including manually created apps. Returns only safe fields; never environment secrets.',
       inputSchema: z.object({ connectionId: z.uuid() })
     },
     async ({ connectionId }) => toolText(await coolifyService.applications(connectionId))
@@ -4652,7 +4654,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_app_create',
     {
-      description: 'Create a Git-based Coolify app inside an existing Coolify project. Supports public HTTPS Git, pre-configured private deploy-key UUID or private GitHub App UUID, branch, build pack, server, domain and optional immediate deployment. AppKey prevents duplicate creation and rejects conflicting configuration. Requires explicit request to create the app; deployNow only when the user explicitly requests deployment. Never creates credentials or alters existing apps.',
+      description:
+        'Create a Git-based Coolify app inside an existing Coolify project. Supports public HTTPS Git, pre-configured private deploy-key UUID or private GitHub App UUID, branch, build pack, server, domain and optional immediate deployment. AppKey prevents duplicate creation and rejects conflicting configuration. Requires explicit request to create the app; deployNow only when the user explicitly requests deployment. Never creates credentials or alters existing apps.',
       inputSchema: coolifyGitApplicationSchema
     },
     async input => toolText(await coolifyService.createApplication(input))
@@ -4660,7 +4663,8 @@ function mcpServer() {
   s.registerTool(
     'coolify_app_deploy',
     {
-      description: 'Start/deploy an existing application in Coolify. Creates a real deployment job; call ONLY when the user explicitly asks to deploy this app.',
+      description:
+        'Start/deploy an existing application in Coolify. Creates a real deployment job; call ONLY when the user explicitly asks to deploy this app.',
       inputSchema: z.object({
         connectionId: z.uuid(),
         applicationUuid: z.string().regex(/^[a-zA-Z0-9_-]{4,191}$/)

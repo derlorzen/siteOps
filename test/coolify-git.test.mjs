@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import { coolifyGitApplicationSchema, coolifyProjectCreateSchema, createCoolifyGitService } from '../lib/coolify-git.mjs';
+import {
+  coolifyGitApplicationSchema,
+  coolifyProjectCreateSchema,
+  createCoolifyGitService
+} from '../lib/coolify-git.mjs';
 import { createCoolifyClient } from '../lib/coolify.mjs';
 
 const connectionId = '11111111-1111-4111-8111-111111111111';
@@ -10,9 +14,14 @@ const baseUrl = 'https://coolify.example.de';
 const projectUuid = 'project-one';
 const appUuid = 'git-app-one';
 const input = {
-  connectionId, projectUuid, appKey: 'web-app', name: 'Website App',
-  gitRepository: 'https://github.com/example/app', gitBranch: 'main',
-  buildPack: 'nixpacks', portsExposes: '3000'
+  connectionId,
+  projectUuid,
+  appKey: 'web-app',
+  name: 'Website App',
+  gitRepository: 'https://github.com/example/app',
+  gitBranch: 'main',
+  buildPack: 'nixpacks',
+  portsExposes: '3000'
 };
 
 function setup() {
@@ -91,13 +100,21 @@ test('regular Coolify project creation is idempotent and rejects foreign project
   assert.equal(data.posts.filter(x => x.path === '/api/v1/projects' && x.method === 'POST').length, 1);
   assert.match(data.projects[0].description, /^SiteOps\/project\//);
   await assert.rejects(() => service.createProject({ ...command, name: 'Renamed' }), /abweichender/);
-  await assert.rejects(() => service.createProject({ connectionId, projectKey: 'other-project', name: 'My Project' }), /abweichender/);
+  await assert.rejects(
+    () => service.createProject({ connectionId, projectKey: 'other-project', name: 'My Project' }),
+    /abweichender/
+  );
 });
 
 test('public Git app creation uses documented API and never creates duplicates', async () => {
   const { service, data } = setup();
   data.projects.push({ uuid: projectUuid, name: 'My Project' });
-  const first = await service.createApplication({ ...input, deployNow: true, autoDeploy: false, domain: 'https://app.example.de' });
+  const first = await service.createApplication({
+    ...input,
+    deployNow: true,
+    autoDeploy: false,
+    domain: 'https://app.example.de'
+  });
   assert.equal(first.uuid, appUuid);
   assert.equal(first.created, true);
   assert.equal(first.deploymentRequested, true);
@@ -112,7 +129,12 @@ test('public Git app creation uses documented API and never creates duplicates',
   assert.equal(createCall.body.is_auto_deploy_enabled, false);
   assert.equal(createCall.body.domains, 'https://app.example.de');
   assert.equal(createCall.body.force_domain_override, false);
-  const second = await service.createApplication({ ...input, deployNow: true, autoDeploy: false, domain: 'https://app.example.de' });
+  const second = await service.createApplication({
+    ...input,
+    deployNow: true,
+    autoDeploy: false,
+    domain: 'https://app.example.de'
+  });
   assert.equal(second.created, false);
   assert.equal(second.deploymentRequested, false);
   assert.equal(data.apps.length, 1);
@@ -140,7 +162,10 @@ test('private Git apps require existing credential UUID and use separate API end
     assert.equal(created.body.instant_deploy, false);
   }
   assert.equal(coolifyGitApplicationSchema.safeParse({ ...input, sourceType: 'private-deploy-key' }).success, false);
-  assert.equal(coolifyGitApplicationSchema.safeParse({ ...input, gitRepository: 'git@github.com:foo/bar' }).success, false);
+  assert.equal(
+    coolifyGitApplicationSchema.safeParse({ ...input, gitRepository: 'git@github.com:foo/bar' }).success,
+    false
+  );
 });
 
 test('rejects unsafe credentials in repository URLs and unknown project/server', async () => {
@@ -150,11 +175,15 @@ test('rejects unsafe credentials in repository URLs and unknown project/server',
     'https://localhost/team/repo',
     'https://192.168.1.5/team/repo',
     'https://github.com/team/repo?token=abc'
-  ]) assert.equal(coolifyGitApplicationSchema.safeParse({ ...input, gitRepository }).success, false);
+  ])
+    assert.equal(coolifyGitApplicationSchema.safeParse({ ...input, gitRepository }).success, false);
   const { service, data } = setup();
   await assert.rejects(() => service.createApplication(input), /gehört nicht/);
   data.projects.push({ uuid: projectUuid, name: 'My Project' });
-  await assert.rejects(() => service.createApplication({ ...input, serverUuid: 'server-wrong' }), /gültigen Coolify-Server/);
+  await assert.rejects(
+    () => service.createApplication({ ...input, serverUuid: 'server-wrong' }),
+    /gültigen Coolify-Server/
+  );
 });
 
 test('Coolify dashboard and MCP publish regular projects and Git apps', async () => {
