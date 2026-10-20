@@ -54,7 +54,8 @@ function setup() {
       ]);
     if (path === '/api/v1/security/keys')
       return apiResult([
-        { uuid: 'key-one', name: 'deploy', description: 'Marktschreier', private_key: 'DO-NOT-LEAK-KEY' }
+        { uuid: 'key-one', name: 'deploy', description: 'Marktschreier', private_key: 'DO-NOT-LEAK-KEY' },
+        { uuid: 'key-app', name: 'github-app-key', is_git_related: true, private_key: 'DO-NOT-LEAK-APP-KEY' }
       ]);
     if (path === '/api/v1/servers') return apiResult([{ uuid: 'server-one', name: 'Docker A' }]);
     if (path === '/api/v1/applications' && options.method === 'GET') return apiResult(data.apps);
