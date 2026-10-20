@@ -27,6 +27,7 @@ import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib
 import { createAllInklSslService, allinklSslRequestSchema } from './lib/allinkl-ssl.mjs';
 import { createAllInklService, allinklProvisionSchema, allinklDnsRecordSchema } from './lib/allinkl.mjs';
 import { createCoolifyService, coolifySupabaseSchema } from './lib/coolify.mjs';
+import { coolifyProjectCreateSchema, coolifyGitApplicationSchema } from './lib/coolify-git.mjs';
 import { renderCoolifyWorkspace } from './lib/coolify-ui.mjs';
 import { renderAllInklWorkspace } from './lib/allinkl-ui.mjs';
 import { createWebsiteFactory, websiteCreateSchema } from './lib/website-factory.mjs';
@@ -4616,6 +4617,58 @@ function mcpServer() {
     async ({ connectionId, serviceUuid }) => toolText(await coolifyService.remoteServiceInfo(connectionId, serviceUuid))
   );
   s.registerTool(
+    'coolify_projects_list',
+    {
+      description: 'List existing projects in one connected Coolify account. Read-only, no secrets.',
+      inputSchema: z.object({ connectionId: z.uuid() })
+    },
+    async ({ connectionId }) => toolText(await coolifyService.projects(connectionId))
+  );
+  s.registerTool(
+    'coolify_project_create',
+    {
+      description: 'Create a regular Coolify project using a unique projectKey. Idempotent: same key reuses only a SiteOps-owned project. Real remote write; call ONLY on explicit project creation intent. Does not deploy an application.',
+      inputSchema: coolifyProjectCreateSchema
+    },
+    async input => toolText(await coolifyService.createProject(input))
+  );
+  s.registerTool(
+    'coolify_apps_list',
+    {
+      description: 'Read existing Git applications of a saved Coolify connection, including manually created apps. Returns only safe fields; never environment secrets.',
+      inputSchema: z.object({ connectionId: z.uuid() })
+    },
+    async ({ connectionId }) => toolText(await coolifyService.applications(connectionId))
+  );
+  s.registerTool(
+    'coolify_app_info',
+    {
+      description: 'Read one Coolify application by UUID. Only safe application metadata is returned.',
+      inputSchema: z.object({ connectionId: z.uuid(), applicationUuid: z.string().regex(/^[a-zA-Z0-9_-]{4,191}$/) })
+    },
+    async ({ connectionId, applicationUuid }) =>
+      toolText(await coolifyService.applicationInfo(connectionId, applicationUuid))
+  );
+  s.registerTool(
+    'coolify_app_create',
+    {
+      description: 'Create a Git-based Coolify app inside an existing Coolify project. Supports public HTTPS Git, pre-configured private deploy-key UUID or private GitHub App UUID, branch, build pack, server, domain and optional immediate deployment. AppKey prevents duplicate creation and rejects conflicting configuration. Requires explicit request to create the app; deployNow only when the user explicitly requests deployment. Never creates credentials or alters existing apps.',
+      inputSchema: coolifyGitApplicationSchema
+    },
+    async input => toolText(await coolifyService.createApplication(input))
+  );
+  s.registerTool(
+    'coolify_app_deploy',
+    {
+      description: 'Start/deploy an existing application in Coolify. Creates a real deployment job; call ONLY when the user explicitly asks to deploy this app.',
+      inputSchema: z.object({
+        connectionId: z.uuid(),
+        applicationUuid: z.string().regex(/^[a-zA-Z0-9_-]{4,191}$/)
+      })
+    },
+    async input => toolText(await coolifyService.deployApplication(input))
+  );
+  s.registerTool(
     'coolify_supabase_list',
     {
       description:
@@ -7195,6 +7248,16 @@ async function start() {
   app.get('/api/coolify/connections/:id/services', req => coolifyService.remoteServices(req.params.id));
   app.get('/api/coolify/connections/:id/services/:uuid', req =>
     coolifyService.remoteServiceInfo(req.params.id, req.params.uuid)
+  );
+  app.get('/api/coolify/connections/:id/projects', req => coolifyService.projects(req.params.id));
+  app.post('/api/coolify/projects', req => coolifyService.createProject(req.body));
+  app.get('/api/coolify/connections/:id/applications', req => coolifyService.applications(req.params.id));
+  app.get('/api/coolify/connections/:id/applications/:uuid', req =>
+    coolifyService.applicationInfo(req.params.id, req.params.uuid)
+  );
+  app.post('/api/coolify/applications', req => coolifyService.createApplication(req.body));
+  app.post('/api/coolify/applications/:uuid/deploy', req =>
+    coolifyService.deployApplication({ connectionId: req.body?.connectionId, applicationUuid: req.params.uuid })
   );
   app.get('/api/coolify/supabase', () => coolifyService.instances());
   app.post('/api/coolify/supabase', (req, reply) =>
