@@ -7,14 +7,14 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const pages=[
-    ['/','Übersicht','▦'],['/websites','Websites','◎'],['/billing','Projekte','▤'],['/billing/activity','Aktivitäten','◷'],
+    ['/','Übersicht','▦'],['/websites','Websites','◎'],['/tools','Tools','⌘'],['/billing','Projekte','▤'],['/billing/activity','Aktivitäten','◷'],
     ['/lorzcms','LorzCMS','◈'],['/setup','Website hinzufügen','+'],
     ['/settings','Einstellungen','⚙'],['/mcp-info','Integrationen','⇄'],
     ['/hosting','Hosting & DNS','◎','Integrationen']
   ];
   const path=location.pathname;
   const active=path.startsWith('/sites/')||path==='/websites'?'Websites':
-    path.startsWith('/lorzcms')?'LorzCMS':path.startsWith('/billing')?'Projekte':
+    path.startsWith('/tools')?'Tools':path.startsWith('/lorzcms')?'LorzCMS':path.startsWith('/billing')?'Projekte':
     path==='/setup'?'Website hinzufügen':path==='/settings'?'Einstellungen':
     path.startsWith('/hosting')?'Hosting & DNS':path.startsWith('/mcp-info')?'Integrationen':'Übersicht';
   const currentPage=pages.find(([,title])=>title===active);
