@@ -27,5 +27,5 @@ jobs:
           git add lib/tools.mjs test/tools.test.mjs
           if ! git diff --cached --quiet; then
             git commit -m "style: format Tools registry and tests"
-            git push origin HEAD:main
+            git push origin HEAD:refs/heads/autoformat-tools-20261021
           fi
