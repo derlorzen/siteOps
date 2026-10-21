@@ -1,0 +1,31 @@
+name: Format Tools Update Once
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/siteops-format-once.yml
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --write lib/tools.mjs test/tools.test.mjs
+      - name: Commit formatting only
+        run: |
+          git config user.name "siteops-format-bot"
+          git config user.email "siteops-format-bot@users.noreply.github.com"
+          git add lib/tools.mjs test/tools.test.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m "style: format Tools registry and tests"
+            git push origin HEAD:main
+          fi
