@@ -6,7 +6,8 @@ import {
   normalizeScanTarget,
   normalizeToolUrl,
   PHP_FIXES,
-  renderToolsPage
+  renderToolsPage,
+  withDeadline
 } from '../lib/tools.mjs';
 
 test('the documented PHP2Shell fixes are used for every supported branch', () => {
@@ -74,4 +75,13 @@ test('the Tools workspace contains a native PHP check, registry and accessible e
   assert.match(html, /id="tools-list"/);
   assert.match(html, /id="tools-dialog"/);
   assert.match(html, /\/assets\/tools.js/);
+});
+
+test('PHP scanner resolves quickly or returns a controlled timeout for stalled DNS lookups', async () => {
+  const started = Date.now();
+  await assert.rejects(
+    withDeadline(new Promise(() => {}), 25, 'DNS-Antwort dauert zu lange.'),
+    /DNS-Antwort dauert zu lange/
+  );
+  assert.ok(Date.now() - started < 2000);
 });
