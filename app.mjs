@@ -21,6 +21,7 @@ import { renderCmsWorkspace } from './lib/lorzcms-workspace.mjs';
 import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
 import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-projects.mjs';
+import { registerToolsRoutes } from './lib/tools.mjs';
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
 import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
 import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
@@ -7251,6 +7252,7 @@ async function start() {
   });
   registerBillingWorkflowRoutes(app, billingWorkflows);
   registerSiteProjectRoutes(app, siteProjectService);
+  registerToolsRoutes(app, { db, page, publicBaseUrl: () => cfg.publicBaseUrl });
   app.addHook('preHandler', async (req, reply) => {
     if (
       !['/api/hosting/allinkl/', '/api/website-factory/', '/api/coolify/'].some(prefix => req.url.startsWith(prefix)) ||
