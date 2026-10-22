@@ -31,6 +31,8 @@ import { createCoolifyService, coolifySupabaseSchema } from './lib/coolify.mjs';
 import { coolifyProjectCreateSchema, coolifyGitApplicationSchema } from './lib/coolify-git.mjs';
 import { coolifyCommandRunSchema, coolifyLogsSchema, coolifyRestartSchema } from './lib/coolify-exec.mjs';
 import { renderCoolifyWorkspace } from './lib/coolify-ui.mjs';
+import { registerCoolifyDeploymentRoutes, registerCoolifyDeploymentTools } from './lib/coolify-deployer-api.mjs';
+import { renderCoolifyDeployer, renderCoolifySite } from './lib/coolify-deployer-ui.mjs';
 import { renderAllInklWorkspace } from './lib/allinkl-ui.mjs';
 import { createWebsiteFactory, websiteCreateSchema } from './lib/website-factory.mjs';
 import { websiteProvisionSchema, prepareEmptyHostingTarget } from './lib/site-provisioning.mjs';
@@ -238,6 +240,7 @@ const siteProjectService = createSiteProjectService(db);
 const connectionProfiles = createConnectionProfiles({ db, encrypt, decrypt });
 const coolifyService = createCoolifyService({ db, encrypt, decrypt });
 const allInklService = createAllInklService({ db, encrypt, decrypt, profiles: connectionProfiles, connectSite });
+const coolifyDeployer = coolifyService.deploymentManager({ allInklService, registerWebsite: registerCoolifyWebsite });
 const sslService = createAllInklSslService({ db, encrypt, decrypt, allInklService, connectSite });
 const websiteFactory = createWebsiteFactory({
   allInklService,
@@ -688,6 +691,10 @@ class GitHubSourceAdapter {
   }
 }
 async function connectSite(site) {
+  if (site.deployment_mode === 'coolify')
+    throw new Error(
+      'Coolify-Anwendungen werden über die Anwendungsverwaltung betrieben. Datei- und FTP-Operationen sind nicht verfügbar.'
+    );
   if (site.deployment_mode === 'hostinger_git') {
     const cred = site.git_credentials ? decrypt(site.git_credentials) : {};
     return GitHubSourceAdapter.connect(site, cred);
@@ -714,12 +721,26 @@ function publicSite(site) {
     siteType: site.site_type,
     deploymentMode: site.deployment_mode || 'webspace',
     enabled: Boolean(site.enabled),
-    protocol: site.protocol,
-    host: site.deployment_mode === 'hostinger_git' ? null : site.host,
-    port: site.deployment_mode === 'hostinger_git' ? null : site.port,
-    username: site.deployment_mode === 'hostinger_git' ? null : site.username,
-    remoteRoot: site.deployment_mode === 'hostinger_git' ? null : site.remote_root,
-    credentialsConfigured: Boolean(site.encrypted_credentials),
+    protocol: site.deployment_mode === 'coolify' ? null : site.protocol,
+    host: site.deployment_mode !== 'webspace' ? null : site.host,
+    port: site.deployment_mode !== 'webspace' ? null : site.port,
+    username: site.deployment_mode !== 'webspace' ? null : site.username,
+    remoteRoot: site.deployment_mode !== 'webspace' ? null : site.remote_root,
+    credentialsConfigured: site.deployment_mode !== 'coolify' && Boolean(site.encrypted_credentials),
+    coolify:
+      site.deployment_mode === 'coolify'
+        ? {
+            deploymentId: site.coolify_deployment_id,
+            connectionId: site.coolify_connection_id,
+            projectUuid: site.coolify_project_uuid,
+            applicationUuid: site.coolify_application_uuid,
+            serverUuid: site.coolify_server_uuid,
+            resourceKind: site.coolify_resource_kind,
+            buildMethod: site.coolify_build_method,
+            status: site.deployment_status,
+            lastDeployedAt: site.last_deployed_at
+          }
+        : null,
     sourceRepository: site.source_repository,
     sourceBranch: site.source_branch,
     sourceRoot: site.source_root,
@@ -751,6 +772,7 @@ function publicSite(site) {
   };
 }
 async function testStoredConnection(site) {
+  if (site.deployment_mode === 'coolify') return coolifyDeployer.verify(site.coolify_deployment_id);
   const remote = await connectSite(site);
   try {
     const entries = await remote.list(joinRemote(site.remote_root, ''));
@@ -769,6 +791,8 @@ async function testStoredConnection(site) {
 async function updateSiteConnection(idOrSlug, x) {
   const site = await getSite(idOrSlug),
     mode = x.deploymentMode || site.deployment_mode || 'webspace';
+  if (site.deployment_mode === 'coolify')
+    throw new Error('Coolify-Verbindungen ausschließlich über die Anwendungsverwaltung ändern.');
   if (mode === 'hostinger_git') {
     const repo = String(x.sourceRepository ?? site.source_repository ?? '')
       .trim()
@@ -839,6 +863,7 @@ async function createSite(x) {
   x = await resolveSiteProfile(x);
   const id = crypto.randomUUID(),
     gitMode = x.deploymentMode === 'hostinger_git',
+    coolifyMode = x.deploymentMode === 'coolify',
     sourceRoot = String(x.sourceRoot || '').replace(/^\/+|\/+$/g, '');
   const remoteRoot = gitMode ? (sourceRoot ? '/' + sourceRoot : '/') : x.remoteRoot || '/';
   const protocol = gitMode ? 'sftp' : x.protocol,
@@ -859,7 +884,7 @@ async function createSite(x) {
       encrypt(gitMode ? {} : { password: x.password, privateKey: x.privateKey, passphrase: x.passphrase }),
       remoteRoot,
       x.siteType || 'php',
-      gitMode ? 'hostinger_git' : 'webspace',
+      coolifyMode ? 'coolify' : gitMode ? 'hostinger_git' : 'webspace',
       gitMode ? String(x.sourceRepository || '').replace(/^\/+|\/+$/g, '') : null,
       gitMode ? x.sourceBranch || 'main' : null,
       gitMode ? sourceRoot : null,
@@ -879,6 +904,63 @@ async function createSite(x) {
     ssl_warn_days: x.sslWarnDays ?? cfg.defaultSslWarnDays
   });
   return getSite(id);
+}
+async function registerCoolifyWebsite({ deployment, config: x, database = db }) {
+  const [existing] = await database.query('SELECT * FROM sites WHERE coolify_deployment_id=?', [deployment.id]);
+  if (existing.length > 1) throw new Error('Mehrere Websites für denselben Auftrag.');
+  if (existing.length) return existing[0];
+  const [conflict] = await database.query('SELECT id FROM sites WHERE domain=?', [x.domain]);
+  if (conflict.length) throw new Error('Domain gehört bereits zu einer anderen Website.');
+  // Creation and mapping are one transaction so restart cannot leave an
+  // unidentifiable website. Monitoring uses the regular sites table.
+  const conn = await database.getConnection();
+  try {
+    await conn.beginTransaction();
+    const id = crypto.randomUUID(),
+      slug = x.domain.replace(/\./g, '-').slice(0, 80) + '-' + deployment.id.slice(0, 8);
+    await conn.query(
+      `INSERT INTO sites(id,slug,name,domain,protocol,host,port,username,encrypted_credentials,remote_root,site_type,deployment_mode,
+      source_repository,source_branch,monitor_url,monitor_enabled,backup_enabled,coolify_deployment_id,coolify_connection_id,coolify_project_uuid,
+      coolify_application_uuid,coolify_server_uuid,coolify_resource_kind,coolify_build_method,deployment_status)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        id,
+        slug,
+        x.name,
+        x.domain,
+        'sftp',
+        x.domain,
+        443,
+        '',
+        encrypt({}),
+        '/',
+        'application',
+        'coolify',
+        x.gitRepository || null,
+        x.gitBranch || null,
+        'https://' + x.domain + x.healthPath,
+        x.access === 'basic' ? 0 : 1,
+        0,
+        deployment.id,
+        x.connectionId,
+        deployment.project_uuid,
+        deployment.resource_uuid,
+        x.serverUuid,
+        deployment.resource_kind,
+        x.buildPack,
+        'verified'
+      ]
+    );
+    await conn.query('UPDATE sites SET monitor_enabled=1,monitor_expected_status=? WHERE id=?', [x.healthStatus, id]);
+    await conn.query('UPDATE coolify_deployments SET site_id=? WHERE id=?', [id, deployment.id]);
+    await conn.commit();
+    return { id, slug };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
 }
 async function provisionWebsite(input) {
   const x = websiteProvisionSchema.parse(input);
@@ -1013,6 +1095,17 @@ async function updateSite(idOrSlug, x) {
       'hostinger_target_directory'
     ],
     entries = Object.entries(x).filter(([k, v]) => allowed.includes(k) && v !== undefined);
+  if (site.deployment_mode === 'coolify') {
+    if (
+      x.backup_enabled ||
+      (x.domain && x.domain !== site.domain) ||
+      (x.monitor_url && x.monitor_url !== site.monitor_url) ||
+      ['source_repository', 'source_branch', 'source_root', 'hostinger_target_directory'].some(k => x[k] !== undefined)
+    )
+      throw new Error(
+        'Coolify-Quellen/Domain ausschließlich über den Deployment-Plan verwalten. FTP-Backups sind nicht unterstützt.'
+      );
+  }
   if (!entries.length) return site;
   const params = [...entries.map(([k, v]) => (k === 'exclude_patterns' ? JSON.stringify(v) : v)), site.id],
     sets = entries.map(([k]) => k + '=?'),
@@ -1711,6 +1804,42 @@ async function domainExpiryDays(domain) {
   }
 }
 async function checkSiteNow(site) {
+  if (site.deployment_mode === 'coolify') {
+    const started = Date.now(),
+      url = site.monitor_url || 'https://' + site.domain;
+    let verified,
+      error = null;
+    try {
+      verified = await coolifyDeployer.verify(site.coolify_deployment_id);
+    } catch {
+      error = 'Coolify/DNS/TLS/Health-Verifizierung fehlgeschlagen.';
+    }
+    const ssl = await sslDays(url),
+      domainDays = await domainExpiryDays(site.domain);
+    const checks = {
+      deployment: Boolean(verified?.ok),
+      dns: Boolean(verified?.dns),
+      http: Boolean(verified?.ok),
+      ssl: ssl !== null && ssl >= site.ssl_warn_days,
+      domain: domainDays === null || domainDays >= 30
+    };
+    return {
+      ok: !error && Object.values(checks).every(Boolean),
+      url,
+      finalUrl: url,
+      status: verified?.httpsStatus || null,
+      responseMs: Date.now() - started,
+      sslDays: ssl,
+      domainExpiryDays: domainDays,
+      title: null,
+      dns: verified?.dns ? [site.domain] : [],
+      redirects: [],
+      wordpress: null,
+      error: error || verified?.waiting || null,
+      checks,
+      checkedAt: new Date().toISOString()
+    };
+  }
   const url = site.monitor_url || `https://${site.domain}`,
     started = Date.now();
   let status = null,
@@ -1975,6 +2104,13 @@ async function listIncidents(siteId, limit = 50) {
 }
 async function deploymentInfo(siteId) {
   const site = await getSite(siteId);
+  if (site.deployment_mode === 'coolify')
+    return {
+      mode: 'coolify',
+      ...publicSite(site).coolify,
+      repository: site.source_repository,
+      branch: site.source_branch
+    };
   if (site.deployment_mode !== 'hostinger_git')
     return {
       mode: 'webspace',
@@ -3999,6 +4135,7 @@ const toolText = value => ({
 });
 function mcpServer() {
   const s = new McpServer({ name: 'lorzen-siteops', version: buildInfo.version });
+  registerCoolifyDeploymentTools(s, coolifyDeployer, toolText);
   s.registerTool(
     'sites_list',
     {
@@ -4014,7 +4151,7 @@ function mcpServer() {
           domain: x.domain,
           site_type: x.site_type,
           deployment_mode: x.deployment_mode,
-          protocol: x.deployment_mode === 'hostinger_git' ? null : x.protocol,
+          protocol: x.deployment_mode !== 'webspace' ? null : x.protocol,
           monitor_enabled: Boolean(x.monitor_enabled),
           backup_enabled: Boolean(x.backup_enabled)
         }))
@@ -4696,7 +4833,14 @@ function mcpServer() {
         'Read the last lines (1-500, default 100) of an application log from Coolify, optionally for one compose service. Read-only; output is capped and Bearer tokens are redacted.',
       inputSchema: coolifyLogsSchema
     },
-    async input => toolText(await coolifyService.logs(input))
+    async input =>
+      toolText(
+        await coolifyDeployer.maskApplicationLogs(
+          input.connectionId,
+          input.applicationUuid,
+          await coolifyService.logs(input)
+        )
+      )
   );
   s.registerTool(
     'coolify_app_restart',
@@ -5630,7 +5774,7 @@ function mcpInfoPage() {
     '<section aria-labelledby="integrationsCoolifyHeading"><div class="sectionhead"><div>' +
     '<span class="eyebrow">Container & Datenbank</span><h2 id="integrationsCoolifyHeading">Coolify & Supabase</h2></div>' +
     '<a class="btn" href="/coolify">Coolify verwalten →</a></div>' +
-    '<p class="lead">Coolify-API sicher verbinden und je SiteOps-Projekt eine eigene Supabase-Instanz erstellen.</p></section>';
+    '<p class="lead">Coolify verbinden, Anwendungen mit DNS und HTTPS installieren und projektbezogene Supabase-Instanzen verwalten.</p></section>';
   html +=
     '<div class="metrics big mcp-metrics"><span>Streamable HTTP<em>Transport</em></span><span>OAuth 2.1<em>Primäre Auth</em></span><span>CIMD + DCR<em>Client Registration</em></span><span>PKCE S256<em>Authorization Code</em></span><span>' +
     (cfg.mcpToken ? 'aktiv' : 'aus') +
@@ -6677,8 +6821,10 @@ async function seoPageDetailPage(id) {
 }
 
 async function siteOperationsPage(slug) {
-  const site = await getSite(slug),
-    hist = await listHistory(site.id, 30),
+  const site = await getSite(slug);
+  if (site.deployment_mode === 'coolify')
+    return page('Website · ' + site.name, renderCoolifySite(site, await listMonitorChecks(site.id, 50), esc));
+  const hist = await listHistory(site.id, 30),
     backups = await listBackups(site, 30),
     checks = await listMonitorChecks(site.id, 200),
     incidents = await listIncidents(site.id, 30),
@@ -6878,7 +7024,12 @@ async function dashboard() {
     .map(s => {
       const c = checkMap.get(s.id),
         b = backupMap.get(s.id),
-        deploy = s.deployment_mode === 'hostinger_git' ? 'HOSTINGER GIT' : s.protocol.toUpperCase();
+        deploy =
+          s.deployment_mode === 'coolify'
+            ? 'COOLIFY'
+            : s.deployment_mode === 'hostinger_git'
+              ? 'HOSTINGER GIT'
+              : s.protocol.toUpperCase();
       return `<a class="card" href="/sites/${esc(s.slug)}"><div class="row"><strong>${esc(s.name)}</strong><span class="pill ${c?.ok ? 'ok' : 'bad'}">${c ? (c.ok ? 'ONLINE' : 'ALARM') : 'NO DATA'}</span></div><small>${esc(s.domain)} · ${esc(deploy)}</small><div class="metrics"><span>${c?.response_ms ?? '–'} ms<em>Response</em></span><span>${c?.ssl_days ?? '–'} d<em>SSL</em></span><span>${s.monitor_enabled ? 'ON' : 'OFF'}<em>Monitor</em></span><span>${b?.created_at ? fmtDate(b.created_at) : '–'}<em>Backup</em></span></div></a>`;
     })
     .join('');
@@ -6902,7 +7053,8 @@ async function dashboard() {
       .map(s => {
         const c = checkMap.get(s.id),
           b = backupMap.get(s.id),
-          deploy = s.deployment_mode === 'hostinger_git' ? 'Git' : 'Webspace',
+          deploy =
+            s.deployment_mode === 'coolify' ? 'Coolify' : s.deployment_mode === 'hostinger_git' ? 'Git' : 'Webspace',
           state = c ? (c.ok ? 'ONLINE' : 'ALARM') : 'NO DATA';
         return `<tr><td><a href="/sites/${esc(s.slug)}"><strong>${esc(s.name)}</strong><small class="table-sub">${esc(s.domain)}</small></a></td><td><span class="pill ${c?.ok ? 'ok' : 'bad'}">${state}</span></td><td>${c?.response_ms ?? '–'} ms</td><td>${c?.ssl_days ?? '–'} d</td><td>${b?.created_at ? fmtDate(b.created_at) : '–'}</td><td>${esc(deploy)}</td><td class="compact-actions"><a href="/sites/${esc(s.slug)}/seo">SEO</a><a href="/sites/${esc(s.slug)}/tests">Tests</a></td></tr>`;
       })
@@ -7064,6 +7216,12 @@ async function start() {
       .type('text/javascript')
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/coolify.js', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/coolify-deployer.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/coolify-deployer.js', import.meta.url), 'utf8'))
   );
   app.get('/assets/ops-workspace.js', async (_r, reply) =>
     reply
@@ -7252,6 +7410,7 @@ async function start() {
   });
   registerBillingWorkflowRoutes(app, billingWorkflows);
   registerSiteProjectRoutes(app, siteProjectService);
+  registerCoolifyDeploymentRoutes(app, coolifyDeployer);
   registerToolsRoutes(app, { db, page, publicBaseUrl: () => cfg.publicBaseUrl });
   app.addHook('preHandler', async (req, reply) => {
     if (
@@ -7286,7 +7445,11 @@ async function start() {
       .send(
         page(
           'Coolify & Supabase',
-          renderCoolifyWorkspace(connections, instances, esc, siteopsProjects) +
+          renderCoolifyDeployer(connections, siteopsProjects, esc) +
+            renderCoolifyWorkspace(connections, instances, esc, siteopsProjects) +
+            '<script defer src="/assets/coolify-deployer.js?v=' +
+            encodeURIComponent(buildInfo.build) +
+            '"></script>' +
             '<script defer src="/assets/coolify.js?v=' +
             buildInfo.build +
             '"></script>'
@@ -7318,13 +7481,17 @@ async function start() {
   app.post('/api/coolify/commands', req => coolifyService.defineCommand(req.body));
   app.delete('/api/coolify/commands/:id', req => coolifyService.deleteCommand(req.params.id));
   app.post('/api/coolify/commands/run', req => coolifyService.runCommand(req.body));
-  app.get('/api/coolify/connections/:id/applications/:uuid/logs', req =>
-    coolifyService.logs({
-      connectionId: req.params.id,
-      applicationUuid: req.params.uuid,
-      lines: req.query?.lines ? Number(req.query.lines) : undefined,
-      serviceName: req.query?.serviceName
-    })
+  app.get('/api/coolify/connections/:id/applications/:uuid/logs', async req =>
+    coolifyDeployer.maskApplicationLogs(
+      req.params.id,
+      req.params.uuid,
+      await coolifyService.logs({
+        connectionId: req.params.id,
+        applicationUuid: req.params.uuid,
+        lines: req.query?.lines ? Number(req.query.lines) : undefined,
+        serviceName: req.query?.serviceName
+      })
+    )
   );
   app.post('/api/coolify/applications/:uuid/restart', req =>
     coolifyService.restart({ connectionId: req.body?.connectionId, applicationUuid: req.params.uuid })
@@ -7706,12 +7873,15 @@ async function start() {
     cmsController.startWorker();
     sslService.startWorker();
     coolifyService.startWorker();
+    coolifyDeployer.startWorker();
   }
   await app.listen({ host: cfg.host, port: cfg.port });
   app.log.info({ port: cfg.port, host: cfg.host, databaseReady }, 'SiteOps listening');
 }
 
 export {
+  registerCoolifyWebsite,
+  mcpAuth,
   migrate,
   q,
   db,
@@ -7790,7 +7960,18 @@ async function checkRuntime() {
       })
     );
     const payload = await response.text();
-    if (!response.ok || !payload.includes('"website_create"') || !payload.includes('"sites_list"')) {
+    if (
+      !response.ok ||
+      ![
+        'website_create',
+        'sites_list',
+        'coolify_app_analyze',
+        'coolify_app_plan',
+        'coolify_install_execute',
+        'coolify_app_status',
+        'domain_dns_ensure'
+      ].every(name => payload.includes('"' + name + '"'))
+    ) {
       throw new Error('MCP tool discovery failed: HTTP ' + response.status + ' (' + payload.slice(0, 350) + ')');
     }
     console.log('MCP tools/list self-check OK.');

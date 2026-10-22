@@ -4,6 +4,7 @@ import { createAllInklService, kasDomainNames, kasRows, parseKasSoap } from '../
 import { renderAllInklWorkspace } from '../lib/allinkl-ui.mjs';
 import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const entry = (key, value) => '<item><key>' + key + '</key><value>' + value + '</value></item>';
 const row = fields =>
@@ -130,5 +131,5 @@ test('hosting UI shows KAS domain select and no manual DNS zone input', async ()
   assert.match(script, /\/domains'/);
   assert.match(script, /\/diagnostics'/);
   assert.match(script, /load\.requestSubmit\(\)/);
-  execFileSync(process.execPath, ['--check', new URL('../public/allinkl.js', import.meta.url).pathname]);
+  execFileSync(process.execPath, ['--check', fileURLToPath(new URL('../public/allinkl.js', import.meta.url))]);
 });

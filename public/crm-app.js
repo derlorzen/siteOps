@@ -397,7 +397,7 @@
       !state.board?'<div class="crm-loading">Board wird vorbereitet …</div>':state.view==='list'?listView():boardView();
     return '<div class="crm-breadcrumb"><a href="/billing" data-route="/billing">Projekte</a><span>›</span><span>'+esc(customer?.name||'')+'</span></div>'+
       heading('PROJEKT',project.name,customer?.name||'',
-        button('+ Task','new-task','','crm-btn-primary')+button('Projekt bearbeiten','edit-project','','crm-btn-ghost'))+
+        '<a class="crm-btn crm-btn-ghost" href="/coolify?projectId='+encodeURIComponent(project.id)+'">+ Coolify-Anwendung</a>'+button('+ Task','new-task','','crm-btn-primary')+button('Projekt bearbeiten','edit-project','','crm-btn-ghost'))+
       stats+project360Panel()+sitePanel+cmsPanel+'<div class="crm-project-toolbar"><div>'+tabs+'</div><div class="crm-project-tools">'+
       button('↻','retry-board','aria-label="Board neu laden"','crm-btn-ghost')+'</div></div>'+
       board+'<details class="crm-project-maintenance"><summary>Wartungsaufgaben & Vorlagen</summary>'+maintenanceView()+'</details>'+
