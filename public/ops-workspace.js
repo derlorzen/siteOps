@@ -112,18 +112,25 @@
   }
   function portfolioCard(site){
     const link=assignment(site),status=websiteStatus(site);
+    let publicUrl='';
+    try{
+      const url=new URL(/^https?:\/\//i.test(site.domain)?site.domain:'https://'+site.domain);
+      if(['https:','http:'].includes(url.protocol)&&!url.username&&!url.password)publicUrl=url.href;
+    }catch{}
     const mode=site.deployment_mode==='hostinger_git'?'Git Deployment':(site.protocol||'Webspace').toUpperCase();
     return '<article class="ops-website-card">'+
       '<div class="ops-website-head"><span class="ops-website-logo">'+esc(site.name.slice(0,1).toUpperCase())+'</span>'+
       '<span class="ops-site-badge '+status[1]+'">'+status[0]+'</span></div>'+
       '<span class="ops-site-kicker">'+esc(link?.customer_name||'EIGENSTÄNDIGE WEBSITE')+'</span>'+
       '<h3><a href="/sites/'+encodeURIComponent(site.slug)+'">'+esc(site.name)+'</a></h3>'+
-      '<p>'+esc(site.domain)+'</p><div class="ops-website-details">'+
+      '<p>'+(publicUrl?'<a href="'+esc(publicUrl)+'" target="_blank" rel="noopener noreferrer" title="Website in neuem Tab aufrufen">'+esc(site.domain)+' ↗</a>':esc(site.domain))+'</p><div class="ops-website-details">'+
       '<span>'+esc(mode)+'</span><span>'+esc(site.site_type||'Website')+'</span></div>'+
       '<div class="ops-website-association">'+
       (link?'<span>Projekt: <a href="/billing/projects/'+encodeURIComponent(link.project_id)+'">'+esc(link.project_name)+'</a></span>':
         '<span>Unabhängig verwaltet</span>')+'</div>'+
-      '<div class="ops-website-actions"><a href="/sites/'+encodeURIComponent(site.slug)+'">Website öffnen →</a>'+
+      '<div class="ops-website-actions">'+
+      (publicUrl?'<a href="'+esc(publicUrl)+'" target="_blank" rel="noopener noreferrer" aria-label="'+esc(site.name)+' in neuem Tab aufrufen">Seite aufrufen ↗</a>':'')+
+      '<a href="/sites/'+encodeURIComponent(site.slug)+'">Verwalten →</a>'+
       '<button type="button" data-manage-site="'+esc(site.id)+'">Zuordnen</button></div></article>';
   }
   function renderPortfolio(){
