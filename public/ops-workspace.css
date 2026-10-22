@@ -105,7 +105,7 @@ body.ops-mode .ops-legacy-toggle{display:none}
 .ops-website-details span{font-size:10px;background:#f4f5fa;padding:5px 8px;color:#7f8798;border-radius:5px}
 .ops-website-association{font-size:11px;color:#7b8494;margin-top:auto}
 .ops-website-association a,.ops-site-project a{color:var(--siteops-accent-strong);text-decoration:underline;font-weight:750}
-.ops-website-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:12px;
+.ops-website-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding-top:12px;
  margin-top:2px;border-top:1px solid var(--ops-line)}
 .ops-website-actions a{font-size:11px;font-weight:800;color:var(--siteops-accent-strong)}
 body.ops-mode .ops-website-actions button{padding:6px 9px;min-height:33px;background:var(--siteops-accent-soft);color:var(--siteops-accent-strong);border-color:var(--siteops-accent-border)}
