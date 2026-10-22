@@ -1,3 +1,5 @@
+import { createSiteDeletion, deletionPlanSchema, deletionConfirmSchema } from './lib/site-deletion.mjs';
+import { renderSiteDeletion } from './lib/site-deletion-ui.mjs';
 import Fastify from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import mysql from 'mysql2/promise';
@@ -240,6 +242,7 @@ const siteProjectService = createSiteProjectService(db);
 const connectionProfiles = createConnectionProfiles({ db, encrypt, decrypt });
 const coolifyService = createCoolifyService({ db, encrypt, decrypt });
 const allInklService = createAllInklService({ db, encrypt, decrypt, profiles: connectionProfiles, connectSite });
+const siteDeletion = createSiteDeletion({ db, getSite, listSites, connectSite, allInklService });
 const coolifyDeployer = coolifyService.deploymentManager({ allInklService, registerWebsite: registerCoolifyWebsite });
 const sslService = createAllInklSslService({ db, encrypt, decrypt, allInklService, connectSite });
 const websiteFactory = createWebsiteFactory({
@@ -472,6 +475,9 @@ class SftpAdapter {
   async remove(path) {
     if (await this.exists(path)) await this.client.delete(path);
   }
+  async removeDirectory(path) {
+    await this.client.rmdir(path, true);
+  }
   async close() {
     await this.client.end();
   }
@@ -532,6 +538,9 @@ class FtpAdapter {
     try {
       await this.client.remove(path);
     } catch {}
+  }
+  async removeDirectory(path) {
+    await this.client.removeDir(path);
   }
   async close() {
     this.client.close();
@@ -4203,6 +4212,26 @@ function mcpServer() {
     async ({ site }) => toolText(await checkSiteNow(await getSite(site)))
   );
   s.registerTool(
+    'site_delete_preview',
+    {
+      description:
+        'Prepare website deletion. ALWAYS ask the user whether to delete only the SiteOps entry or also the FTP folder and/or ALL-INKL domain. Explicit scope required. Present returned targets and obtain user confirmation before calling site_delete_confirm. No deletion occurs here.',
+      inputSchema: deletionPlanSchema,
+      annotations: { readOnlyHint: true }
+    },
+    async input => toolText(await siteDeletion.preview(input))
+  );
+  s.registerTool(
+    'site_delete_confirm',
+    {
+      description:
+        'Execute a single-use deletion preview ONLY after the user explicitly confirmed its exact scope and targets. confirmation must equal the website slug. Token expires after 10 minutes. External deletions are irreversible; partial failure is reported.',
+      inputSchema: deletionConfirmSchema,
+      annotations: { destructiveHint: true, idempotentHint: false }
+    },
+    async input => toolText(await siteDeletion.confirm(input))
+  );
+  s.registerTool(
     'site_update',
     {
       description: 'Update non-secret site operations settings. Does not alter connection credentials.',
@@ -5738,7 +5767,10 @@ function mcpInfoPage() {
       'Browser Tests',
       'synthetics_list, synthetic_create, synthetic_update, synthetic_run, synthetic_run_get, fix_prompt'
     ],
-    ['Konfiguration', 'site_update, site_connection_test, site_connection_update'],
+    [
+      'Konfiguration',
+      'site_update, site_connection_test, site_connection_update, site_delete_preview, site_delete_confirm'
+    ],
     [
       'Hosting / ALL-INKL',
       'website_create_plan, website_create, website_create_status, allinkl_ssl_list, allinkl_ssl_status, allinkl_ssl_enable, allinkl_accounts, allinkl_domains, allinkl_diagnostics, allinkl_dns_list, allinkl_dns_add, allinkl_dns_update, allinkl_provision, cms_install_allinkl'
@@ -6871,7 +6903,7 @@ async function siteOperationsPage(slug) {
     site.name,
     `
     <a class="backlink" href="/">← Übersicht</a>
-    <header><div><span class="eyebrow">${isGit ? 'HOSTINGER GIT' : esc(site.protocol.toUpperCase())} · ${site.enabled ? 'AKTIV' : 'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit ? esc(site.source_repository + ' @ ' + (site.source_branch || 'main')) : esc(site.remote_root)}</p></div><div class="actions"><a class="button ghost" href="/sites/${esc(site.slug)}/seo">Quality / SEO</a><a class="button ghost" href="/sites/${esc(site.slug)}/tests">Browser Tests</a><a class="button ghost" href="/sites/${esc(site.slug)}/report">Report</a><button class="ghost" id="checkNow">Jetzt prüfen</button><button id="backupNow">Backup jetzt</button></div></header>
+    <header><div><span class="eyebrow">${isGit ? 'HOSTINGER GIT' : esc(site.protocol.toUpperCase())} · ${site.enabled ? 'AKTIV' : 'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit ? esc(site.source_repository + ' @ ' + (site.source_branch || 'main')) : esc(site.remote_root)}</p></div><div class="actions"><a class="button ghost" href="/sites/${esc(site.slug)}/seo">Quality / SEO</a><a class="button ghost" href="/sites/${esc(site.slug)}/tests">Browser Tests</a><a class="button ghost" href="/sites/${esc(site.slug)}/report">Report</a><button class="ghost" id="checkNow">Jetzt prüfen</button><button id="backupNow">Backup jetzt</button><a class="button ghost" href="/sites/${esc(site.slug)}/delete">Website löschen</a></div></header>
     ${latest && !latest.ok ? `<div class="notice bad"><strong>Monitoringfehler</strong><span>${esc(latest.error || latestDetails.error || 'HTTP ' + (latest.http_status ?? 'unbekannt'))}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'monitor',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
     ${openIncidents.length ? `<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span><a href="/incidents/${openIncidents[0].id}">${esc(openIncidents[0].title)}</a> · seit ${fmtDateTime(openIncidents[0].created_at)}</span></div>` : ''}
     ${backupState?.last_error ? `<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'backup',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
@@ -7527,6 +7559,16 @@ async function start() {
   app.get('/api/hosting/allinkl/ssl/:hostname', req => sslService.status(req.params.hostname));
   app.post('/api/hosting/allinkl/ssl', req => sslService.enqueue(req.body));
   app.get('/api/sites', async () => listSites());
+  app.addHook('preHandler', async (req, reply) => {
+    const path = req.url.split('?')[0];
+    if (req.method !== 'POST' || !(path.endsWith('/delete-preview') || path === '/api/site-deletions/confirm')) return;
+    if (!String(req.headers['content-type'] || '').startsWith('application/json'))
+      return reply.code(415).send({ error: 'JSON erforderlich.' });
+    if (req.headers.origin && req.headers.origin !== new URL(cfg.publicBaseUrl).origin)
+      return reply.code(403).send({ error: 'Fremde Herkunft abgelehnt.' });
+  });
+  app.post('/api/sites/:site/delete-preview', req => siteDeletion.preview({ ...req.body, site: req.params.site }));
+  app.post('/api/site-deletions/confirm', req => siteDeletion.confirm(req.body));
   app.get('/api/sites/:site', async req => publicSite(await getSite(req.params.site)));
   app.get('/api/sites/:site/overview', async req => siteOverview(req.params.site));
   app.post('/api/sites/:site/connection-test', async req => testStoredConnection(await getSite(req.params.site)));
@@ -7842,6 +7884,12 @@ async function start() {
   app.get('/mcp-info', async (_r, reply) => reply.type('text/html').send(mcpInfoPage()));
   app.get('/settings', async (_r, reply) => reply.type('text/html').send(settingsPage()));
   app.get('/setup', async (_r, reply) => reply.type('text/html').send(setupPage()));
+  app.get('/sites/:slug/delete', async (req, reply) => {
+    const site = await getSite(req.params.slug);
+    return reply
+      .type('text/html')
+      .send(page('Website löschen', renderSiteDeletion(site, await allInklService.list(), esc)));
+  });
   app.get('/sites/:slug/seo', async (req, reply) =>
     reply.type('text/html').send(await seoDashboardPage(req.params.slug))
   );
