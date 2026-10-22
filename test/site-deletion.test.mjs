@@ -104,3 +104,51 @@ test('deletion page script parses and scope is not preselected', () => {
   assert.ok(!html.includes('checked'));
   new Function(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 });
+
+test('a child website can be deleted while parent and siblings remain untouched', async () => {
+  const { service, calls } = fixture({
+    listSites: async () => [
+      { id: 'lorzen', name: 'Lorzen', host: 'ftp', username: 'u', remote_root: '/' },
+      { id: 'sibling', name: 'Sibling', host: 'ftp', username: 'u', remote_root: '/another' }
+    ]
+  });
+  const p = await service.preview({ site: 'demo', deleteFolder: true, deleteDomain: false });
+  assert.equal(p.folder, '/demo');
+  await service.confirm({ token: p.token, confirmation: 'demo' });
+  assert.deepEqual(calls, ['folder', 'entry']);
+});
+
+test('nested parent website does not prevent deleting its child', async () => {
+  const f = fixture({
+    listSites: async () => [{ id: 'lorzen', name: 'Lorzen', host: 'ftp', username: 'u', remote_root: '/web' }]
+  });
+  f.site.remote_root = '/web/demo';
+  assert.equal(
+    (await f.service.preview({ site: 'demo', deleteFolder: true, deleteDomain: false })).folder,
+    '/web/demo'
+  );
+});
+
+test('HTTP deletion conflicts return an actionable client error instead of Internal Server Error', async () => {
+  const { default: Fastify } = await import('fastify');
+  const app = Fastify();
+  const { service } = fixture({
+    listSites: async () => [{ id: 'child', name: 'Child', host: 'ftp', username: 'u', remote_root: '/demo/child' }]
+  });
+  app.post('/preview', req => service.preview(req.body));
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/preview',
+      payload: {
+        site: 'demo',
+        deleteFolder: true,
+        deleteDomain: false
+      }
+    });
+    assert.equal(response.statusCode, 409);
+    assert.match(response.json().message, /Child/);
+  } finally {
+    await app.close();
+  }
+});
