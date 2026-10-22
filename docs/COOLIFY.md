@@ -1,5 +1,10 @@
 # Coolify und projektbezogene Supabase-Instanzen
 
+Die neue allgemeine Anwendungsverwaltung mit Quellenanalyse, persistentem
+Deployment-Workflow, DNS/HTTPS, Website-Zuordnung und MCP ist in
+[COOLIFY-APPLICATIONS.md](COOLIFY-APPLICATIONS.md) dokumentiert. Die hier beschriebenen
+Git-, Supabase- und Kommando-Funktionen bleiben kompatibel.
+
 SiteOps kann die bestehende selbstgehostete Coolify-Instanz über deren
 offizielle REST-API verwalten und für **jedes SiteOps-Projekt auf Anforderung
 genau einen separaten Supabase-One-Click-Service** anlegen.

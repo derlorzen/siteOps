@@ -11,7 +11,7 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
   process.env.DASHBOARD_USER ||= 'test';
   process.env.DASHBOARD_PASSWORD ||= 'test-password';
   process.env.SITEOPS_TEST_NO_AUTOSTART = '1';
-  const { migrate, q, db } = await import('../app.mjs');
+  const { migrate, q, db, registerCoolifyWebsite } = await import('../app.mjs');
   t.after(() => db.end());
 
   await migrate();
@@ -104,6 +104,105 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
       assert.equal(resolved.remoteRoot, '/test-website');
     } finally {
       await profiles.remove(profile.id);
+    }
+    // Exercise the deployment journal, actual website INSERT and project link
+    // on MySQL. Only external API calls are mocked; no production provisioning.
+    const { createCoolifyDeployer } = await import('../lib/coolify-deployer.mjs');
+    const { encryptWithKey, decryptWithKey } = await import('../lib/crypto.mjs');
+    const key = Buffer.alloc(32, 9),
+      connectionId = randomUUID();
+    await db.query('INSERT INTO coolify_connections(id,name,base_url,encrypted_token) VALUES(?,?,?,?)', [
+      connectionId,
+      'CI Coolify',
+      'https://coolify.example.de',
+      encryptWithKey('test-only-api-token', key)
+    ]);
+    const remoteApps = [],
+      remoteProjects = [];
+    const api = {
+      version: async () => 'v4.4.7',
+      servers: async () => [{ uuid: 'server-one', ip: '8.8.4.4' }],
+      projects: async () => remoteProjects,
+      createProject: async (name, description) => {
+        const p = { uuid: 'project-one', name, description };
+        remoteProjects.push(p);
+        return p;
+      },
+      environments: async () => [{ name: 'production' }],
+      applications: async () => remoteApps,
+      createApplication: async (_kind, body) => {
+        const a = { uuid: 'application-one', ...body };
+        remoteApps.push(a);
+        return a;
+      },
+      application: async () => ({ ...remoteApps[0], status: 'running:healthy' }),
+      updateApplication: async () => ({}),
+      startApplication: async () => ({ deployment_uuid: 'deployment-one' }),
+      deployment: async () => ({ status: 'finished' })
+    };
+    const deploymentService = createCoolifyDeployer({
+      db,
+      encrypt: v => encryptWithKey(v, key),
+      decrypt: v => decryptWithKey(v, key),
+      loadConnection: async () => ({ base_url: 'https://coolify.example.de' }),
+      makeClient: () => api,
+      registerWebsite: registerCoolifyWebsite,
+      dnsService: {
+        inspect: async () => ({ accountId: customerId, action: 'reuse' }),
+        ensure: async () => ({ ensured: true })
+      },
+      addresses: async () => [{ address: '8.8.4.4', family: 4 }],
+      http: async (_url, { headers } = {}) => ({ status: headers?.Authorization ? 200 : 401, body: 'healthy' })
+    });
+    let installation;
+    try {
+      const ensuredProject = await deploymentService.siteopsProjectEnsure({
+        name: 'Coolify CI ' + projectId,
+        customerId
+      });
+      const input = {
+        connectionId,
+        name: 'CI Application',
+        domain: 'ci-' + projectId + '.example.de',
+        projectName: ensuredProject.name,
+        siteopsProjectId: ensuredProject.id,
+        sourceKind: 'image',
+        image: 'example/app',
+        containerPort: 3000,
+        authUsername: 'ci',
+        authPassword: 'test-password-at-least16',
+        reviewEvidence: 'CI reviewed fixture only, no real external operations.'
+      };
+      installation = await deploymentService.plan(input);
+      const approval = {
+        id: installation.id,
+        approve: true,
+        approveRisks: true,
+        riskAcknowledgement: 'CI fixture is explicitly approved for mock provisioning.'
+      };
+      await deploymentService.execute(approval);
+      const finished = await deploymentService.process(installation.id);
+      assert.equal(finished.state, 'online');
+      const [websites] = await db.query('SELECT * FROM sites WHERE coolify_deployment_id=?', [installation.id]);
+      assert.equal(websites.length, 1);
+      assert.equal(websites[0].deployment_mode, 'coolify');
+      assert.equal(Number(websites[0].backup_enabled), 0);
+      assert.equal(websites[0].coolify_application_uuid, 'application-one');
+      assert.ok(websites[0].last_deployed_at);
+      const [links] = await db.query('SELECT project_id FROM project_sites WHERE site_id=?', [websites[0].id]);
+      assert.equal(links[0].project_id, ensuredProject.id);
+      assert.equal((await deploymentService.plan(input)).id, installation.id);
+      await deploymentService.execute(approval);
+      await deploymentService.process(installation.id);
+      assert.equal(remoteApps.length, 1);
+    } finally {
+      if (installation) {
+        const [websites] = await db.query('SELECT id FROM sites WHERE coolify_deployment_id=?', [installation.id]);
+        for (const site of websites) await db.query('DELETE FROM sites WHERE id=?', [site.id]);
+        await db.query('DELETE FROM coolify_deployments WHERE id=?', [installation.id]);
+      }
+      await db.query('DELETE FROM customer_projects WHERE name=?', ['Coolify CI ' + projectId]);
+      await db.query('DELETE FROM coolify_connections WHERE id=?', [connectionId]);
     }
   } finally {
     await db.query('DELETE FROM project_tasks WHERE id=?', [taskId]);
