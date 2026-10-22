@@ -753,3 +753,70 @@ test('Docker image tags and digests are sent without appending an accidental lat
     }
   }
 });
+
+test('adopt registers an existing Coolify app as website without touching Coolify', async () => {
+  const { state, controller } = fixture();
+  state.apps.push({ uuid: 'existing-app', name: 'Marktschreier', git_repository: 'owner/app', git_branch: 'main' });
+  // The adopted app has no SiteOps marker and may report an odd status; HTTPS health decides.
+  state.appStatus = 'restarting:unknown';
+  state.authWorking = false; // the public health path answers 200 without credentials
+  const input = {
+    connectionId,
+    applicationUuid: 'existing-app',
+    name: 'Marktschreier',
+    domain: 'app.example.de',
+    projectName: 'Money',
+    healthPath: '/up'
+  };
+  const first = await controller.adopt(input);
+  assert.equal(first.state, 'online');
+  assert.equal(first.adopted, true);
+  assert.equal(first.resourceUuid, 'existing-app');
+  assert.equal(first.siteId, siteId);
+  assert.equal(state.sites.length, 1);
+  assert.deepEqual(state.link, { id: siteId, project_id: projectId });
+  assert.equal(state.localProjects[0].name, 'Money');
+  // Nothing was created, configured or deployed in Coolify.
+  assert.equal(state.apps.length, 1);
+  assert.equal(state.starts, 0);
+  assert.equal(state.writes.filter(w => w.id).length, 0);
+
+  // Idempotent for the same app and domain.
+  const again = await controller.adopt(input);
+  assert.equal(again.id, first.id);
+  assert.equal(state.records.length, 1);
+
+  // Monitoring verification works for the adopted app.
+  const verified = await controller.verify(first.id);
+  assert.equal(verified.ok, true);
+
+  // A different app for the same domain is refused.
+  state.apps.push({ uuid: 'other-app', name: 'Other' });
+  await assert.rejects(
+    () => controller.adopt({ ...input, applicationUuid: 'other-app' }),
+    /bereits einen SiteOps-Auftrag/
+  );
+});
+
+test('adopt refuses unknown apps and failing health checks', async () => {
+  const { state, controller } = fixture();
+  state.apps.push({ uuid: 'existing-app', name: 'App' });
+  const input = {
+    connectionId,
+    applicationUuid: 'missing-app',
+    name: 'App',
+    domain: 'app.example.de',
+    projectName: 'X'
+  };
+  await assert.rejects(() => controller.adopt(input), /nicht in dieser Coolify-Verbindung/);
+  state.authWorking = true; // the fixture answers anonymous requests with 401
+  await assert.rejects(
+    () => controller.adopt({ ...input, applicationUuid: 'existing-app' }),
+    /Health-Check nicht bestanden/
+  );
+  assert.equal(state.records.length, 0);
+  assert.equal(state.sites.length, 0);
+  await assert.rejects(() =>
+    controller.adopt({ connectionId, applicationUuid: 'existing-app', name: 'App', domain: 'app.example.de' })
+  );
+});

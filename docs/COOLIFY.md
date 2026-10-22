@@ -219,3 +219,18 @@ bestehenden Container oder Domains.
   protokolliert noch zurückgegeben; in den Konfigurations-Fingerabdruck
   gehen nur Variablennamen und `buildTime` ein. Bei einem erneuten Aufruf mit gleichem
   `appKey` bleibt die bestehende Anwendung samt Variablen unverändert.
+
+## Bestehende Coolify-Anwendung als Website übernehmen
+
+`coolify_app_adopt` (Dashboard-API `POST /api/coolify/adopt`) trägt eine Anwendung, die außerhalb des
+Installations-Workflows angelegt wurde, als SiteOps-Website in ein SiteOps-Projekt ein. In Coolify wird
+dabei nichts angelegt, geändert oder neu bereitgestellt.
+
+- Eingaben: `connectionId`, `applicationUuid`, `name`, `domain`, `siteopsProjectId` oder `projectName`,
+  optional `healthPath` (Standard `/`), `healthStatus` (Standard 200) und `healthText`.
+- Vorher geprüft: Anwendung existiert in der Verbindung, DNS löst eindeutig auf, der HTTPS-Health-Pfad
+  antwortet mit dem erwarteten Status. Bei Laravel `/up` verwenden, `/` leitet meist auf `/login` um.
+- Die Überwachung prüft danach Existenz in Coolify, DNS (gegen die bei der Übernahme gemessene IP) und HTTPS.
+  Ein Build-Verlauf liegt für übernommene Anwendungen in SiteOps nicht vor; Neuinstallation und Redeploy über
+  den Plan-Workflow sind für sie gesperrt.
+- Wiederholte Aufrufe mit derselben Anwendung und Domain legen nichts doppelt an.
