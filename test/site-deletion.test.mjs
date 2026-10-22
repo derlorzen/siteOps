@@ -152,3 +152,53 @@ test('HTTP deletion conflicts return an actionable client error instead of Inter
     await app.close();
   }
 });
+
+test('unrelated monitoring metadata does not invalidate a deletion preview', async () => {
+  const { service, site, calls } = fixture();
+  site.updated_at = '2026-10-22T20:00:00Z';
+  const p = await service.preview({ site: 'demo', deleteFolder: true, deleteDomain: false });
+  site.updated_at = '2026-10-22T20:01:00Z';
+  site.monitor_enabled = false;
+  assert.equal((await service.confirm({ token: p.token, confirmation: 'demo' })).ok, true);
+  assert.deepEqual(calls, ['folder', 'entry']);
+});
+
+test('equivalent database rows with different property order have the same deletion identity', async () => {
+  const { site } = fixture();
+  let reads = 0;
+  const { service } = fixture({
+    getSite: async () => (++reads === 1 ? { ...site } : Object.fromEntries(Object.entries(site).reverse()))
+  });
+  const p = await service.preview({ site: 'demo', deleteFolder: false, deleteDomain: false });
+  assert.equal((await service.confirm({ token: p.token, confirmation: 'demo' })).ok, true);
+});
+
+test('confirmation tolerates surrounding whitespace and wrong input can be corrected', async () => {
+  const { service, calls } = fixture();
+  const p = await service.preview({ site: 'demo', deleteFolder: false, deleteDomain: false });
+  await assert.rejects(
+    service.confirm({ token: p.token, confirmation: 'wrong' }),
+    error => error.message.includes('demo') && !error.message.includes('Website wurde geändert')
+  );
+  assert.deepEqual(calls, []);
+  assert.equal((await service.confirm({ token: p.token, confirmation: ' demo ' })).ok, true);
+});
+
+test('full displayed website name can confirm a deletion', async () => {
+  const { service, site, calls } = fixture();
+  site.name = 'Containerdienst Schartau';
+  site.slug = 'containerdienst-schartau';
+  const p = await service.preview({ site: site.slug, deleteFolder: false, deleteDomain: false });
+  assert.equal((await service.confirm({ token: p.token, confirmation: ' Containerdienst Schartau ' })).ok, true);
+  assert.deepEqual(calls, ['entry']);
+});
+
+test('changed FTP destination or credentials still invalidates confirmation', async () => {
+  for (const field of ['host', 'username', 'port', 'protocol', 'encrypted_credentials', 'domain']) {
+    const { service, site, calls } = fixture();
+    const p = await service.preview({ site: 'demo', deleteFolder: true, deleteDomain: false });
+    site[field] = 'changed';
+    await assert.rejects(service.confirm({ token: p.token, confirmation: 'demo' }), /Löschziel oder Verbindungsdaten/);
+    assert.deepEqual(calls, []);
+  }
+});
