@@ -680,6 +680,46 @@ test('analysis checks the selected monorepo build file and records reproducible 
   assert.ok(calls.filter(url => url.includes('raw.githubusercontent.com')).every(url => url.includes(commit)));
 });
 
+test('analysis discovers default monorepo build files without using unrelated root builds', async () => {
+  for (const buildPath of ['Dockerfile', 'docker/Dockerfile', 'compose.yml', 'deploy/docker-compose.yaml']) {
+    const commit = 'b'.repeat(40);
+    const compose = buildPath.endsWith('.yml') || buildPath.endsWith('.yaml');
+    const files = {
+      'README.md': 'Production deployment instructions',
+      LICENSE: 'MIT',
+      Dockerfile: 'FROM unrelated:latest\nEXPOSE 9999',
+      'compose.yml': 'services:\n  unrelated:\n    image: unrelated:latest',
+      ['web/' + buildPath]: compose
+        ? 'services:\n  web:\n    image: example/web\n    expose: [8080]'
+        : 'FROM node:24\nEXPOSE 8080'
+    };
+    const fetched = [];
+    const analyzer = createApplicationAnalyzer({
+      http: async url => {
+        const body = url.endsWith('/repos/example/app')
+          ? { default_branch: 'main' }
+          : url.includes('/commits/')
+            ? { sha: commit, commit: { tree: { sha: commit } } }
+            : url.includes('/git/trees/')
+              ? { tree: Object.keys(files).map(path => ({ path, size: 100, type: 'blob' })) }
+              : null;
+        if (body) return { status: 200, body: JSON.stringify(body) };
+        const path = url.split(commit + '/')[1];
+        fetched.push(path);
+        return { status: 200, body: files[path] };
+      }
+    });
+    const result = await analyzer.analyze({ url: 'https://github.com/example/app', baseDirectory: '/web' });
+    assert.equal(result.buildPack, compose ? 'dockercompose' : 'dockerfile');
+    assert.equal(result[compose ? 'dockerComposeLocation' : 'dockerfileLocation'], '/' + buildPath);
+    assert.ok(fetched.includes('web/' + buildPath));
+    assert.ok(!fetched.includes('Dockerfile'));
+    assert.ok(!fetched.includes('compose.yml'));
+    if (compose) assert.deepEqual(result.composeServices, ['web']);
+    else assert.deepEqual(result.ports, [8080]);
+  }
+});
+
 test('Static requires existing HTML and public access cannot bypass protection on images', async () => {
   const built = inspectFiles({
     'README.md': 'Production static deployment',
