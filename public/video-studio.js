@@ -117,7 +117,19 @@ $('#vs-jobs').addEventListener('click',async event=>{
   }catch(e){msg(e.message,true);}
   finally{target.disabled=false;}
 });
-$('#vs-refresh').addEventListener('click',reload);
+async function checkRenderer(){
+  try{
+    const data=await api('/api/video-studio/capabilities');
+    $('#vs-capabilities').textContent=
+      'Runner verbunden · Englisch/Kokoro: '+(data.offlineModels?.kokoro?'Modell bereit':'automatischer Download bei erster Nutzung')+
+      ' · Deutsch/Piper: '+(data.offlineModels?.piper?'Modell bereit':'automatischer Download bei erster Nutzung')+
+      ' · OpenAI: '+(data.openaiConfigured?'API konfiguriert':'API-Schlüssel fehlt');
+  }catch(e){
+    $('#vs-capabilities').textContent='Runner noch nicht bereit: '+e.message;
+  }
+}
+$('#vs-refresh').addEventListener('click',()=>{reload();checkRenderer();});
+checkRenderer();
 reload();
 setInterval(()=>{if(document.visibilityState==='visible'&&jobs.some(j=>['running','queued'].includes(j.status))){
   Promise.all(jobs.filter(j=>['running','queued'].includes(j.status)).map(j=>
