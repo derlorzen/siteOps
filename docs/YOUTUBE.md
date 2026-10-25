@@ -62,6 +62,25 @@ owner must complete Google's consent dialog after the reviewed code is deployed.
 
 ## Approval, authorization and error behavior
 
+### Google blocks login with “App is being tested” / 403 access_denied
+
+This page is shown by Google before SiteOps receives an authorization code.
+In the Google Cloud project that owns the configured client ID, open **Google
+Auth Platform → Audience → Test users → Add users**. Add and save the Google
+email address used to manage the YouTube channel, then start **Mit Google
+verbinden** again in SiteOps. For a Brand Account, add its managing Google user.
+Changing the redirect URI or recreating the SiteOps client secret does not fix
+this specific audience restriction.
+
+Google's Testing status expires these YouTube authorizations and offline refresh
+tokens after seven days. For a durable connection, configure production status
+and complete Google's applicable verification requirements. SiteOps cannot add
+Google test users or complete that review. See Google's
+[Audience documentation](https://support.google.com/cloud/answer/15549945) and
+[consent setup guide](https://developers.google.com/workspace/guides/configure-oauth-consent).
+
+### SiteOps request authorization
+
 All routes use the existing dashboard session guard. Mutating JSON requests also
 require the configured same origin. OAuth configuration and login happen only
 in the dashboard, not through MCP. Callback request logging is disabled so

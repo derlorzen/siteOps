@@ -6,6 +6,37 @@ import { renderYouTube } from '../lib/youtube-ui.mjs';
 import { publicYouTubeCatalog } from '../lib/youtube-contract.mjs';
 
 test(
+  'Shared sidebar exposes YouTube from Video Studio and marks the YouTube workspace active',
+  { skip: process.env.RUN_VIDEO_BROWSER_TESTS !== '1', timeout: 30000 },
+  async t => {
+    const { chromium } = await import('../runner/node_modules/playwright/index.mjs');
+    const browser = await chromium.launch({ headless: true });
+    t.after(() => browser.close());
+    const page = await browser.newPage();
+    page.setDefaultTimeout(2000);
+    const script = await fs.readFile(new URL('../public/ops-workspace.js', import.meta.url), 'utf8');
+    await page.route('https://siteops.test/**', route =>
+      route.fulfill({
+        contentType: 'text/html; charset=utf-8',
+        body: '<body class="ops-mode"><nav class="topnav"><a href="/youtube">YouTube</a></nav><main>Workspace</main></body>'
+      })
+    );
+    await page.goto('https://siteops.test/video-studio');
+    await page.addScriptTag({ content: script });
+    const link = page
+      .getByRole('navigation', { name: 'SiteOps-Navigation' })
+      .getByRole('link', { name: 'YouTube', exact: true });
+    assert.equal(await link.getAttribute('href'), '/youtube');
+    assert.equal(await link.getAttribute('aria-current'), null);
+    await link.click();
+    await page.addScriptTag({ content: script });
+    assert.equal(await link.getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('.ops-workspace-bar strong').textContent(), 'YouTube');
+    assert.equal(await page.locator('.ops-side-links [aria-current="page"]').count(), 1);
+  }
+);
+
+test(
   'YouTube UI edits videos, blocks automatic execution, handles errors and works on mobile',
   { skip: process.env.RUN_VIDEO_BROWSER_TESTS !== '1', timeout: 30000 },
   async t => {
