@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 import { chromium } from 'playwright';
+import { registerVideoRunner } from './video-studio.mjs';
 
 const app = Fastify({ logger: true, bodyLimit: 20 * 1024 * 1024 });
 const port = Number(process.env.PORT || 3200),
@@ -266,4 +267,5 @@ app.post('/run', async (req, reply) => {
     screenshotBase64: screenshot && (body.captureScreenshot || !ok) ? screenshot.toString('base64') : null
   };
 });
+registerVideoRunner(app,auth);
 await app.listen({ host, port });

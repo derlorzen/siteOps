@@ -42,6 +42,8 @@ import { createProjectOverview, registerProjectOverviewRoutes } from './lib/proj
 import { createWorkspaceActivity, registerWorkspaceActivityRoutes } from './lib/workspace-activity.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 import { resolveBuildInfo } from './lib/build-info.mjs';
+import { createVideoStudio, registerVideoStudioRoutes } from './lib/video-studio.mjs';
+import { renderVideoStudio } from './lib/video-studio-ui.mjs';
 import { createDashboardSessions } from './lib/dashboard-session.mjs';
 
 function env(name, fallback = undefined) {
@@ -4143,6 +4145,7 @@ async function clientReportPage(slug) {
 const toolText = value => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }]
 });
+let videoStudioService = null;
 function mcpServer() {
   const s = new McpServer({ name: 'lorzen-siteops', version: buildInfo.version });
   registerCoolifyDeploymentTools(s, coolifyDeployer, toolText);
@@ -5079,6 +5082,56 @@ function mcpServer() {
       inputSchema: z.object({ installationId: z.uuid() })
     },
     async ({ installationId }) => toolText(await cmsController.resetAdminPassword(installationId))
+  );
+  s.registerTool(
+    'video_studio_projects',
+    {
+      description: 'List Video Studio channels/projects for faceless YouTube production.',
+      inputSchema: z.object({})
+    },
+    async () => toolText(await videoStudioService.listProjects())
+  );
+  s.registerTool(
+    'video_studio_create_job',
+    {
+      description:
+        'Create a draft video from an authored English narration script. Separate scenes with blank lines. Review the draft before rendering.',
+      inputSchema: z.object({
+        project_id: z.uuid(),
+        title: z.string().min(3).max(200),
+        script: z.string().min(30).max(18000),
+        topic: z.string().max(500).optional(),
+        scenes: z
+          .array(
+            z.object({
+              headline: z.string().max(160).optional(),
+              narration: z.string().min(5).max(1400),
+              demoUrl: z.string().url().optional()
+            })
+          )
+          .min(1)
+          .max(24)
+          .optional(),
+        format: z.enum(['landscape', 'portrait']).optional()
+      })
+    },
+    async input => toolText(await videoStudioService.createJob(input))
+  );
+  s.registerTool(
+    'video_studio_render_job',
+    {
+      description: 'Submit an existing reviewed Video Studio draft to the configured private video renderer.',
+      inputSchema: z.object({ id: z.uuid() })
+    },
+    async input => toolText(await videoStudioService.renderJob(input.id))
+  );
+  s.registerTool(
+    'video_studio_job_status',
+    {
+      description: 'Read video rendering progress, errors and available downloadable file types.',
+      inputSchema: z.object({ id: z.uuid() })
+    },
+    async input => toolText(await videoStudioService.refreshJob(input.id))
   );
   return s;
 }
@@ -7238,6 +7291,18 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/coolify-deployer.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/video-studio.js', async (_r, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/video-studio.js', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/video-studio.css', async (_r, reply) =>
+    reply
+      .type('text/css')
+      .header('Cache-Control', 'no-store')
+      .send(await readFile(new URL('./public/video-studio.css', import.meta.url), 'utf8'))
+  );
   app.get('/assets/ops-workspace.js', async (_r, reply) =>
     reply
       .type('text/javascript')
@@ -7428,6 +7493,13 @@ async function start() {
   });
   registerBillingWorkflowRoutes(app, billingWorkflows);
   registerSiteProjectRoutes(app, siteProjectService);
+  videoStudioService = createVideoStudio({
+    db,
+    runnerUrl: () => cfg.browserRunnerUrl,
+    runnerToken: () => cfg.browserRunnerToken,
+    publicBaseUrl: () => cfg.publicBaseUrl
+  });
+  registerVideoStudioRoutes(app, videoStudioService, page, renderVideoStudio, () => new URL(cfg.publicBaseUrl).origin);
   registerCoolifyDeploymentRoutes(app, coolifyDeployer);
   registerToolsRoutes(app, { db, page, publicBaseUrl: () => cfg.publicBaseUrl });
   app.addHook('preHandler', async (req, reply) => {

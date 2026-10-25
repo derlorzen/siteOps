@@ -28,6 +28,13 @@ fi
 install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0755 "${APP_DIR}"
 install -m 0644 "${SOURCE_DIR}/package.json" "${APP_DIR}/package.json"
 install -m 0644 "${SOURCE_DIR}/server.mjs" "${APP_DIR}/server.mjs"
+install -m 0644 "${SOURCE_DIR}/video-studio.mjs" "${APP_DIR}/video-studio.mjs"
+install -m 0644 "${SOURCE_DIR}/kokoro-voice.py" "${APP_DIR}/kokoro-voice.py"
+# FFmpeg and Kokoro are needed only for Video Studio rendering.
+apt-get update && apt-get install -y --no-install-recommends ffmpeg python3-venv
+if [[ ! -x "${APP_DIR}/venv/bin/python3" ]]; then python3 -m venv "${APP_DIR}/venv"; fi
+"${APP_DIR}/venv/bin/pip" install --upgrade kokoro-onnx soundfile
+install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0750 /var/lib/siteops-video-studio
 
 cd "${APP_DIR}"
 PLAYWRIGHT_BROWSERS_PATH=0 npm install --omit=dev
@@ -41,6 +48,8 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 HOST=127.0.0.1
 PORT=3200
 BROWSER_RUNNER_TOKEN=${TOKEN}
+VIDEO_PYTHON=/opt/siteops-browser-runner/venv/bin/python3
+VIDEO_OUTPUT_DIR=/var/lib/siteops-video-studio
 EOF
   echo
   echo "Generated runner token (store it in SiteOps -> Einstellungen -> Synthetic Runner):"
