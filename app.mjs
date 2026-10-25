@@ -43,6 +43,7 @@ import { createWorkspaceActivity, registerWorkspaceActivityRoutes } from './lib/
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 import { resolveBuildInfo } from './lib/build-info.mjs';
 import { createVideoStudio, registerVideoStudioRoutes } from './lib/video-studio.mjs';
+import { registerVideoStudioTools } from './lib/video-studio-mcp.mjs';
 import { renderVideoStudio } from './lib/video-studio-ui.mjs';
 import { createDashboardSessions } from './lib/dashboard-session.mjs';
 
@@ -5083,70 +5084,7 @@ function mcpServer() {
     },
     async ({ installationId }) => toolText(await cmsController.resetAdminPassword(installationId))
   );
-  s.registerTool(
-    'video_studio_projects',
-    {
-      description: 'List Video Studio channels/projects for faceless YouTube production.',
-      inputSchema: z.object({})
-    },
-    async () => toolText(await videoStudioService.listProjects())
-  );
-  s.registerTool(
-    'video_studio_create_job',
-    {
-      description:
-        'Create a draft video from an authored English narration script. Separate scenes with blank lines. Review the draft before rendering.',
-      inputSchema: z.object({
-        project_id: z.uuid(),
-        title: z.string().min(3).max(200),
-        script: z.string().min(30).max(18000),
-        topic: z.string().max(500).optional(),
-        scenes: z
-          .array(
-            z.object({
-              headline: z.string().max(160).optional(),
-              narration: z.string().min(5).max(1400),
-              demoUrl: z.string().url().optional(),
-              demoSteps: z
-                .array(
-                  z.object({
-                    action: z.enum(['click', 'hover', 'fill', 'press', 'scroll', 'wait', 'goto']),
-                    selector: z.string().max(240).optional(),
-                    url: z.string().url().optional(),
-                    value: z.string().max(160).optional(),
-                    key: z.enum(['Enter', 'Tab', 'Escape', 'ArrowDown', 'ArrowUp']).optional(),
-                    pixels: z.number().int().min(-1400).max(1400).optional(),
-                    ms: z.number().int().min(100).max(4000).optional()
-                  })
-                )
-                .max(16)
-                .optional()
-            })
-          )
-          .min(1)
-          .max(24)
-          .optional(),
-        format: z.enum(['landscape', 'portrait']).optional()
-      })
-    },
-    async input => toolText(await videoStudioService.createJob(input))
-  );
-  s.registerTool(
-    'video_studio_render_job',
-    {
-      description: 'Submit an existing reviewed Video Studio draft to the configured private video renderer.',
-      inputSchema: z.object({ id: z.uuid() })
-    },
-    async input => toolText(await videoStudioService.renderJob(input.id))
-  );
-  s.registerTool(
-    'video_studio_job_status',
-    {
-      description: 'Read video rendering progress, errors and available downloadable file types.',
-      inputSchema: z.object({ id: z.uuid() })
-    },
-    async input => toolText(await videoStudioService.refreshJob(input.id))
-  );
+  registerVideoStudioTools(s, () => videoStudioService, toolText);
   return s;
 }
 
@@ -7406,7 +7344,14 @@ async function start() {
         path === '/oauth/revoke';
     // Never cache authenticated pages, login forms or API responses.
     if (!path.startsWith('/assets/')) reply.header('Cache-Control', 'no-store, max-age=0');
-    if (path === '/health' || path.startsWith('/assets/') || oauthPublic || path === '/login') return;
+    if (
+      path === '/health' ||
+      path.startsWith('/assets/') ||
+      oauthPublic ||
+      path === '/login' ||
+      path.startsWith('/video-studio/download/')
+    )
+      return;
     if (path === '/mcp') {
       if (!(await mcpAuth(req, reply))) return reply;
     } else if (!(await dashboardSessions.guard(req, reply))) return reply;
@@ -7511,7 +7456,8 @@ async function start() {
     db,
     runnerUrl: () => cfg.browserRunnerUrl,
     runnerToken: () => cfg.browserRunnerToken,
-    publicBaseUrl: () => cfg.publicBaseUrl
+    publicBaseUrl: () => cfg.publicBaseUrl,
+    downloadKey: () => key()
   });
   registerVideoStudioRoutes(app, videoStudioService, page, renderVideoStudio, () => new URL(cfg.publicBaseUrl).origin);
   registerCoolifyDeploymentRoutes(app, coolifyDeployer);

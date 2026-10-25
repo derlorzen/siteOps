@@ -79,6 +79,15 @@ OAUTH_CODE_TTL_SECONDS=600
 
 ## Main tools
 
+### Video Studio
+
+Project, runner, draft, demo-template, metadata and authenticated-download tools
+are documented in [the complete bilingual production workflow](VIDEO_PRODUCTION.md).
+Use `video_studio_create_project`, `video_studio_update_project`,
+`video_studio_runner_status`, `video_studio_list_jobs` and `video_studio_downloads`
+alongside the existing project/draft/render/status tools. English and German are
+supported. Rendering requires explicit human approval and `approved:true`.
+
 ### Context and operations
 
 - `sites_list`

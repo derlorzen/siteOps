@@ -29,6 +29,30 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
   const appliedAgain = (await q('select id from schema_migrations')).rows.map(r => r.id).sort();
   assert.deepEqual(appliedAgain, applied);
 
+  // Video additions must preserve existing rows and execute real MySQL queries.
+  const { createVideoStudio } = await import('../lib/video-studio.mjs');
+  const videoStudio = createVideoStudio({ db });
+  const videoProject = await videoStudio.createProject({ name: 'CI German video', language: 'de' });
+  let videoJob;
+  try {
+    videoJob = await videoStudio.createJob({
+      project_id: videoProject.id,
+      title: 'CI Video Studio',
+      script: 'Dies ist eine vollständig deutschsprachige Testszenenbeschreibung.'
+    });
+    assert.equal(videoJob.render_settings.language, 'de');
+    assert.equal(videoJob.render_settings.voice, 'de_DE-thorsten-medium');
+    assert.equal(videoJob.youtube.title, 'CI Video Studio');
+    await videoStudio.updateProject(videoProject.id, { language: 'en' });
+    assert.equal((await videoStudio.getJob(videoJob.id)).render_settings.language, 'de');
+    assert.equal((await videoStudio.listJobs(videoProject.id)).length, 1);
+    await videoStudio.updateMetadata(videoJob.id, { ...videoJob.youtube, title: 'CI Updated title' });
+    assert.equal((await videoStudio.getJob(videoJob.id)).youtube.title, 'CI Updated title');
+  } finally {
+    if (videoJob) await db.query('DELETE FROM video_studio_jobs WHERE id=?', [videoJob.id]);
+    await db.query('DELETE FROM video_studio_projects WHERE id=?', [videoProject.id]);
+  }
+
   // Regression: load and move tasks using real MySQL, not only mocked queries.
   const { randomUUID } = await import('node:crypto');
   const { createBillingBoard } = await import('../lib/billing-board.mjs');

@@ -42,7 +42,7 @@ test('Video Studio creates a project, stores scene paragraphs and lists jobs', a
   const p = await studio.createProject({ name: 'Bagisto Tutorials' });
   assert.equal(p.language, 'en');
   assert.equal(p.voice_provider, 'kokoro');
-  assert.equal(p.voice, 'am_michael');
+  assert.equal(p.voice, 'am_adam');
   const job = await studio.createJob({
     project_id: p.id,
     title: 'Bagisto AI',
