@@ -4,11 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
-import { recordDemoScene, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
+import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
+import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
 import { narrateWithOpenAI } from './openai-audio.mjs';
 
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
-const ALLOWED=(process.env.VIDEO_ALLOWED_HOSTS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
 const KOKORO_VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
 const PIPER_VOICES=new Set(['de_DE-thorsten-medium']);
 const OPENAI_VOICES=new Set(['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar']);
@@ -42,10 +42,11 @@ async function exec(command,args,{cwd,timeoutMs=600000}={}) {
     child.on('close',code=>{clearTimeout(timer);code===0?resolve():reject(new Error(command+' exited '+code+': '+err.slice(-1500)));});
   });
 }
-function safeDemoUrl(value){
-  return value ? validatedDemoUrl(value, ALLOWED) : null;
+function safeDemoUrl(value, hosts){
+  return value ? validatedDemoUrl(value, hosts) : null;
 }
 function validate(payload){
+  const policy=Object.hasOwn(payload || {},'demoPolicy') ? demoPolicy(payload.demoPolicy) : environmentDemoPolicy();
   if(!uuid(payload?.id))throw new Error('Valid UUID required.');
   if(!Array.isArray(payload.scenes)||!payload.scenes.length||payload.scenes.length>24)
     throw new Error('1–24 scenes required.');
@@ -61,11 +62,11 @@ function validate(payload){
   const scenes=payload.scenes.map((s,i)=>{
     const narration=String(s.narration||'').trim(),headline=String(s.headline||'').trim();
     if(narration.length<5||narration.length>1400||headline.length>160)throw new Error('Invalid scene '+(i+1));
-    const demoUrl=safeDemoUrl(s.demoUrl);
-    return {narration,headline,demoUrl,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,ALLOWED)};
+    const demoUrl=safeDemoUrl(s.demoUrl,policy.hosts);
+    return {narration,headline,demoUrl,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,policy.hosts)};
   });
   return {id:payload.id,title:String(payload.title||'').slice(0,200),voice:payload.voice,
-    voiceProvider,language:payload.language,format:payload.format,scenes};
+    voiceProvider,language:payload.language,format:payload.format,scenes,demoPolicy:policy};
 }
 async function persist(job){
   await fs.mkdir(path.join(ROOT,job.id),{recursive:true});
@@ -102,26 +103,19 @@ const scenePage=(scene,title,index,total,orientation)=>{
     '<p>'+esc(scene.narration.slice(0,230))+'</p></div>'+
     '<div class="foot">'+esc(title)+' · '+(index+1)+' / '+total+'</div></body></html>';
 };
-async function screenshot(page,scene,job,i,dir){
+export async function captureSceneScreenshot(browser,scene,job,i,dir,proxyFactory){
+  const guarded=await createDemoContext(browser,{viewport:job.format==='portrait'?{width:1080,height:1920}:{width:1920,height:1080}},job.demoPolicy.hosts,proxyFactory);
+  try {
+  const page=await guarded.context.newPage();
   const target=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
   if(scene.demoUrl){
-    // Only explicitly approved HTTPS hosts may be accessed. Block cross-origin
-    // assets and redirects too, not just the initial navigation URL.
-    await page.route('**/*', route => {
-      try {
-        const u = new URL(route.request().url());
-        if (u.protocol !== 'https:' || !ALLOWED.includes(u.hostname.toLowerCase()))
-          return route.abort('blockedbyclient');
-        return route.continue();
-      } catch { return route.abort('blockedbyclient'); }
-    });
     await page.goto(scene.demoUrl,{waitUntil:'domcontentloaded',timeout:30000});
-    if (!ALLOWED.includes(new URL(page.url()).hostname.toLowerCase()))
-      throw new Error('Demo navigation left approved hosts.');
+    validatedDemoUrl(page.url(),job.demoPolicy.hosts);
     await page.waitForTimeout(1200);
   }else await page.setContent(scenePage(scene,job.title,i,job.scenes.length,job.format),{waitUntil:'load'});
   await page.screenshot({path:target,type:'png',animations:'disabled'});
   return target;
+  } finally { await guarded.close(); }
 }
 async function voice(scene,job,i,dir){
   const target=path.join(dir,'voice-'+String(i).padStart(2,'0')+'.wav');
@@ -178,9 +172,7 @@ async function render(job){
   const parts=[],subtitles=[];
   let current=0;
   try{
-    browser=await chromium.launch({headless:true,args:['--disable-dev-shm-usage']});
-    const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:1,ignoreHTTPSErrors:false});
-    const page=await context.newPage();
+    browser=await chromium.launch({headless:true,args:demoBrowserArgs});
     for(let i=0;i<job.scenes.length;i++){
       const scene={...job.scenes[i],language:job.language};
       job.progress=Math.round(i/job.scenes.length*85);
@@ -189,9 +181,9 @@ async function render(job){
       const png = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
       if (recording) {
-        await recordDemoScene(browser,scene,webm,{width,height},ALLOWED,png);
+        await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png);
       } else {
-        await screenshot(page,scene,job,i,dir);
+        await captureSceneScreenshot(browser,scene,job,i,dir);
       }
       const wav=await voice(scene,job,i,dir);
       const len=await duration(wav),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
@@ -210,7 +202,6 @@ async function render(job){
       subtitles.push(String(i+1)+'\n'+srtTime(current)+' --> '+srtTime(current+len)+'\n'+scene.narration+'\n');
       current+=len;
     }
-    await context.close();
     await browser.close();browser=null;
     await fs.writeFile(path.join(dir,'concat.txt'),parts.map(p=>"file '"+p.replace(/'/g,"'\\''")+"'").join('\n'));
     await fs.writeFile(path.join(dir,'subtitles.srt'),subtitles.join('\n'));
@@ -248,7 +239,10 @@ export function registerVideoRunner(app,auth){
     const exists=async file=>fs.access(file).then(()=>true).catch(()=>false);
     const kokoroFiles=await Promise.all(['kokoro-v1.0.onnx','voices-v1.0.bin'].map(n=>exists(path.join(MODEL_DIR,n))));
     const piperFiles=await Promise.all(['de_DE-thorsten-medium.onnx','de_DE-thorsten-medium.onnx.json'].map(n=>exists(path.join(MODEL_DIR,n))));
+    let demoEnvironmentPolicy=null,demoEnvironmentError=null;
+    try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
+      demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
       offlineModels:{kokoro:kokoroFiles.every(Boolean),piper:piperFiles.every(Boolean)},
       modelAutoinstall:true, openaiConfigured:Boolean(process.env.OPENAI_API_KEY),

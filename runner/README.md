@@ -1,5 +1,15 @@
 # SiteOps Browser Runner
 
+Video demo domains can be managed under **SiteOps → Video Studio → Demo-Domains**.
+Rules support exact DNS names and `*.domain.tld` for true subdomains (excluding the
+apex). No allow-all rule is accepted. The authenticated backend transmits a
+versioned policy with each new job over HTTPS; there is no Docker configuration
+write or runner restart when saving rules. Until explicitly saved, the runner
+uses `VIDEO_ALLOWED_HOSTS` as a fallback. An explicitly empty GUI list denies all
+demos. See [policy architecture, migration and rollout](../docs/VIDEO_DEMO_POLICY.md)
+before deploying. This requires an updated runner image; preserve the existing
+token, HTTPS proxy and persistent `/data/video-studio` volume in Docker Manager.
+
 Optional Playwright execution service for SiteOps synthetic journeys and visual regression checks.
 
 ## Production install on a VPS (systemd, no Docker)
