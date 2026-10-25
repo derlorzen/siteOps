@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
+import { recordDemoScene, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
 const ALLOWED=(process.env.VIDEO_ALLOWED_HOSTS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
@@ -26,11 +27,7 @@ async function exec(command,args,{cwd,timeoutMs=600000}={}) {
   });
 }
 function safeDemoUrl(value){
-  if(!value)return null;
-  const u=new URL(value);
-  if(u.protocol!=='https:'||u.username||u.password||!ALLOWED.includes(u.hostname.toLowerCase()))
-    throw new Error('Demo URL is not in VIDEO_ALLOWED_HOSTS');
-  return u.toString();
+  return value ? validatedDemoUrl(value, ALLOWED) : null;
 }
 function validate(payload){
   if(!uuid(payload?.id))throw new Error('Valid UUID required.');
@@ -42,7 +39,8 @@ function validate(payload){
   const scenes=payload.scenes.map((s,i)=>{
     const narration=String(s.narration||'').trim(),headline=String(s.headline||'').trim();
     if(narration.length<5||narration.length>1400||headline.length>160)throw new Error('Invalid scene '+(i+1));
-    return {narration,headline,demoUrl:safeDemoUrl(s.demoUrl)};
+    const demoUrl=safeDemoUrl(s.demoUrl);
+    return {narration,headline,demoUrl,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,ALLOWED)};
   });
   return {id:payload.id,title:String(payload.title||'').slice(0,200),voice:payload.voice,
     language:payload.language,format:payload.format,scenes};
@@ -153,11 +151,27 @@ async function render(job){
       const scene=job.scenes[i];
       job.progress=Math.round(i/job.scenes.length*85);
       await persist(job);
-      const png=await screenshot(page,scene,job,i,dir),wav=await voice(scene,job,i,dir);
+      const recording = Boolean(scene.demoUrl && scene.demoSteps?.length);
+      const png = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
+      const webm = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
+      if (recording) {
+        await recordDemoScene(browser,scene,webm,{width,height},ALLOWED,png);
+      } else {
+        await screenshot(page,scene,job,i,dir);
+      }
+      const wav=await voice(scene,job,i,dir);
       const len=await duration(wav),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
-      await exec('ffmpeg',['-y','-loop','1','-framerate','25','-i',png,'-i',wav,
-        '-c:v','libx264','-preset','veryfast','-tune','stillimage','-pix_fmt','yuv420p',
-        '-r','25','-c:a','aac','-b:a','128k','-shortest','-movflags','+faststart',out]);
+      if (recording) {
+        await exec('ffmpeg',['-y','-i',webm,'-i',wav,
+          '-vf','fps=25,tpad=stop_mode=clone:stop_duration=125',
+          '-t',String(len),'-c:v','libx264','-preset','veryfast',
+          '-pix_fmt','yuv420p','-r','25','-c:a','aac','-b:a','128k',
+          '-movflags','+faststart',out]);
+      } else {
+        await exec('ffmpeg',['-y','-loop','1','-framerate','25','-i',png,'-i',wav,
+          '-c:v','libx264','-preset','veryfast','-tune','stillimage','-pix_fmt','yuv420p',
+          '-r','25','-c:a','aac','-b:a','128k','-shortest','-movflags','+faststart',out]);
+      }
       parts.push(out);
       subtitles.push(String(i+1)+'\n'+srtTime(current)+' --> '+srtTime(current+len)+'\n'+scene.narration+'\n');
       current+=len;
