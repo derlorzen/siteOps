@@ -44,6 +44,10 @@ import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/bil
 import { resolveBuildInfo } from './lib/build-info.mjs';
 import { createVideoStudio, registerVideoStudioRoutes } from './lib/video-studio.mjs';
 import { registerVideoStudioTools } from './lib/video-studio-mcp.mjs';
+import { createYouTubeService } from './lib/youtube.mjs';
+import { createYouTubeUploadWorker } from './lib/youtube-upload.mjs';
+import { registerYouTubeRoutes, registerYouTubeTools } from './lib/youtube-api.mjs';
+import { renderYouTube } from './lib/youtube-ui.mjs';
 import { renderVideoStudio } from './lib/video-studio-ui.mjs';
 import { createDashboardSessions } from './lib/dashboard-session.mjs';
 
@@ -4147,6 +4151,14 @@ const toolText = value => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }]
 });
 let videoStudioService = null;
+const youtubeService = createYouTubeService({
+  db,
+  encrypt,
+  decrypt,
+  publicBaseUrl: () => cfg.publicBaseUrl,
+  studio: () => videoStudioService
+});
+const youtubeWorker = createYouTubeUploadWorker(youtubeService);
 function mcpServer() {
   const s = new McpServer({ name: 'lorzen-siteops', version: buildInfo.version });
   registerCoolifyDeploymentTools(s, coolifyDeployer, toolText);
@@ -5085,6 +5097,7 @@ function mcpServer() {
     async ({ installationId }) => toolText(await cmsController.resetAdminPassword(installationId))
   );
   registerVideoStudioTools(s, () => videoStudioService, toolText);
+  registerYouTubeTools(s, youtubeService, toolText);
   return s;
 }
 
@@ -5684,7 +5697,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/coolify">Coolify</a><a href="/settings">Einstellungen</a><a href="/logout">Abmelden</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/coolify">Coolify</a><a href="/youtube">YouTube</a><a href="/settings">Einstellungen</a><a href="/logout">Abmelden</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -7333,6 +7346,12 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/lorzcms.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/youtube.js', async (_req, reply) =>
+    reply.type('text/javascript').send(await readFile(new URL('./public/youtube.js', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/youtube.css', async (_req, reply) =>
+    reply.type('text/css').send(await readFile(new URL('./public/youtube.css', import.meta.url), 'utf8'))
+  );
   app.addHook('onRequest', async (req, reply) => {
     const path = req.url.split('?')[0],
       oauthPublic =
@@ -7460,6 +7479,13 @@ async function start() {
     downloadKey: () => key()
   });
   registerVideoStudioRoutes(app, videoStudioService, page, renderVideoStudio, () => new URL(cfg.publicBaseUrl).origin);
+  registerYouTubeRoutes(app, youtubeService, {
+    page,
+    render: renderYouTube,
+    origin: () => new URL(cfg.publicBaseUrl).origin,
+    worker: youtubeWorker
+  });
+  if (databaseReady) youtubeWorker.start();
   registerCoolifyDeploymentRoutes(app, coolifyDeployer);
   registerToolsRoutes(app, { db, page, publicBaseUrl: () => cfg.publicBaseUrl });
   app.addHook('preHandler', async (req, reply) => {

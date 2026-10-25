@@ -79,6 +79,14 @@ OAUTH_CODE_TTL_SECONDS=600
 
 ## Main tools
 
+### YouTube channel management
+
+The authenticated dashboard handles Google consent. MCP can inspect connected
+channels, discover the pinned Data API schema, read resources and prepare exact
+changes/private uploads, then execute only after explicit human approval. See
+[YouTube setup, permissions and MCP workflow](YOUTUBE.md). No client secret or
+Google token is exposed to MCP, and producing a video never implicitly publishes it.
+
 ### Video Studio
 
 Project, runner, draft, demo-template, metadata and authenticated-download tools

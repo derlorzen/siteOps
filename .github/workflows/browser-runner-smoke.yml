@@ -7,6 +7,9 @@ on:
       - 'test/video-*.test.mjs'
       - 'lib/video-*.mjs'
       - 'public/video-studio.js'
+      - 'test/youtube*.test.mjs'
+      - 'lib/youtube*'
+      - 'public/youtube*'
       - '.github/workflows/browser-runner-smoke.yml'
   workflow_dispatch:
 
@@ -39,6 +42,10 @@ jobs:
         env:
           RUN_VIDEO_BROWSER_TESTS: '1'
         run: node --test test/video-*.test.mjs
+      - name: YouTube approval, OAuth and real browser UI tests
+        env:
+          RUN_VIDEO_BROWSER_TESTS: '1'
+        run: node --test test/youtube*.test.mjs
       - name: Run real browser smoke test
         shell: bash
         run: |
@@ -103,6 +110,15 @@ jobs:
             'http://127.0.0.1:3299/video/jobs/22222222-2222-4222-8222-222222222222/file?kind=short' \
             -o /tmp/siteops-video-short.mp4
           test "$(stat -c%s /tmp/siteops-video-test.mp4)" -gt 10000
+          # Authenticated HEAD/Range bridge used by durable YouTube uploads.
+          curl -fsSI -H 'Authorization: Bearer ci-runner-token' \
+            'http://127.0.0.1:3299/video/jobs/22222222-2222-4222-8222-222222222222/file?kind=video' \
+            > /tmp/siteops-video-head.txt
+          curl -fsS -H 'Authorization: Bearer ci-runner-token' -H 'Range: bytes=0-15' \
+            -D /tmp/siteops-video-range.txt \
+            'http://127.0.0.1:3299/video/jobs/22222222-2222-4222-8222-222222222222/file?kind=video' \
+            -o /tmp/siteops-video-prefix.bin
+          node -e "const fs=require('fs'),assert=require('assert/strict');const head=fs.readFileSync('/tmp/siteops-video-head.txt','utf8'),range=fs.readFileSync('/tmp/siteops-video-range.txt','utf8');assert.match(head,/content-length:/i);assert.match(range,/206/);assert.match(range,/content-range: bytes 0-15\//i);assert.deepEqual(fs.readFileSync('/tmp/siteops-video-prefix.bin'),fs.readFileSync('/tmp/siteops-video-test.mp4').subarray(0,16));"
           test "$(stat -c%s /tmp/siteops-video-short.mp4)" -gt 10000
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 /tmp/siteops-video-test.mp4
 
