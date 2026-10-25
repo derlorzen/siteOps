@@ -23,6 +23,7 @@
     return x;
   };
   const formatDate = x => new Date(x).toLocaleString('de-DE');
+  let templates = [];
   let projects = [],
     jobs = [];
   let policyBusy = false,
@@ -99,8 +100,8 @@
   $('#vs-policy-reload').addEventListener('click', loadPolicy);
   const voiceChoices = {
     kokoro: [
-      ['am_michael', 'Michael – US English'],
       ['am_adam', 'Adam – US English'],
+      ['am_michael', 'Michael – US English'],
       ['af_heart', 'Heart – US English'],
       ['bf_emma', 'Emma – British English'],
       ['bm_george', 'George – British English']
@@ -197,7 +198,8 @@
                   ? fileLink('video', 'MP4 herunterladen') +
                     fileLink('short', 'Short 9:16') +
                     fileLink('subtitles', 'Untertitel') +
-                    fileLink('thumbnail', 'Thumbnail')
+                    fileLink('thumbnail', 'Thumbnail') +
+                    fileLink('metadata', 'YouTube-Metadaten')
                   : '') +
                 '</div></article>'
               );
@@ -208,13 +210,87 @@
       msg('Daten konnten nicht geladen werden: ' + e.message, true);
     }
   }
+  $('#vs-project-save').addEventListener('click', async () => {
+    if (!$('#vs-project').value) return msg('Bitte Projekt auswählen.', true);
+    try {
+      await api('/api/video-studio/projects/' + $('#vs-project').value, 'POST', {
+        name: $('#vs-project-name').value.trim() || projects.find(p => p.id === $('#vs-project').value).name,
+        channel: $('#vs-channel').value,
+        language: $('#vs-language').value,
+        voice_provider: $('#vs-voice-provider').value,
+        voice: $('#vs-voice').value
+      });
+      await reload();
+      msg('Projekteinstellungen gespeichert.');
+    } catch (e) {
+      msg(e.message, true);
+    }
+  });
+  $('#vs-project').addEventListener('change', () => {
+    const p = projects.find(x => x.id === $('#vs-project').value);
+    if (!p) return;
+    $('#vs-project-name').value = p.name;
+    $('#vs-channel').value = p.channel;
+    $('#vs-language').value = p.language;
+    $('#vs-voice-provider').value = p.voice_provider;
+    syncLanguage();
+    $('#vs-voice').value = p.voice;
+  });
+  async function loadTemplates() {
+    try {
+      templates = await api('/api/video-studio/demo-templates');
+      $('#vs-template').innerHTML =
+        '<option value="">Neue Demoszene</option>' +
+        templates.map(t => '<option value="' + escapeHtml(t.id) + '">' + escapeHtml(t.name) + '</option>').join('');
+    } catch (e) {
+      $('#vs-template-status').textContent = e.message;
+    }
+  }
+  $('#vs-template').addEventListener('change', () => {
+    const x = templates.find(t => t.id === $('#vs-template').value);
+    $('#vs-template-name').value = x?.name || '';
+    $('#vs-template-json').value = x ? JSON.stringify(x.scene, null, 2) : '';
+  });
+  $('#vs-template-save').addEventListener('click', async () => {
+    const b = $('#vs-template-save');
+    b.disabled = true;
+    try {
+      await api(
+        '/api/video-studio/demo-templates' + ($('#vs-template').value ? '/' + $('#vs-template').value : ''),
+        'POST',
+        {
+          name: $('#vs-template-name').value,
+          language: $('#vs-language').value,
+          scene: JSON.parse($('#vs-template-json').value)
+        }
+      );
+      await loadTemplates();
+      $('#vs-template-status').textContent = 'Demoszene gespeichert.';
+    } catch (e) {
+      $('#vs-template-status').textContent = 'Nicht gespeichert: ' + e.message;
+    } finally {
+      b.disabled = false;
+    }
+  });
+  $('#vs-template-use').addEventListener('click', () => {
+    try {
+      const scene = JSON.parse($('#vs-template-json').value),
+        current = JSON.parse($('#vs-scene-json').value || '[]');
+      current.push(scene);
+      $('#vs-scene-json').value = JSON.stringify(current, null, 2);
+      msg('Demoszene zum Szenenplan hinzugefügt.');
+    } catch (e) {
+      $('#vs-template-status').textContent = 'Szenenplan oder Demoszene enthält ungültiges JSON.';
+    }
+  });
+  loadTemplates();
   $('#vs-project-add').addEventListener('click', async () => {
     const name = $('#vs-project-name').value.trim();
     if (name.length < 2) return msg('Projektname benötigt mindestens zwei Zeichen.', true);
     try {
       const created = await api('/api/video-studio/projects', 'POST', {
         name,
-        channel: 'Bagisto',
+        channel: $('#vs-channel').value,
         language: $('#vs-language').value,
         voice_provider: $('#vs-voice-provider').value,
         voice: $('#vs-voice').value
@@ -267,6 +343,7 @@
         topic: $('#vs-topic').value.trim(),
         script,
         scenes,
+        youtube: $('#vs-youtube-json').value.trim() ? JSON.parse($('#vs-youtube-json').value) : undefined,
         format: $('#vs-format').value
       });
       msg('Videoentwurf gespeichert. Klicke auf „Video rendern“, um den Runner zu starten.');
