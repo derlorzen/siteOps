@@ -97,7 +97,7 @@ const scenePage=(scene,title,index,total,orientation)=>{
     '.foot{position:absolute;bottom:63px;left:'+(vertical?'68px':'145px')+';opacity:.65;font-size:23px}'+
     '.orb{position:absolute;right:-190px;bottom:-300px;border:2px solid #389dd633;border-radius:50%;width:730px;height:730px}'+
     '</style></head><body><div class="brand">LORZEN · VIDEO STUDIO</div><div class="orb"></div><div class="frame">'+
-    '<span class="tag">SCENE '+String(index+1).padStart(2,'0')+'</span>'+
+    '<span class="tag">'+(scene.language==='de'?'SZENE ':'SCENE ')+String(index+1).padStart(2,'0')+'</span>'+
     '<h1>'+esc(scene.headline||title)+'</h1><div class="rule"></div>'+
     '<p>'+esc(scene.narration.slice(0,230))+'</p></div>'+
     '<div class="foot">'+esc(title)+' · '+(index+1)+' / '+total+'</div></body></html>';
@@ -182,7 +182,7 @@ async function render(job){
     const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:1,ignoreHTTPSErrors:false});
     const page=await context.newPage();
     for(let i=0;i<job.scenes.length;i++){
-      const scene=job.scenes[i];
+      const scene={...job.scenes[i],language:job.language};
       job.progress=Math.round(i/job.scenes.length*85);
       await persist(job);
       const recording = Boolean(scene.demoUrl && scene.demoSteps?.length);
@@ -243,6 +243,18 @@ function dispatch(){
   }
 }
 export function registerVideoRunner(app,auth){
+  app.get('/video/capabilities',async(req,reply)=>{
+    if(!auth(req,reply))return;
+    const exists=async file=>fs.access(file).then(()=>true).catch(()=>false);
+    const kokoroFiles=await Promise.all(['kokoro-v1.0.onnx','voices-v1.0.bin'].map(n=>exists(path.join(MODEL_DIR,n))));
+    const piperFiles=await Promise.all(['de_DE-thorsten-medium.onnx','de_DE-thorsten-medium.onnx.json'].map(n=>exists(path.join(MODEL_DIR,n))));
+    return {
+      languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
+      offlineModels:{kokoro:kokoroFiles.every(Boolean),piper:piperFiles.every(Boolean)},
+      modelAutoinstall:true, openaiConfigured:Boolean(process.env.OPENAI_API_KEY),
+      ffmpegRequired:true,queued:queue.length,running:active
+    };
+  });
   app.post('/video/jobs',async(req,reply)=>{
     if(!auth(req,reply))return;
     let parsed;
