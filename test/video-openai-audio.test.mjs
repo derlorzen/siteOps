@@ -60,11 +60,16 @@ test('OpenAI German narration uses a German instruction and accepts German text'
         assert.match(body.messages[0].content, /Lies den folgenden Sprechertext/);
         assert.match(body.messages[0].content, /Guten Tag/);
         assert.equal(body.audio.voice, 'coral');
-        return { ok: true, json: async () => ({ choices: [{ message: { audio: { data: wav.toString('base64') } } }] }) };
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ message: { audio: { data: wav.toString('base64') } } }] })
+        };
       }
     });
     assert.deepEqual(await readFile(voice), wav);
-  } finally { await rm(dir, { recursive: true, force: true }); }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 test('OpenAI adapter rejects unsupported voices and bad audio, without storing secrets', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'video-openai-test-'));

@@ -56,8 +56,14 @@ test('A project can switch between languages without inheriting an invalid local
 test('Reject unsupported combinations; OpenAI works in both languages', async () => {
   const { db } = fakeDatabase();
   const studio = createVideoStudio({ db, runnerUrl: () => '', runnerToken: () => '' });
-  await assert.rejects(studio.createProject({ name: 'Bad German Kokoro', language: 'de', voice_provider: 'kokoro' }), /unterstützt/);
-  await assert.rejects(studio.createProject({ name: 'Bad English Piper', language: 'en', voice_provider: 'piper' }), /unterstützt/);
+  await assert.rejects(
+    studio.createProject({ name: 'Bad German Kokoro', language: 'de', voice_provider: 'kokoro' }),
+    /unterstützt/
+  );
+  await assert.rejects(
+    studio.createProject({ name: 'Bad English Piper', language: 'en', voice_provider: 'piper' }),
+    /unterstützt/
+  );
   const de = await studio.createProject({ name: 'German OpenAI', language: 'de', voice_provider: 'openai' });
   const en = await studio.createProject({ name: 'English OpenAI', language: 'en', voice_provider: 'openai' });
   assert.equal(de.voice, 'alloy');
