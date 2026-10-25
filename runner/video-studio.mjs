@@ -10,6 +10,7 @@ import { narrateWithOpenAI } from './openai-audio.mjs';
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
 const ALLOWED=(process.env.VIDEO_ALLOWED_HOSTS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
 const KOKORO_VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
+const PIPER_VOICES=new Set(['de_DE-thorsten-medium','de_DE-kerstin-low']);
 const OPENAI_VOICES=new Set(['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar']);
 const MAX_JOBS=Number(process.env.VIDEO_MAX_JOBS||30);
 let active=0;
@@ -36,11 +37,13 @@ function validate(payload){
   if(!Array.isArray(payload.scenes)||!payload.scenes.length||payload.scenes.length>24)
     throw new Error('1–24 scenes required.');
   const voiceProvider=payload.voiceProvider || 'kokoro';
-  if(!['kokoro','openai'].includes(voiceProvider))throw new Error('Unsupported voice provider.');
-  if(!(voiceProvider==='kokoro'?KOKORO_VOICES:OPENAI_VOICES).has(payload.voice))
-    throw new Error('Unsupported voice for '+voiceProvider+'.');
   if(!['en','de'].includes(payload.language)||!['landscape','portrait'].includes(payload.format))
     throw new Error('Unsupported language or format.');
+  const voices = voiceProvider === 'kokoro' && payload.language === 'en' ? KOKORO_VOICES :
+    voiceProvider === 'piper' && payload.language === 'de' ? PIPER_VOICES :
+    voiceProvider === 'openai' ? OPENAI_VOICES : null;
+  if(!voices || !voices.has(payload.voice))
+    throw new Error('Unsupported voice provider and language combination.');
   const scenes=payload.scenes.map((s,i)=>{
     const narration=String(s.narration||'').trim(),headline=String(s.headline||'').trim();
     if(narration.length<5||narration.length>1400||headline.length>160)throw new Error('Invalid scene '+(i+1));
@@ -116,7 +119,13 @@ async function voice(scene,job,i,dir){
       String(Math.min(120,Math.max(4,scene.narration.split(/\s+/).length/2.3))),
       '-c:a','pcm_s16le',target],{timeoutMs:30000});
   }else if(voiceProvider==='openai'){
-    await narrateWithOpenAI(scene.narration,target,{voice:job.voice});
+    await narrateWithOpenAI(scene.narration,target,{voice:job.voice,language:job.language});
+  }else if(voiceProvider==='piper'){
+    await exec(process.env.VIDEO_PYTHON||'python3',
+      [new URL('./piper-voice.py',import.meta.url).pathname,
+        '--models-dir', process.env.VIDEO_MODELS_DIR || '/models',
+        '--text', narration, '--output', target, '--voice', job.voice],
+      {timeoutMs:240000});
   }else if(voiceProvider==='kokoro'){
     await exec(process.env.VIDEO_PYTHON||'python3',
       [new URL('./kokoro-voice.py',import.meta.url).pathname,
@@ -218,7 +227,32 @@ function dispatch(){
     });
   }
 }
+export async function voiceCapabilities(){
+  const models=process.env.VIDEO_MODELS_DIR||'/models';
+  const exists=async file=>fs.stat(path.join(models,file)).then(s=>s.isFile()&&s.size>1000).catch(()=>false);
+  const kokoro=await Promise.all(['kokoro-v1.0.onnx','voices-v1.0.bin'].map(exists));
+  const thorsten=await Promise.all(['de_DE-thorsten-medium.onnx','de_DE-thorsten-medium.onnx.json'].map(exists));
+  const kerstin=await Promise.all(['de_DE-kerstin-low.onnx','de_DE-kerstin-low.onnx.json'].map(exists));
+  return {
+    languages:['en','de'],
+    voices:{
+      en:{kokoro:{ready:kokoro.every(Boolean),voices:[...KOKORO_VOICES]},openai:{ready:Boolean(process.env.OPENAI_API_KEY),voices:[...OPENAI_VOICES]}},
+      de:{piper:{ready:thorsten.every(Boolean)||kerstin.every(Boolean),voices:[
+        {id:'de_DE-thorsten-medium',ready:thorsten.every(Boolean)},
+        {id:'de_DE-kerstin-low',ready:kerstin.every(Boolean)}
+      ]},openai:{ready:Boolean(process.env.OPENAI_API_KEY),voices:[...OPENAI_VOICES]}}
+    },
+    ffmpegRequired:true,
+    storageConfigured:Boolean(process.env.VIDEO_OUTPUT_DIR),
+    activeJobs:active,
+    queuedJobs:queue.length
+  };
+}
 export function registerVideoRunner(app,auth){
+  app.get('/video/capabilities',async(req,reply)=>{
+    if(!auth(req,reply))return;
+    return voiceCapabilities();
+  });
   app.post('/video/jobs',async(req,reply)=>{
     if(!auth(req,reply))return;
     let parsed;
