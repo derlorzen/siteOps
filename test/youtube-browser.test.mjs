@@ -6,6 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { renderYouTube } from '../lib/youtube-ui.mjs';
 import { publicYouTubeCatalog } from '../lib/youtube-contract.mjs';
 
+test('YouTube CSS and JavaScript share the deployment version to invalidate old browser assets', () => {
+  const html = renderYouTube('build-123');
+  assert.match(html, /href="\/assets\/youtube\.css\?v=build-123"/);
+  assert.match(html, /src="\/assets\/youtube\.js\?v=build-123"/);
+});
+
 test(
   'Shared sidebar exposes YouTube from Video Studio and marks the YouTube workspace active',
   { skip: process.env.RUN_VIDEO_BROWSER_TESTS !== '1', timeout: 30000 },

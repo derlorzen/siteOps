@@ -7481,7 +7481,7 @@ async function start() {
   registerVideoStudioRoutes(app, videoStudioService, page, renderVideoStudio, () => new URL(cfg.publicBaseUrl).origin);
   registerYouTubeRoutes(app, youtubeService, {
     page,
-    render: renderYouTube,
+    render: () => renderYouTube(buildInfo.build),
     origin: () => new URL(cfg.publicBaseUrl).origin,
     worker: youtubeWorker
   });
