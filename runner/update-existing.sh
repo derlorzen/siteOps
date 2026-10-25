@@ -65,6 +65,14 @@ if [[ "$MODE" == "--systemd" ]]; then
   install -m 0600 /etc/siteops-browser-runner.env "$BACKUP"
   echo "Existing credentials backed up under /root (not printed)."
   bash "$SCRIPT_DIR/install-systemd.sh"
+  # Preload both checksum-verified local voice models using the same
+  # restricted service user as the runner.
+  MODEL_DIR="$(sed -n 's/^VIDEO_MODEL_DIR=//p' /etc/siteops-browser-runner.env | head -n 1)"
+  MODEL_DIR="${MODEL_DIR:-/var/lib/siteops-video-studio/models}"
+  runuser -u siteops-runner -- /opt/siteops-browser-runner/venv/bin/python3 \
+    /opt/siteops-browser-runner/ensure-voice-models.py --provider kokoro --directory "$MODEL_DIR"
+  runuser -u siteops-runner -- /opt/siteops-browser-runner/venv/bin/python3 \
+    /opt/siteops-browser-runner/ensure-voice-models.py --provider piper --directory "$MODEL_DIR"
   systemctl restart siteops-browser-runner.service
   systemctl is-active --quiet siteops-browser-runner.service
   curl -fsS --max-time 10 http://127.0.0.1:3200/health >/dev/null
@@ -101,6 +109,13 @@ print("Existing credentials, persistent volume and build directory verified.")
 ' "$SERVICE" "$SCRIPT_DIR"
   "${COMPOSE[@]}" build "$SERVICE"
   "${COMPOSE[@]}" up -d --no-deps "$SERVICE"
+  # Model weights are installed only once into the existing persistent volume.
+  "${COMPOSE[@]}" exec -T "$SERVICE" sh -c '
+    set -e
+    models="${VIDEO_MODEL_DIR:-/data/video-studio/models}"
+    /opt/video-venv/bin/python3 /app/ensure-voice-models.py --provider kokoro --directory "$models"
+    /opt/video-venv/bin/python3 /app/ensure-voice-models.py --provider piper --directory "$models"
+  '
   "${COMPOSE[@]}" exec -T "$SERVICE" node -e '
 const base="http://127.0.0.1:"+(process.env.PORT||3200);
 (async()=>{
