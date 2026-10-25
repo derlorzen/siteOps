@@ -97,6 +97,29 @@ jobs:
           test "$(stat -c%s /tmp/siteops-video-short.mp4)" -gt 10000
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 /tmp/siteops-video-test.mp4
 
+          # German offline Piper job: validate language/provider pairing and produce MP4.
+          curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+            -H 'Content-Type: application/json' \
+            --data '{"id":"44444444-4444-4444-8444-444444444444","title":"Deutsche Videovorstellung","voiceProvider":"piper","voice":"de_DE-thorsten-medium","language":"de","format":"landscape","scenes":[{"headline":"Deutschsprachige Einführung","narration":"Dieser Test überprüft die deutsche Videoproduktion."}]}' \
+            http://127.0.0.1:3299/video/jobs > /tmp/siteops-german-created.json
+          for i in {1..90}; do
+            curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+              http://127.0.0.1:3299/video/jobs/44444444-4444-4444-8444-444444444444 \
+              > /tmp/siteops-german-status.json
+            result="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/siteops-german-status.json','utf8')).status")"
+            if [[ "$result" == "done" ]]; then break; fi
+            if [[ "$result" == "failed" ]]; then cat /tmp/siteops-german-status.json; exit 1; fi
+            sleep 2
+          done
+          test "$result" = "done"
+          curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+            'http://127.0.0.1:3299/video/jobs/44444444-4444-4444-8444-444444444444/file?kind=video' \
+            -o /tmp/siteops-german-test.mp4
+          test "$(stat -c%s /tmp/siteops-german-test.mp4)" -gt 10000
+          curl -fsS -H 'Authorization: Bearer ci-runner-token' http://127.0.0.1:3299/video/capabilities \
+            > /tmp/siteops-video-capabilities.json
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/siteops-video-capabilities.json','utf8'));if(!x.languages.includes('de')||!x.providers.de.includes('piper')) process.exit(1);"
+
           # Record a real browser scene with a safe, allowlisted HTTPS site.
           curl -fsS -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
