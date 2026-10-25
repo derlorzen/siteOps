@@ -27,6 +27,48 @@ OpenAI: `alloy`, `coral`, `nova`, `onyx`, `shimmer`, `marin`, `cedar` (weitere u
 
 Für ein kleineres OpenAI-only-Docker-Image ist `--build-arg INSTALL_KOKORO=false` möglich. Der Standard-Build enthält die Kokoro-Python-Abhängigkeiten, aber **nicht** die Sprachmodell-Dateien. Für einen Produktivtest müssen die Modelldateien geladen oder für das Projekt OpenAI ausgewählt werden.
 
+
+## Vollständige zweisprachige Produktion
+
+Die aktuelle Version unterstützt zwei Sprachen und drei TTS-Anbieter:
+
+| Sprache | Lokal, ohne API-Gebühren | OpenAI API |
+| --- | --- | --- |
+| Englisch | Kokoro: Michael, Adam, Heart, Emma, George | Alloy, Coral, Nova, Onyx, Shimmer, Marin, Cedar |
+| Deutsch | Piper: Thorsten (mittel), Kerstin (niedrig) | dieselben OpenAI-Stimmen, mit deutschem Sprecherprompt |
+
+Im Dashboard wählst du pro Projekt die **Sprache**, den **Stimmenanbieter** und die **Stimme**. Bestehende englische Projekte behalten Kokoro. Deutsch voreingestellt: Piper mit Thorsten.
+
+**Lokale Modelle:** Der Docker Runner installiert Kokoro, Piper und FFmpeg. Beim **ersten Containerstart** lädt `runner/setup-voice-models.py` die Modell-Dateien in `/models`. Lege unbedingt ein beschreibbares Docker-Volume auf `/models` und eines auf `/data/video-studio`. Bereits geladene Dateien werden beim Neustart wiederverwendet. Der Download kann mehrere hundert Megabyte betragen. `VIDEO_AUTO_INSTALL_MODELS=false` unterdrückt das Laden, z. B. in reinen CI-Runs oder wenn Modell-Dateien manuell bereitgestellt wurden.
+
+Alternativ installiert `runner/install-systemd.sh` die TTS-Abhängigkeiten; der systemd-Service lädt die Modell-Dateien einmalig nach `/var/lib/siteops-voice-models`. Er benötigt beim ersten Start Zugriff auf GitHub Releases und Hugging Face.
+
+**Beispiel:**
+
+```bash
+docker build -t siteops-browser-runner ./runner
+docker volume create siteops-video-models
+docker volume create siteops-video-output
+docker run -d --name siteops-browser-runner \
+  --restart unless-stopped \
+  -e BROWSER_RUNNER_TOKEN='<VORHANDENES-RUNNER-TOKEN>' \
+  -e VIDEO_AUTO_INSTALL_MODELS=true \
+  -e VIDEO_ALLOWED_HOSTS='DEIN-TESTSHOP.example' \
+  -v siteops-video-models:/models \
+  -v siteops-video-output:/data/video-studio \
+  -p 127.0.0.1:3200:3200 \
+  siteops-browser-runner
+```
+
+`OPENAI_API_KEY` nur auf dem Runner hinterlegen, falls API-Sprachausgabe ausdrücklich gewünscht ist. Niemals in Git oder einem Chat teilen. Den existierenden Reverse Proxy unter HTTPS beibehalten.
+
+**Diagnose:** Im Video Studio gibt es unter „Render-Server & Stimmen“ eine Übersicht. Die geschützte SiteOps-API `GET /api/video-studio/capabilities` gibt den Status des konfigurierten Runners wieder; der Runner prüft vorhandene Dateien und meldet die lokale oder optionale API-Sprachausgabe als verfügbar bzw. fehlend. Das UI ermöglicht eine Aktualisierung des Status, bevor ein Videoauftrag gestartet wird.
+
+**Hinweise zur Lizenzierung:** Kokoro ist ein Apache-2.0-Modell, die Wrapper-Bibliothek MIT. Piper-Software hat eigene GPL-Lizenzbedingungen, und einzelne Stimmen besitzen eigene Datensatz-/Modell-Lizenzen. Die hier vorausgewählten deutschen Modelle „Thorsten“ und „Kerstin“ dokumentieren CC0-Datensätze. Bei Weiterverteilung des Runner-Images müssen die jeweiligen Software- und Modelllizenzen gesondert geprüft und beigelegt werden.
+
+**Umfang:** Die Erzeugung von Sprechertext, die Übersetzung von Skripten sowie die Veröffentlichung bei YouTube sind weiterhin Aufgaben für ChatGPT per MCP bzw. die manuelle Freigabe. Die Videoerstellung selbst (Sprachausgabe, Browseraufnahmen, MP4, Shorts, SRT und Vorschaubild) ist in der Render-Pipeline implementiert. Die Sprachwahl übersetzt einen englischen Text nicht automatisch ins Deutsche; für die deutsche Version brauchst du einen deutschen Sprechertext.
+
+
 ## Runner setup
 
 Build the updated Docker image from runner/Dockerfile. Mount persistent writable /data/video-studio storage and two offline model assets as read-only files in /models:
