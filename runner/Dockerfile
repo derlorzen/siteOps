@@ -37,19 +37,18 @@ RUN npm ci --omit=dev \
 # OpenAI can build a smaller image with --build-arg INSTALL_KOKORO=false.
 ARG INSTALL_KOKORO=true
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg python3-venv libespeak-ng1 \
+    && python3 -m venv /opt/video-venv \
+    && /opt/video-venv/bin/pip install --no-cache-dir piper-tts \
     && if [ "$INSTALL_KOKORO" = "true" ]; then \
-         apt-get install -y --no-install-recommends python3-venv \
-         && python3 -m venv /opt/video-venv \
-         && /opt/video-venv/bin/pip install --no-cache-dir kokoro-onnx soundfile; \
+         /opt/video-venv/bin/pip install --no-cache-dir kokoro-onnx soundfile; \
        fi \
     && rm -rf /var/lib/apt/lists/*
 
-COPY server.mjs video-studio.mjs video-demo.mjs openai-audio.mjs kokoro-voice.py ./
+COPY server.mjs video-studio.mjs video-demo.mjs openai-audio.mjs kokoro-voice.py piper-voice.py ensure-voice-models.py ./
 ENV VIDEO_PYTHON=/opt/video-venv/bin/python3
 ENV VIDEO_OUTPUT_DIR=/data/video-studio
-ENV KOKORO_MODEL_PATH=/models/kokoro-v1.0.onnx
-ENV KOKORO_VOICES_PATH=/models/voices-v1.0.bin
+ENV VIDEO_MODEL_DIR=/data/video-studio/models
 
 RUN groupadd --system siteops-runner \
     && useradd --system --gid siteops-runner --home-dir /app --shell /usr/sbin/nologin siteops-runner \
