@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import { recordDemoScene, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
+import { narrateWithOpenAI } from './openai-audio.mjs';
 
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
 const ALLOWED=(process.env.VIDEO_ALLOWED_HOSTS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
@@ -105,17 +106,22 @@ async function voice(scene,job,i,dir){
   const target=path.join(dir,'voice-'+String(i).padStart(2,'0')+'.wav');
   const narration=path.join(dir,'text-'+String(i).padStart(2,'0')+'.txt');
   await fs.writeFile(narration,scene.narration);
+  const voiceProvider=process.env.VIDEO_TTS_PROVIDER || (process.env.OPENAI_API_KEY ? 'openai' : 'kokoro');
   if(process.env.VIDEO_TTS_MODE==='silent'){
     await exec('ffmpeg',['-y','-f','lavfi','-i','anullsrc=r=24000:cl=mono','-t',
       String(Math.min(120,Math.max(4,scene.narration.split(/\s+/).length/2.3))),
       '-c:a','pcm_s16le',target],{timeoutMs:30000});
-  }else{
+  }else if(voiceProvider==='openai'){
+    await narrateWithOpenAI(scene.narration,target);
+  }else if(voiceProvider==='kokoro'){
     await exec(process.env.VIDEO_PYTHON||'python3',
       [new URL('./kokoro-voice.py',import.meta.url).pathname,
         '--model',process.env.KOKORO_MODEL_PATH||'/models/kokoro-v1.0.onnx',
         '--voices',process.env.KOKORO_VOICES_PATH||'/models/voices-v1.0.bin',
         '--text',narration,'--output',target,'--voice',job.voice,'--language',job.language],
       {timeoutMs:240000});
+  }else{
+    throw new Error('Unsupported VIDEO_TTS_PROVIDER: '+voiceProvider);
   }
   return target;
 }
