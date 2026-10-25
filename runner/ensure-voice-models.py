@@ -19,10 +19,10 @@ MODELS = {
     ],
     "piper": [
         ("de_DE-thorsten-medium.onnx",
-         "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx",
+         "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx",
          "md5", "a129b00fb3078df43c96bab6c94535c0"),
         ("de_DE-thorsten-medium.onnx.json",
-         "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json",
+         "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json",
          "md5", "0ba02428e952e6556157df235b740e93")
     ]
 }
