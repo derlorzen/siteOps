@@ -33,28 +33,26 @@ RUN npm ci --omit=dev \
          exit 1; \
        fi
 
-# Kokoro is included by default for free, local TTS. Operators using only
-# OpenAI can build a smaller image with --build-arg INSTALL_KOKORO=false.
-ARG INSTALL_KOKORO=true
+# Both local languages are included: Kokoro (English), Piper (German).
+# The model data is downloaded once into the mounted /models volume at startup.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && if [ "$INSTALL_KOKORO" = "true" ]; then \
-         apt-get install -y --no-install-recommends python3-venv \
-         && python3 -m venv /opt/video-venv \
-         && /opt/video-venv/bin/pip install --no-cache-dir kokoro-onnx soundfile; \
-       fi \
+    && apt-get install -y --no-install-recommends ffmpeg python3-venv \
+    && python3 -m venv /opt/video-venv \
+    && /opt/video-venv/bin/pip install --no-cache-dir kokoro-onnx soundfile piper-tts \
     && rm -rf /var/lib/apt/lists/*
 
-COPY server.mjs video-studio.mjs video-demo.mjs openai-audio.mjs kokoro-voice.py ./
+COPY server.mjs video-studio.mjs video-demo.mjs openai-audio.mjs kokoro-voice.py piper-voice.py setup-voice-models.py entrypoint.sh ./
 ENV VIDEO_PYTHON=/opt/video-venv/bin/python3
 ENV VIDEO_OUTPUT_DIR=/data/video-studio
+ENV VIDEO_MODELS_DIR=/models
+ENV VIDEO_AUTO_INSTALL_MODELS=true
 ENV KOKORO_MODEL_PATH=/models/kokoro-v1.0.onnx
 ENV KOKORO_VOICES_PATH=/models/voices-v1.0.bin
 
 RUN groupadd --system siteops-runner \
     && useradd --system --gid siteops-runner --home-dir /app --shell /usr/sbin/nologin siteops-runner \
-    && mkdir -p /data/video-studio \
-    && chown -R siteops-runner:siteops-runner /app /data/video-studio
+    && mkdir -p /data/video-studio /models \
+    && chown -R siteops-runner:siteops-runner /app /data/video-studio /models
 
 USER siteops-runner
 
@@ -65,4 +63,4 @@ EXPOSE 3200
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3200)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "server.mjs"]
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
