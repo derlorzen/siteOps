@@ -33,9 +33,9 @@ RUN npm ci --omit=dev \
          exit 1; \
        fi
 
-# OpenAI API narration only requires FFmpeg. Offline Kokoro can optionally
-# be added at image build time: docker build --build-arg INSTALL_KOKORO=true ...
-ARG INSTALL_KOKORO=false
+# Kokoro is included by default for free, local TTS. Operators using only
+# OpenAI can build a smaller image with --build-arg INSTALL_KOKORO=false.
+ARG INSTALL_KOKORO=true
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && if [ "$INSTALL_KOKORO" = "true" ]; then \
