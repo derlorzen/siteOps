@@ -71,26 +71,39 @@ test('Video Studio supports explicit OpenAI projects and rejects mismatched voic
   assert.equal(project.voice_provider, 'openai');
 });
 test('German videos choose Piper by default and reject mismatched offline languages', async () => {
-  const projects=[];
-  const db={query:async(sql,params=[])=>{
-    if(sql.startsWith('INSERT INTO video_studio_projects')){
-      projects.push({id:params[0],name:params[1],channel:params[2],language:params[3],voice_provider:params[4],voice:params[5]});
-      return [{affectedRows:1}];
+  const projects = [];
+  const db = {
+    query: async (sql, params = []) => {
+      if (sql.startsWith('INSERT INTO video_studio_projects')) {
+        projects.push({
+          id: params[0],
+          name: params[1],
+          channel: params[2],
+          language: params[3],
+          voice_provider: params[4],
+          voice: params[5]
+        });
+        return [{ affectedRows: 1 }];
+      }
+      if (sql.startsWith('SELECT * FROM video_studio_projects'))
+        return [[projects.find(p => p.id === params[0])].filter(Boolean)];
+      return [[]];
     }
-    if(sql.startsWith('SELECT * FROM video_studio_projects')) return [[projects.find(p=>p.id===params[0])].filter(Boolean)];
-    return [[]];
-  }};
-  const studio=createVideoStudio({db,runnerUrl:()=>'',runnerToken:()=>''});
-  const german=await studio.createProject({name:'Deutsche Tutorials',language:'de'});
-  assert.equal(german.language,'de');
-  assert.equal(german.voice_provider,'piper');
-  assert.equal(german.voice,'de_DE-thorsten-medium');
-  const english=await studio.createProject({name:'English tutorials',language:'en'});
-  assert.equal(english.voice_provider,'kokoro');
-  await assert.rejects(studio.createProject({name:'Invalid DE',language:'de',voice_provider:'kokoro'}),/Kokoro/);
-  await assert.rejects(studio.createProject({name:'Invalid EN',language:'en',voice_provider:'piper'}),/Piper/);
-  const multi=await studio.createProject({name:'Deutsch API',language:'de',voice_provider:'openai'});
-  assert.equal(multi.voice,'alloy');
+  };
+  const studio = createVideoStudio({ db, runnerUrl: () => '', runnerToken: () => '' });
+  const german = await studio.createProject({ name: 'Deutsche Tutorials', language: 'de' });
+  assert.equal(german.language, 'de');
+  assert.equal(german.voice_provider, 'piper');
+  assert.equal(german.voice, 'de_DE-thorsten-medium');
+  const english = await studio.createProject({ name: 'English tutorials', language: 'en' });
+  assert.equal(english.voice_provider, 'kokoro');
+  await assert.rejects(
+    studio.createProject({ name: 'Invalid DE', language: 'de', voice_provider: 'kokoro' }),
+    /Kokoro/
+  );
+  await assert.rejects(studio.createProject({ name: 'Invalid EN', language: 'en', voice_provider: 'piper' }), /Piper/);
+  const multi = await studio.createProject({ name: 'Deutsch API', language: 'de', voice_provider: 'openai' });
+  assert.equal(multi.voice, 'alloy');
 });
 test('Video Studio validates scenes and project identifiers', async () => {
   const studio = createVideoStudio({ db: { query: async () => [[]] }, runnerUrl: () => '', runnerToken: () => '' });
