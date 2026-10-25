@@ -20,12 +20,10 @@ def main():
     from kokoro_onnx import Kokoro
     import soundfile as sf
     voice = Kokoro(args.model, args.voices)
-    try:
-        audio, sample_rate = voice.create(Path(args.text).read_text(encoding="utf-8"),
-                                          voice=args.voice, speed=1.0, lang="en-us")
-        sf.write(args.output, audio, sample_rate, subtype="PCM_16")
-    finally:
-        voice.voices.close()
+    language_code = "en-gb" if args.voice.startswith(("bf_", "bm_")) else "en-us"
+    audio, sample_rate = voice.create(Path(args.text).read_text(encoding="utf-8"),
+                                      voice=args.voice, speed=1.0, lang=language_code)
+    sf.write(args.output, audio, sample_rate, subtype="PCM_16")
 
 if __name__ == "__main__":
     main()
