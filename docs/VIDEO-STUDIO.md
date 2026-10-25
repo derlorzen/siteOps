@@ -14,6 +14,19 @@ The SiteOps dashboard now has a Video Studio workspace for creating faceless You
 
 The initial stage produced a narrated slideshow. The second stage adds real Playwright-recorded browser actions for selected scenes. A demo URL without steps still creates a still screenshot. Interactive browser recording, AI script generation within the SiteOps UI, video timeline editing, multiple edited Shorts and YouTube OAuth publication are later stages. ChatGPT can author a script and create a draft through the MCP tools without another paid text-generation API.
 
+## Sprecherstimmen: Kokoro oder OpenAI
+
+**Kokoro ist integriert und standardmäßig vorausgewählt.** Das ONNX-Modell erzeugt die gesprochene Tonspur lokal auf dem Runner, ohne laufende TTS-API-Kosten. Das Docker-Image installiert Kokoro und FFmpeg standardmäßig; die Modelldateien müssen separat und dauerhaft im Volume `/models` bereitgestellt werden.
+
+**OpenAI ist optional pro Videoprojekt.** Statt Kokoro erzeugt `gpt-audio-1.5` mit der OpenAI Audio API die WAV-Sprachspur. Für OpenAI muss `OPENAI_API_KEY` als Secret **auf dem Runner** hinterlegt werden, nicht im SiteOps-Frontend. Die Auswahl von OpenAI verursacht nutzungsabhängige API-Kosten, Kokoro dagegen keine externen TTS-Kosten. Der Schlüssel wird nicht über MCP oder die Video-Studio-API zurückgegeben.
+
+Neue Projekte speichern `voice_provider` (`kokoro` oder `openai`) und `voice` separat. Bestehende Projekte bleiben auf Kokoro. Der Renderer beachtet die Projektentscheidung; ein gesetzter OpenAI-Schlüssel aktiviert OpenAI **nicht automatisch**.
+
+Kokoro: `am_michael`, `am_adam`, `af_heart`, `bf_emma`, `bm_george`.
+OpenAI: `alloy`, `coral`, `nova`, `onyx`, `shimmer`, `marin`, `cedar` (weitere unterstützte Stimmen über API möglich).
+
+Für ein kleineres OpenAI-only-Docker-Image ist `--build-arg INSTALL_KOKORO=false` möglich. Der Standard-Build enthält die Kokoro-Python-Abhängigkeiten, aber **nicht** die Sprachmodell-Dateien. Für einen Produktivtest müssen die Modelldateien geladen oder für das Projekt OpenAI ausgewählt werden.
+
 ## Runner setup
 
 Build the updated Docker image from runner/Dockerfile. Mount persistent writable /data/video-studio storage and two offline model assets as read-only files in /models:
