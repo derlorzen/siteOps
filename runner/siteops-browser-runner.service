@@ -10,9 +10,11 @@ Group=siteops-runner
 WorkingDirectory=/opt/siteops-browser-runner
 EnvironmentFile=/etc/siteops-browser-runner.env
 Environment=PLAYWRIGHT_BROWSERS_PATH=0
+ExecStartPre=/opt/siteops-browser-runner/venv/bin/python3 /opt/siteops-browser-runner/setup-voice-models.py --models-dir /var/lib/siteops-voice-models --language all
 ExecStart=/usr/bin/env node /opt/siteops-browser-runner/server.mjs
 Restart=on-failure
 RestartSec=3
+TimeoutStartSec=900
 TimeoutStopSec=20
 KillSignal=SIGINT
 
@@ -20,7 +22,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/opt/siteops-browser-runner
+ReadWritePaths=/opt/siteops-browser-runner /var/lib/siteops-video-studio /var/lib/siteops-voice-models
 RestrictSUIDSGID=true
 LockPersonality=true
 
