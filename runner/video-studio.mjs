@@ -4,10 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
+import { recordDemoScene, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
+import { narrateWithOpenAI } from './openai-audio.mjs';
 
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
 const ALLOWED=(process.env.VIDEO_ALLOWED_HOSTS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
-const VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
+const KOKORO_VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
+const OPENAI_VOICES=new Set(['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar']);
 const MAX_JOBS=Number(process.env.VIDEO_MAX_JOBS||30);
 let active=0;
 const queue=[];
@@ -26,26 +29,26 @@ async function exec(command,args,{cwd,timeoutMs=600000}={}) {
   });
 }
 function safeDemoUrl(value){
-  if(!value)return null;
-  const u=new URL(value);
-  if(u.protocol!=='https:'||u.username||u.password||!ALLOWED.includes(u.hostname.toLowerCase()))
-    throw new Error('Demo URL is not in VIDEO_ALLOWED_HOSTS');
-  return u.toString();
+  return value ? validatedDemoUrl(value, ALLOWED) : null;
 }
 function validate(payload){
   if(!uuid(payload?.id))throw new Error('Valid UUID required.');
   if(!Array.isArray(payload.scenes)||!payload.scenes.length||payload.scenes.length>24)
     throw new Error('1–24 scenes required.');
-  if(!VOICES.has(payload.voice))throw new Error('Unsupported voice.');
+  const voiceProvider=payload.voiceProvider || 'kokoro';
+  if(!['kokoro','openai'].includes(voiceProvider))throw new Error('Unsupported voice provider.');
+  if(!(voiceProvider==='kokoro'?KOKORO_VOICES:OPENAI_VOICES).has(payload.voice))
+    throw new Error('Unsupported voice for '+voiceProvider+'.');
   if(!['en','de'].includes(payload.language)||!['landscape','portrait'].includes(payload.format))
     throw new Error('Unsupported language or format.');
   const scenes=payload.scenes.map((s,i)=>{
     const narration=String(s.narration||'').trim(),headline=String(s.headline||'').trim();
     if(narration.length<5||narration.length>1400||headline.length>160)throw new Error('Invalid scene '+(i+1));
-    return {narration,headline,demoUrl:safeDemoUrl(s.demoUrl)};
+    const demoUrl=safeDemoUrl(s.demoUrl);
+    return {narration,headline,demoUrl,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,ALLOWED)};
   });
   return {id:payload.id,title:String(payload.title||'').slice(0,200),voice:payload.voice,
-    language:payload.language,format:payload.format,scenes};
+    voiceProvider,language:payload.language,format:payload.format,scenes};
 }
 async function persist(job){
   await fs.mkdir(path.join(ROOT,job.id),{recursive:true});
@@ -107,17 +110,22 @@ async function voice(scene,job,i,dir){
   const target=path.join(dir,'voice-'+String(i).padStart(2,'0')+'.wav');
   const narration=path.join(dir,'text-'+String(i).padStart(2,'0')+'.txt');
   await fs.writeFile(narration,scene.narration);
+  const voiceProvider=job.voiceProvider || 'kokoro';
   if(process.env.VIDEO_TTS_MODE==='silent'){
     await exec('ffmpeg',['-y','-f','lavfi','-i','anullsrc=r=24000:cl=mono','-t',
       String(Math.min(120,Math.max(4,scene.narration.split(/\s+/).length/2.3))),
       '-c:a','pcm_s16le',target],{timeoutMs:30000});
-  }else{
+  }else if(voiceProvider==='openai'){
+    await narrateWithOpenAI(scene.narration,target,{voice:job.voice});
+  }else if(voiceProvider==='kokoro'){
     await exec(process.env.VIDEO_PYTHON||'python3',
       [new URL('./kokoro-voice.py',import.meta.url).pathname,
         '--model',process.env.KOKORO_MODEL_PATH||'/models/kokoro-v1.0.onnx',
         '--voices',process.env.KOKORO_VOICES_PATH||'/models/voices-v1.0.bin',
         '--text',narration,'--output',target,'--voice',job.voice,'--language',job.language],
       {timeoutMs:240000});
+  }else{
+    throw new Error('Unsupported VIDEO_TTS_PROVIDER: '+voiceProvider);
   }
   return target;
 }
@@ -153,11 +161,27 @@ async function render(job){
       const scene=job.scenes[i];
       job.progress=Math.round(i/job.scenes.length*85);
       await persist(job);
-      const png=await screenshot(page,scene,job,i,dir),wav=await voice(scene,job,i,dir);
+      const recording = Boolean(scene.demoUrl && scene.demoSteps?.length);
+      const png = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
+      const webm = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
+      if (recording) {
+        await recordDemoScene(browser,scene,webm,{width,height},ALLOWED,png);
+      } else {
+        await screenshot(page,scene,job,i,dir);
+      }
+      const wav=await voice(scene,job,i,dir);
       const len=await duration(wav),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
-      await exec('ffmpeg',['-y','-loop','1','-framerate','25','-i',png,'-i',wav,
-        '-c:v','libx264','-preset','veryfast','-tune','stillimage','-pix_fmt','yuv420p',
-        '-r','25','-c:a','aac','-b:a','128k','-shortest','-movflags','+faststart',out]);
+      if (recording) {
+        await exec('ffmpeg',['-y','-i',webm,'-i',wav,
+          '-vf','fps=25,tpad=stop_mode=clone:stop_duration=125',
+          '-t',String(len),'-c:v','libx264','-preset','veryfast',
+          '-pix_fmt','yuv420p','-r','25','-c:a','aac','-b:a','128k',
+          '-movflags','+faststart',out]);
+      } else {
+        await exec('ffmpeg',['-y','-loop','1','-framerate','25','-i',png,'-i',wav,
+          '-c:v','libx264','-preset','veryfast','-tune','stillimage','-pix_fmt','yuv420p',
+          '-r','25','-c:a','aac','-b:a','128k','-shortest','-movflags','+faststart',out]);
+      }
       parts.push(out);
       subtitles.push(String(i+1)+'\n'+srtTime(current)+' --> '+srtTime(current+len)+'\n'+scene.narration+'\n');
       current+=len;

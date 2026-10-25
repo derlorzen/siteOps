@@ -9,7 +9,14 @@ test('Video Studio creates a project, stores scene paragraphs and lists jobs', a
   const db = {
     query: async (sql, params = []) => {
       if (sql.startsWith('INSERT INTO video_studio_projects')) {
-        rows.project = { id: params[0], name: params[1], channel: params[2], language: params[3], voice: params[4] };
+        rows.project = {
+          id: params[0],
+          name: params[1],
+          channel: params[2],
+          language: params[3],
+          voice_provider: params[4],
+          voice: params[5]
+        };
         return [{ affectedRows: 1 }];
       }
       if (sql.startsWith('SELECT * FROM video_studio_projects')) return [[rows.project].filter(Boolean)];
@@ -34,6 +41,8 @@ test('Video Studio creates a project, stores scene paragraphs and lists jobs', a
   const studio = createVideoStudio({ db, runnerUrl: () => '', runnerToken: () => '' });
   const p = await studio.createProject({ name: 'Bagisto Tutorials' });
   assert.equal(p.language, 'en');
+  assert.equal(p.voice_provider, 'kokoro');
+  assert.equal(p.voice, 'am_michael');
   const job = await studio.createJob({
     project_id: p.id,
     title: 'Bagisto AI',
@@ -43,6 +52,23 @@ test('Video Studio creates a project, stores scene paragraphs and lists jobs', a
   assert.equal(job.scenes.length, 2);
   assert.equal(job.scenes[0].headline, 'Bagisto AI');
   await assert.rejects(studio.renderJob(job.id), /Browser Runner/);
+});
+test('Video Studio supports explicit OpenAI projects and rejects mismatched voices', async () => {
+  const db = {
+    query: async (sql, params = []) => {
+      if (sql.startsWith('INSERT INTO video_studio_projects')) return [{ affectedRows: 1 }];
+      if (sql.startsWith('SELECT * FROM video_studio_projects'))
+        return [[{ id: '11111111-1111-4111-8111-111111111111', voice_provider: 'openai', voice: 'alloy' }]];
+      return [[]];
+    }
+  };
+  const studio = createVideoStudio({ db, runnerUrl: () => '', runnerToken: () => '' });
+  await assert.rejects(
+    studio.createProject({ name: 'Bad Voice', voice_provider: 'openai', voice: 'am_adam' }),
+    /Stimme/
+  );
+  const project = await studio.createProject({ name: 'OpenAI Videos', voice_provider: 'openai', voice: 'alloy' });
+  assert.equal(project.voice_provider, 'openai');
 });
 test('Video Studio validates scenes and project identifiers', async () => {
   const studio = createVideoStudio({ db: { query: async () => [[]] }, runnerUrl: () => '', runnerToken: () => '' });

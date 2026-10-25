@@ -29,6 +29,8 @@ install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0755 "${APP_DIR}"
 install -m 0644 "${SOURCE_DIR}/package.json" "${APP_DIR}/package.json"
 install -m 0644 "${SOURCE_DIR}/server.mjs" "${APP_DIR}/server.mjs"
 install -m 0644 "${SOURCE_DIR}/video-studio.mjs" "${APP_DIR}/video-studio.mjs"
+install -m 0644 "${SOURCE_DIR}/video-demo.mjs" "${APP_DIR}/video-demo.mjs"
+install -m 0644 "${SOURCE_DIR}/openai-audio.mjs" "${APP_DIR}/openai-audio.mjs"
 install -m 0644 "${SOURCE_DIR}/kokoro-voice.py" "${APP_DIR}/kokoro-voice.py"
 # FFmpeg and Kokoro are needed only for Video Studio rendering.
 apt-get update && apt-get install -y --no-install-recommends ffmpeg python3-venv
