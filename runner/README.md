@@ -73,6 +73,71 @@ docker logs -f siteops-browser-runner
 curl http://127.0.0.1:3200/health
 ```
 
+## Update des vorhandenen Browser Runners (Stand Oktober 2026)
+
+Der SiteOps-Webserver und der Browser Runner auf `browse.lorzen.de` werden
+getrennt bereitgestellt. Ein neuer Commit auf `main` aktualisiert den Browser
+Runner **nicht** automatisch.
+
+Dieses Repository enthält `runner/update-existing.sh`. Es erkennt eine
+aktive systemd- oder Docker-Compose-Installation. Das Skript aktualisiert nur
+einen **bereits laufenden** Runner mit bekannten Zugangsdaten. Es kopiert
+keine Kennwörter in Git und ersetzt bestehende Docker-Volumes nicht.
+
+**Vorbereitung auf dem tatsächlichen Runner-Host:**
+
+1. Stelle fest, ob `browse.lorzen.de` über Hostinger Docker Manager,
+   Docker Compose, einen einzelnen Docker-Container oder systemd läuft.
+2. Öffne die Konsole **dieses Hosts**, nicht die SiteOps-Webkonsole.
+3. Aktualisiere die vorhandene lokale Git-Arbeitskopie:
+   `git -C /PFAD/ZU/siteOps pull --ff-only origin main`.
+4. Zuerst schreibgeschützt prüfen:
+
+```bash
+cd /PFAD/ZU/siteOps
+bash runner/update-existing.sh --check
+```
+
+**Bei einer bestehenden systemd-Installation:**
+
+```bash
+sudo bash runner/update-existing.sh --apply --systemd
+```
+
+**Bei einer bestehenden Docker-Compose-Installation:** Stelle sicher, dass der
+`build.context` des bereits laufenden Compose-Stacks auf
+`/PFAD/ZU/siteOps/runner` zeigt und `/data/video-studio` als Volume
+eingehängt ist. Im gleichen Compose-Verzeichnis/Projekt:
+
+```bash
+SITEOPS_RUNNER_COMPOSE_DIR=/PFAD/ZUM/BESTEHENDEN-COMPOSE-VERZEICHNIS \
+  bash runner/update-existing.sh --apply --compose
+```
+
+Das Skript verweigert den Vorgang, falls kein passender laufender Dienst
+gefunden wird, der Zugriffstoken fehlt, der Compose-Build-Kontext auf
+anderen Quellcode zeigt oder persistenter Speicher fehlt. Es führt
+anschließend einen Health- und Fähigkeitencheck durch. Sprachmodelle werden
+vorab heruntergeladen und geprüft. Das erste Laden benötigt zusätzliche
+Festplattenkapazität und Netzwerkzugang.
+
+**Hostinger Docker Manager / einzeln gestarteter Container:**
+Dort dürfen die obigen Befehle nicht auf gut Glück verwendet werden. Öffne
+den bestehenden Container/Stack in Hostinger und aktualisiere **dessen**
+Build-Quelle auf `derlorzen/siteOps` Branch `main`, Dockerfile
+`runner/Dockerfile`. Erhalte die bestehende
+`BROWSER_RUNNER_TOKEN`-Umgebungsvariable und das bisherige HTTPS-Routing.
+Konfiguriere einen dauerhaften Mount für `/data/video-studio` und
+`VIDEO_ALLOWED_HOSTS` nur für vertrauenswürdige Testseiten. Starte den
+bereits verwalteten Stack neu. Kein zweiter Container auf dem gleichen Port.
+
+Nach dem Update: `https://siteops.lorzen.cloud/video-studio` öffnen und
+Deutsch (Piper/Thorsten) und Englisch (Kokoro) jeweils mit einem kurzen
+Testvideo kontrollieren. Die SiteOps-API fragt den unter Einstellungen
+konfigurierten Runner ab. Der öffentliche Health-Endpunkt allein beweist
+nicht, dass TTS und Video-Export funktionieren.
+
+
 ## Manual / development install
 
 ```bash
