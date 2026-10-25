@@ -9,7 +9,12 @@
     catalog,
     videoPage,
     commentPage,
-    selectedTab = 'channel';
+    library = [],
+    videoRequest = 0,
+    libraryRequest = 0,
+    thumbnailUrl,
+    categories,
+    selectedTab = 'videos';
   const account = () => {
     const id = $('yt-account').value;
     if (!id) throw Error('Bitte zuerst einen YouTube-Kanal verbinden und auswählen.');
@@ -75,11 +80,145 @@
     }
     if (items.some(x => x.id === old)) $(id).value = old;
   };
+  const videoId = value => /^[A-Za-z0-9_-]{11}$/.test(String(value || ''));
+  const imageUrl = value => {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password || url.port) return '';
+      return ['ytimg.com', 'googleusercontent.com', 'ggpht.com'].some(
+        host => url.hostname === host || url.hostname.endsWith('.' + host)
+      )
+        ? url.href
+        : '';
+    } catch {
+      return '';
+    }
+  };
+  const thumbnail = (container, images, title) => {
+    const placeholder = document.createElement('span');
+    placeholder.className = 'yt-image-placeholder';
+    placeholder.textContent = 'Kein Vorschaubild';
+    const url = ['maxres', 'standard', 'high', 'medium', 'default']
+      .map(key => imageUrl(images?.[key]?.url))
+      .find(Boolean);
+    if (!url) {
+      container.append(placeholder);
+      return;
+    }
+    const img = document.createElement('img');
+    img.alt = 'Thumbnail: ' + title;
+    img.src = url;
+    img.loading = 'lazy';
+    img.referrerPolicy = 'no-referrer';
+    img.addEventListener('error', () => img.replaceWith(placeholder), { once: true });
+    container.append(img);
+  };
+  const privacy = value => ({ private: 'Privat', public: 'Öffentlich', unlisted: 'Nicht gelistet' })[value] || '';
+  const clearThumbnailPreview = () => {
+    if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
+    thumbnailUrl = undefined;
+    $('yt-thumbnail').value = '';
+    $('yt-new-thumbnail').removeAttribute('src');
+    $('yt-new-thumbnail-box').hidden = true;
+  };
+  function resetVideos() {
+    video = null;
+    channel = null;
+    videoRequest++;
+    libraryRequest++;
+    library = [];
+    videoPage = null;
+    $('yt-player').replaceChildren();
+    $('yt-video-editor').hidden = true;
+    $('yt-video-empty').hidden = false;
+    $('yt-current-thumbnail').hidden = true;
+    $('yt-asset-context').textContent = 'Wähle zuerst unter Videos ein Video oder gib seine ID ein.';
+    $('yt-caption-video').value = '';
+    $('yt-caption-id').value = '';
+    $('yt-caption-text').value = '';
+    $('yt-video-search').value = '';
+    clearThumbnailPreview();
+    for (const id of ['yt-videos', 'yt-playlists', 'yt-comments', 'yt-captions']) $(id).replaceChildren();
+    $('yt-video-list-status').textContent = 'Verbinde deinen Kanal, um deine Videos zu sehen.';
+  }
+  function renderPlayer() {
+    const container = $('yt-player');
+    container.replaceChildren();
+    if (!video || !videoId(video.id)) return;
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'yt-play';
+    play.setAttribute('aria-label', 'Video abspielen: ' + video.snippet.title);
+    thumbnail(play, video.snippet.thumbnails, video.snippet.title);
+    const label = document.createElement('span');
+    label.className = 'yt-play-label';
+    label.textContent = '▶ Video abspielen';
+    play.append(label);
+    play.addEventListener('click', () => {
+      const iframe = document.createElement('iframe');
+      iframe.src = 'https://www.youtube-nocookie.com/embed/' + video.id + '?autoplay=1&playsinline=1&rel=0';
+      iframe.title = 'YouTube-Player: ' + video.snippet.title;
+      iframe.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+      iframe.allowFullscreen = true;
+      iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+      container.replaceChildren(iframe);
+    });
+    container.append(play);
+    $('yt-player-note').textContent =
+      video.status.embeddable === false
+        ? 'Die Einbettung ist für dieses Video deaktiviert. Öffne es auf YouTube.'
+        : video.status.privacyStatus === 'private'
+          ? 'Privates Video: Der YouTube-Player kann die Wiedergabe hier einschränken. Öffne es bei Bedarf auf YouTube mit deinem berechtigten Google-Konto.'
+          : 'Der YouTube-Player wird erst beim Abspielen geladen. Falls YouTube die Einbettung einschränkt, öffne das Video direkt auf YouTube.';
+    play.disabled = video.status.embeddable === false;
+  }
+  function renderVideoList() {
+    const container = $('yt-videos'),
+      query = $('yt-video-search').value.trim().toLocaleLowerCase();
+    container.replaceChildren();
+    const matches = library.filter(x => x.snippet.title.toLocaleLowerCase().includes(query));
+    $('yt-video-list-status').textContent = library.length
+      ? matches.length + ' von ' + library.length + ' geladenen Videos' + (videoPage ? ' · weitere verfügbar' : '')
+      : 'Noch keine Videos vorhanden. Eine fertige Produktion kannst du unter „Aus Video Studio hochladen“ übernehmen.';
+    if (!matches.length && library.length)
+      $('yt-video-list-status').textContent = 'Kein geladenes Video passt zu deiner Suche.';
+    for (const item of matches) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'yt-video-card';
+      b.dataset.videoId = item.id;
+      b.setAttribute('aria-pressed', String(video?.id === item.id));
+      const cover = document.createElement('span');
+      cover.className = 'yt-video-cover';
+      thumbnail(cover, item.snippet.thumbnails, item.snippet.title);
+      const text = document.createElement('span'),
+        title = document.createElement('strong'),
+        meta = document.createElement('small');
+      title.textContent = item.snippet.title;
+      const published = item.snippet.publishedAt && new Date(item.snippet.publishedAt);
+      meta.textContent = [
+        privacy(item.status?.privacyStatus),
+        published && Number.isFinite(published.getTime()) ? published.toLocaleDateString('de-DE') : ''
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      text.append(title, meta);
+      b.append(cover, text);
+      b.setAttribute('aria-label', item.snippet.title);
+      b.addEventListener('click', () => run(b, () => loadVideo(item.id)));
+      container.append(b);
+    }
+  }
   const selectTab = async tab => {
     selectedTab = tab;
     for (const el of document.querySelectorAll('[data-panel]')) el.hidden = el.dataset.panel !== tab;
     for (const el of document.querySelectorAll('[data-tab]'))
       el.setAttribute('aria-current', el.dataset.tab === tab ? 'page' : 'false');
+    $('yt-player').replaceChildren();
+    if (tab === 'videos') {
+      if (video) renderPlayer();
+      if (channel && !library.length) await loadVideos();
+    }
     if (tab === 'upload') {
       await loadJobs();
       if ($('yt-account').value) await loadUploads();
@@ -118,8 +257,10 @@
     if (selectedTab === 'upload') await loadUploads();
   });
   async function loadStatus() {
+    const previousAccount = $('yt-account').value;
     state = await api('status');
     choices('yt-account', state.accounts, x => x.title + ' · ' + x.channel_id);
+    if (!state.accounts.length || previousAccount !== $('yt-account').value) resetVideos();
     $('yt-client-id').value = state.client_id;
     $('yt-client-secret').value = '';
     $('yt-callback').textContent = state.redirect_uri;
@@ -129,7 +270,11 @@
         ? 'Google-Client bereit. Verbinde jetzt deinen Kanal.'
         : 'Google-OAuth-Client einrichten und anschließend den Kanal verbinden.';
     $('yt-connect').disabled = !state.configured;
-    if (state.accounts.length) await loadChannel();
+    $('yt-connect').textContent = state.accounts.length ? 'Weiteren Kanal verbinden' : 'Mit Google verbinden';
+    if (state.accounts.length) {
+      await loadChannel();
+      if (selectedTab === 'videos') await loadVideos();
+    }
   }
   click('yt-refresh', loadStatus);
   click('yt-configure', async () => {
@@ -154,12 +299,13 @@
     run($('yt-account'), async () => {
       pending = null;
       $('yt-review').hidden = true;
-      video = null;
+      resetVideos();
       playlist = null;
       videoPage = null;
       commentPage = null;
       for (const id of ['yt-videos', 'yt-playlists', 'yt-comments', 'yt-captions']) $(id).replaceChildren();
       await loadChannel();
+      if (selectedTab === 'videos') await loadVideos();
     })
   );
   async function loadChannel() {
@@ -211,43 +357,99 @@
     );
   });
   async function loadVideos(more = false) {
-    if (!channel) await loadChannel();
-    const id = channel.contentDetails?.relatedPlaylists?.uploads;
-    if (!id) throw Error('Google hat keine Upload-Playlist geliefert.');
-    const result = await read('playlistItems.list', {
-      part: 'snippet,contentDetails',
-      playlistId: id,
-      maxResults: 25,
-      ...(more && videoPage ? { pageToken: videoPage } : {})
-    });
-    videoPage = result.nextPageToken;
-    $('yt-more-videos').disabled = !videoPage;
-    list(
-      'yt-videos',
-      result.items || [],
-      x => x.snippet.title + ' · ' + x.contentDetails.videoId,
-      x => loadVideo(x.contentDetails.videoId),
-      more
-    );
+    const request = ++libraryRequest;
+    $('yt-video-list-status').textContent = 'Videos werden geladen …';
+    try {
+      if (!channel) await loadChannel();
+      const id = channel.contentDetails?.relatedPlaylists?.uploads;
+      if (!id) throw Error('Google hat keine Upload-Playlist geliefert.');
+      const result = await read('playlistItems.list', {
+        part: 'snippet,contentDetails',
+        playlistId: id,
+        maxResults: 25,
+        ...(more && videoPage ? { pageToken: videoPage } : {})
+      });
+      const ids = (result.items || []).map(x => x.contentDetails.videoId).filter(videoId);
+      const details = ids.length
+        ? await read('videos.list', { part: 'snippet,status', id: ids.join(',') })
+        : { items: [] };
+      if (request !== libraryRequest) return;
+      videoPage = result.nextPageToken;
+      $('yt-more-videos').disabled = !videoPage;
+      const items = ids.map(id => details.items?.find(x => x.id === id)).filter(Boolean);
+      library = more ? [...new Map([...library, ...items].map(x => [x.id, x])).values()] : items;
+      renderVideoList();
+    } catch (error) {
+      if (request === libraryRequest)
+        $('yt-video-list-status').textContent = 'Videos konnten nicht geladen werden. Bitte erneut versuchen.';
+      throw error;
+    }
   }
+  $('yt-video-search').addEventListener('input', renderVideoList);
   click('yt-load-videos', () => loadVideos());
   click('yt-more-videos', () => loadVideos(true));
   async function loadVideo(id) {
+    if (!videoId(id)) throw Error('Bitte eine gültige YouTube-Video-ID mit elf Zeichen eingeben.');
+    const request = ++videoRequest;
     const result = await read('videos.list', { part: 'snippet,status,localizations,recordingDetails', id });
+    if (request !== videoRequest) return;
     video = result.items?.[0];
     if (!video) throw Error('Video nicht gefunden.');
+    if (!categories) {
+      try {
+        categories = (await read('videoCategories.list', { part: 'snippet', regionCode: 'DE', hl: 'de' })).items || [];
+      } catch {
+        categories = [];
+      }
+      if (request !== videoRequest) return;
+    }
     $('yt-video-id').value = video.id;
     $('yt-video-title').value = video.snippet.title;
     $('yt-video-description').value = video.snippet.description || '';
     $('yt-video-tags').value = (video.snippet.tags || []).join(', ');
+    choices(
+      'yt-video-category',
+      categories.map(x => ({ id: x.id, title: x.snippet.title })),
+      x => x.title
+    );
+    if (![...$('yt-video-category').options].some(x => x.value === video.snippet.categoryId))
+      $('yt-video-category').add(new Option('Kategorie ' + video.snippet.categoryId, video.snippet.categoryId));
     $('yt-video-category').value = video.snippet.categoryId;
     $('yt-video-privacy').value = video.status.privacyStatus;
-    $('yt-video-language').value = video.snippet.defaultLanguage || '';
+    const language = video.snippet.defaultLanguage || '';
+    if (![...$('yt-video-language').options].some(x => x.value === language))
+      $('yt-video-language').add(new Option(language, language));
+    $('yt-video-language').value = language;
     $('yt-video-kids').checked = Boolean(video.status.selfDeclaredMadeForKids);
     $('yt-video-synthetic').checked = Boolean(video.status.containsSyntheticMedia);
     $('yt-video-publish').value = video.status.publishAt ? localDateTime(video.status.publishAt) : '';
     $('yt-caption-video').value = video.id;
+    $('yt-video-empty').hidden = true;
+    $('yt-video-editor').hidden = false;
+    $('yt-selected-title').textContent = video.snippet.title;
+    $('yt-watch').href = 'https://www.youtube.com/watch?v=' + video.id;
+    $('yt-studio').href = 'https://studio.youtube.com/video/' + video.id + '/edit';
+    $('yt-asset-context').textContent = 'Ausgewähltes Video: ' + video.snippet.title;
+    const url = ['maxres', 'standard', 'high', 'medium', 'default']
+      .map(key => imageUrl(video.snippet.thumbnails?.[key]?.url))
+      .find(Boolean);
+    $('yt-current-thumbnail').hidden = !url;
+    if (url) $('yt-current-thumbnail').src = url;
+    else $('yt-current-thumbnail').removeAttribute('src');
+    clearThumbnailPreview();
+    $('yt-captions').replaceChildren();
+    $('yt-caption-id').value = '';
+    $('yt-caption-text').value = '';
+    $('yt-caption-name').value = '';
+    $('yt-caption-language').value = video.snippet.defaultLanguage || '';
+    $('yt-caption-draft').checked = false;
+    renderPlayer();
+    renderVideoList();
   }
+  click('yt-edit-assets', async () => {
+    await selectTab('captions');
+    document.querySelector('[data-panel="captions"]').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
   function localDateTime(value) {
     const date = new Date(value);
     return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -377,6 +579,7 @@
     })
   );
   click('yt-load-captions', async () => {
+    if (video?.id !== $('yt-caption-video').value.trim()) await loadVideo($('yt-caption-video').value.trim());
     const result = await read('captions.list', { part: 'snippet', videoId: $('yt-caption-video').value });
     list(
       'yt-captions',
@@ -437,6 +640,24 @@
     });
     return { mime_type: file.type || 'application/octet-stream', data_base64: data };
   }
+  $('yt-thumbnail').addEventListener('change', () => {
+    if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
+    thumbnailUrl = undefined;
+    $('yt-new-thumbnail-box').hidden = true;
+    const file = $('yt-thumbnail').files[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+      $('yt-thumbnail').value = '';
+      notify('Bitte ein PNG- oder JPEG-Thumbnail bis 2 MiB auswählen.', true);
+      return;
+    }
+    thumbnailUrl = URL.createObjectURL(file);
+    $('yt-new-thumbnail').src = thumbnailUrl;
+    $('yt-new-thumbnail-box').hidden = false;
+  });
+  window.addEventListener('beforeunload', () => {
+    if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
+  });
   click('yt-thumbnail-set', async () => {
     const media = await fileMedia('yt-thumbnail');
     if (!media) throw Error('Thumbnail-Datei auswählen.');

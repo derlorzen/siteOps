@@ -60,7 +60,50 @@ other channels sharing that Google authorization may need reconnection too.
 No real Google account was connected by the implementation/test run. A channel
 owner must complete Google's consent dialog after the reviewed code is deployed.
 
+## Browsing videos and artwork
+
+The YouTube workspace opens on **Videos** and loads the connected channel's
+uploads. Each row displays the actual thumbnail, title, date and visibility.
+Search filters the already loaded rows; **Weitere Videos** loads the next page.
+Select a video to see its poster and editable details. The YouTube iframe is
+created only after **Video abspielen**; changing the video, channel or workspace
+tab removes it. Private videos may require opening YouTube with the authorized
+Google account. Embedding-disabled videos link directly to YouTube. SiteOps
+never downloads the video for playback or changes its visibility to enable it.
+
+**Thumbnail & Untertitel bearbeiten** carries the selected video into the artwork
+workspace. The current thumbnail and a newly selected PNG/JPEG (up to 2 MiB)
+appear side by side. This local image preview does not upload or execute a
+change. The existing concrete-preview/approval flow still controls every upload.
+Image URLs are restricted to HTTPS Google/YouTube image hosts. The iframe uses a
+fixed youtube-nocookie.com embed path and an eleven-character video ID, with an
+origin referrer so the player can identify its embedding application.
+
+The UI review found text-only video buttons, competing primary actions, hidden
+active navigation state, prominent technical IDs and no visual artwork preview.
+The changes keep the existing vanilla UI, auth, MCP and service architecture;
+advanced API operations remain available in their existing dedicated area.
+
 ## Approval, authorization and error behavior
+
+### Google blocks login with “App is being tested” / 403 access_denied
+
+This page is shown by Google before SiteOps receives an authorization code.
+In the Google Cloud project that owns the configured client ID, open **Google
+Auth Platform → Audience → Test users → Add users**. Add and save the Google
+email address used to manage the YouTube channel, then start **Mit Google
+verbinden** again in SiteOps. For a Brand Account, add its managing Google user.
+Changing the redirect URI or recreating the SiteOps client secret does not fix
+this specific audience restriction.
+
+Google's Testing status expires these YouTube authorizations and offline refresh
+tokens after seven days. For a durable connection, configure production status
+and complete Google's applicable verification requirements. SiteOps cannot add
+Google test users or complete that review. See Google's
+[Audience documentation](https://support.google.com/cloud/answer/15549945) and
+[consent setup guide](https://developers.google.com/workspace/guides/configure-oauth-consent).
+
+### SiteOps request authorization
 
 All routes use the existing dashboard session guard. Mutating JSON requests also
 require the configured same origin. OAuth configuration and login happen only
