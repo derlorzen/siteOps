@@ -44,6 +44,28 @@ test('OpenAI audio adapter requests approved model and persists returned WAV onl
   }
 });
 
+test('OpenAI German narration uses a German instruction and accepts German text', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'video-openai-german-'));
+  try {
+    const voice = path.join(dir, 'de.wav');
+    const wav = Buffer.alloc(48);
+    wav.write('RIFF', 0);
+    wav.write('WAVE', 8);
+    await narrateWithOpenAI('Guten Tag. Dies ist die Bagisto-Demonstration.', voice, {
+      apiKey: 'ci-fake-token',
+      language: 'de',
+      voice: 'coral',
+      fetchImpl: async (_url, request) => {
+        const body = JSON.parse(request.body);
+        assert.match(body.messages[0].content, /Lies den folgenden Sprechertext/);
+        assert.match(body.messages[0].content, /Guten Tag/);
+        assert.equal(body.audio.voice, 'coral');
+        return { ok: true, json: async () => ({ choices: [{ message: { audio: { data: wav.toString('base64') } } }] }) };
+      }
+    });
+    assert.deepEqual(await readFile(voice), wav);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
 test('OpenAI adapter rejects unsupported voices and bad audio, without storing secrets', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'video-openai-test-'));
   try {
