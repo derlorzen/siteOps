@@ -1,7 +1,8 @@
-/* global document */
+/* global document, getComputedStyle, innerWidth */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { renderYouTube } from '../lib/youtube-ui.mjs';
 import { publicYouTubeCatalog } from '../lib/youtube-contract.mjs';
 
@@ -61,7 +62,10 @@ test(
       if (url.pathname === '/youtube')
         return route.fulfill({
           contentType: 'text/html; charset=utf-8',
-          body: '<meta charset="utf-8">' + renderYouTube()
+          body:
+            '<meta charset="utf-8"><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/ops-workspace.css"><link rel="stylesheet" href="/assets/siteops-theme.css"><body class="ops-mode"><main class="ops-main">' +
+            renderYouTube() +
+            '</main></body>'
         });
       if (url.pathname === '/assets/youtube.js')
         return route.fulfill({
@@ -73,13 +77,21 @@ test(
           contentType: 'text/css',
           body: await fs.readFile(new URL('../public/youtube.css', import.meta.url), 'utf8')
         });
+      if (['/assets/app.css', '/assets/ops-workspace.css', '/assets/siteops-theme.css'].includes(url.pathname))
+        return route.fulfill({
+          contentType: 'text/css',
+          body: await fs.readFile(new URL('../public/' + url.pathname.split('/').pop(), import.meta.url), 'utf8')
+        });
       if (url.pathname.endsWith('/status'))
         return route.fulfill({
           json: {
             configured: true,
             client_id: 'test-id',
             redirect_uri: 'https://siteops.test/api/youtube/oauth/callback',
-            accounts: [{ id: accountId, channel_id: 'UCowned', title: 'A real test channel' }]
+            accounts: [
+              { id: accountId, channel_id: 'UCowned', title: 'A real test channel' },
+              { id: '22222222-2222-4222-8222-222222222222', channel_id: 'UCother', title: 'Other channel' }
+            ]
           }
         });
       if (url.pathname.endsWith('/catalog'))
@@ -91,22 +103,24 @@ test(
           x.action === 'channels.list'
             ? [
                 {
-                  id: 'UCowned',
+                  id: x.account_id === accountId ? 'UCowned' : 'UCother',
                   etag: 'channel-etag',
                   snippet: { title: 'A real test channel' },
                   statistics: { videoCount: '1' },
                   brandingSettings: { channel: { title: 'A real test channel' } },
-                  contentDetails: { relatedPlaylists: { uploads: 'UUowned' } }
+                  contentDetails: { relatedPlaylists: { uploads: x.account_id === accountId ? 'UUowned' : 'UUother' } }
                 }
               ]
             : x.action === 'playlistItems.list'
-              ? [
-                  {
-                    id: 'playlist-item',
-                    snippet: { title: 'An existing video' },
-                    contentDetails: { videoId: 'existing001' }
-                  }
-                ]
+              ? x.account_id !== accountId
+                ? []
+                : [
+                    {
+                      id: 'playlist-item',
+                      snippet: { title: 'An existing video' },
+                      contentDetails: { videoId: 'existing001' }
+                    }
+                  ]
               : x.action === 'videos.list'
                 ? [
                     {
@@ -117,7 +131,8 @@ test(
                         description: 'Keep this text',
                         categoryId: '28',
                         tags: ['Bagisto'],
-                        defaultLanguage: 'de'
+                        defaultLanguage: 'de',
+                        thumbnails: { high: { url: 'https://i.ytimg.com/vi/existing001/hqdefault.jpg' } }
                       },
                       status: { privacyStatus: 'private', embeddable: true, license: 'youtube' }
                     }
@@ -144,13 +159,71 @@ test(
       }
       return route.fulfill({ json: [] });
     });
+    await context.route('https://i.ytimg.com/**', route =>
+      route.fulfill({
+        contentType: 'image/png',
+        body: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+          'base64'
+        )
+      })
+    );
+    await context.route('https://www.youtube-nocookie.com/**', route =>
+      route.fulfill({ contentType: 'text/html', body: '<p>Embedded YouTube player fixture</p>' })
+    );
     await page.goto('https://siteops.test/youtube');
     await page.waitForFunction(() =>
       document.getElementById('yt-channel-summary').textContent.includes('A real test channel')
     );
+    assert.equal(await page.locator('[data-tab="videos"]').getAttribute('aria-current'), 'page');
+    const card = page.getByRole('button', { name: 'An existing video', exact: true });
+    await card.waitFor({ state: 'visible' });
+    assert.match(await card.locator('img').getAttribute('src'), /^https:\/\/i.ytimg.com\//);
+    await page.locator('#yt-video-search').fill('nothing matches');
+    assert.equal(await card.count(), 0);
+    await page.locator('#yt-video-search').fill('');
+    await card.click();
+    await page.locator('#yt-video-editor').waitFor({ state: 'visible' });
+    assert.equal(await card.getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('#yt-player iframe').count(), 0, 'player only loads on user action');
+    const cardStyle = await card.evaluate(el => ({
+      color: getComputedStyle(el).color,
+      background: getComputedStyle(el).backgroundColor
+    }));
+    assert.notEqual(
+      cardStyle.color,
+      'rgb(255, 255, 255)',
+      'shared theme must not turn video cards into white text buttons'
+    );
+    await fs.mkdir(new URL('../.test-runtime/', import.meta.url), { recursive: true });
+    await page.screenshot({
+      path: fileURLToPath(new URL('../.test-runtime/youtube-workspace-desktop.png', import.meta.url)),
+      fullPage: true
+    });
+    await page.getByRole('button', { name: 'Video abspielen: An existing video', exact: true }).click();
+    assert.equal(
+      await page.locator('#yt-player iframe').getAttribute('src'),
+      'https://www.youtube-nocookie.com/embed/existing001?autoplay=1&playsinline=1&rel=0'
+    );
+    assert.equal(
+      await page.locator('#yt-player iframe').getAttribute('referrerpolicy'),
+      'strict-origin-when-cross-origin'
+    );
+    assert.match(await page.locator('#yt-player-note').textContent(), /Privates Video/);
+    await page.locator('#yt-edit-assets').click();
+    assert.equal(await page.locator('#yt-player iframe').count(), 0, 'leaving videos stops playback');
+    assert.equal(await page.locator('#yt-current-thumbnail').isVisible(), true);
+    await page.locator('#yt-thumbnail').setInputFiles({
+      name: 'thumbnail.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+        'base64'
+      )
+    });
+    assert.equal(await page.locator('#yt-new-thumbnail').isVisible(), true);
+    assert.equal(previews, 0, 'local thumbnail preview must not upload anything');
     await page.locator('[data-tab="videos"]').click();
-    await page.locator('#yt-load-videos').click();
-    await page.getByRole('button', { name: 'An existing video · existing001' }).click();
     await page.locator('#yt-video-title').fill('Geprüfter neuer Videotitel');
     await page.getByRole('button', { name: 'Videoänderung prüfen', exact: true }).click();
     await page.locator('#yt-review-content').waitFor({ state: 'visible' });
@@ -172,10 +245,26 @@ test(
     await page.locator('#yt-resource').selectOption('liveBroadcasts');
     await page.waitForFunction(() => document.getElementById('yt-operation').options.length > 1);
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('[data-tab="videos"]').click();
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
-      true
+      true,
+      JSON.stringify(
+        await page.evaluate(() =>
+          [...document.querySelectorAll('main *')]
+            .filter(el => el.getBoundingClientRect().right > innerWidth + 1 && el.getBoundingClientRect().width > 0)
+            .slice(0, 10)
+            .map(el => ({ tag: el.tagName, id: el.id, class: el.className, width: el.getBoundingClientRect().width }))
+        )
+      )
     );
+    await page.locator('#yt-account').selectOption('22222222-2222-4222-8222-222222222222');
+    await page.waitForFunction(() =>
+      document.getElementById('yt-video-list-status').textContent.includes('Noch keine Videos')
+    );
+    assert.equal(await page.locator('#yt-video-editor').isVisible(), false);
+    assert.equal(await page.locator('#yt-player iframe').count(), 0);
+    assert.equal(await page.locator('#yt-new-thumbnail-box').isVisible(), false);
     assert.deepEqual(errors, []);
   }
 );
