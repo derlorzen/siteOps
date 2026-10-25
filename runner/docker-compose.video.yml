@@ -1,0 +1,27 @@
+# Optional Docker Compose deployment for browse.lorzen.de.
+# Place a private .env next to this file containing BROWSER_RUNNER_TOKEN.
+# Existing reverse proxy must terminate HTTPS and forward to 127.0.0.1:3200.
+services:
+  browser-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: siteops-browser-runner:bilingual
+    container_name: siteops-browser-runner
+    restart: unless-stopped
+    environment:
+      BROWSER_RUNNER_TOKEN: ${BROWSER_RUNNER_TOKEN:?Set the current SiteOps Browser Runner token}
+      VIDEO_AUTO_INSTALL_MODELS: "true"
+      VIDEO_ALLOWED_HOSTS: ${VIDEO_ALLOWED_HOSTS:-}
+      VIDEO_OUTPUT_DIR: /data/video-studio
+      VIDEO_MODELS_DIR: /models
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "127.0.0.1:3200:3200"
+    volumes:
+      - voice_models:/models
+      - video_output:/data/video-studio
+    shm_size: "1gb"
+volumes:
+  voice_models:
+  video_output:
