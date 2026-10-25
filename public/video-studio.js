@@ -12,15 +12,68 @@ const api=async(url,method='GET',data)=>{
 const formatDate=x=>new Date(x).toLocaleString('de-DE');
 let projects=[],jobs=[];
 const voiceChoices={
-  kokoro:[['am_michael','Michael – English'],['am_adam','Adam – English'],['af_heart','Heart – English'],['bf_emma','Emma – British'],['bm_george','George – British']],
-  openai:[['alloy','Alloy'],['coral','Coral'],['nova','Nova'],['onyx','Onyx'],['shimmer','Shimmer'],['marin','Marin'],['cedar','Cedar']]
+  en:{
+    kokoro:[['am_michael','Michael – US'],['am_adam','Adam – US'],['af_heart','Heart – US'],['bf_emma','Emma – UK'],['bm_george','George – UK']],
+    openai:[['alloy','Alloy'],['coral','Coral'],['nova','Nova'],['onyx','Onyx'],['shimmer','Shimmer'],['marin','Marin'],['cedar','Cedar']]
+  },
+  de:{
+    piper:[['de_DE-thorsten-medium','Thorsten – Deutsch'],['de_DE-kerstin-low','Kerstin – Deutsch']],
+    openai:[['alloy','Alloy'],['coral','Coral'],['nova','Nova'],['onyx','Onyx'],['shimmer','Shimmer'],['marin','Marin'],['cedar','Cedar']]
+  }
 };
 function updateVoiceChoices(){
-  const provider=$('#vs-voice-provider').value;
-  $('#vs-voice').innerHTML=voiceChoices[provider].map(([value,label])=>
+  const language=$('#vs-language').value;
+  const providerEl=$('#vs-voice-provider');
+  const provider=providerEl.value;
+  providerEl.innerHTML=Object.keys(voiceChoices[language]).map(p=>
+    '<option value="'+p+'">'+(p==='kokoro'?'Kokoro – lokal, kostenlos':p==='piper'?'Piper – lokal, kostenlos':'OpenAI – API-Kosten')+'</option>').join('');
+  if(voiceChoices[language][provider])providerEl.value=provider;
+  const voices=voiceChoices[language][providerEl.value];
+  const old=$('#vs-voice').value;
+  $('#vs-voice').innerHTML=voices.map(([value,label])=>
     '<option value="'+value+'">'+label+'</option>').join('');
+  if(voices.some(v=>v[0]===old))$('#vs-voice').value=old;
 }
+function applyProjectSettings(){
+  const project=projects.find(p=>p.id===$('#vs-project').value);
+  if(!project)return;
+  $('#vs-language').value=project.language||'en';
+  updateVoiceChoices();
+  $('#vs-voice-provider').value=project.voice_provider||(project.language==='de'?'piper':'kokoro');
+  updateVoiceChoices();
+  $('#vs-voice').value=project.voice;
+}
+$('#vs-language').addEventListener('change',updateVoiceChoices);
 $('#vs-voice-provider').addEventListener('change',updateVoiceChoices);
+$('#vs-project').addEventListener('change',applyProjectSettings);
+async function loadReadiness(){
+  const el=$('#vs-readiness');
+  try{
+    const status=await api('/api/video-studio/capabilities');
+    if(!status.connected){el.textContent='Nicht bereit: '+(status.error||'Runner nicht erreichbar.');return;}
+    el.innerHTML=['en','de'].map(lang=>{
+      const providers=status.voices?.[lang]||{};
+      const items=Object.entries(providers).map(([provider,info])=>
+        '<span style="margin-right:14px">'+(info.ready?'✓':'✗')+' '+
+        escapeHtml(provider==='piper'?'Piper':provider==='kokoro'?'Kokoro':'OpenAI')+'</span>').join('');
+      return '<p><strong>'+(lang==='de'?'Deutsch':'Englisch')+': </strong>'+items+'</p>';
+    }).join('')+'<p>Aktive Aufträge: '+Number(status.activeJobs||0)+', wartend: '+Number(status.queuedJobs||0)+'</p>';
+  }catch(err){el.textContent='Runner-Status nicht verfügbar: '+err.message;}
+}
+$('#vs-status-refresh').addEventListener('click',loadReadiness);
+$('#vs-project-save').addEventListener('click',async()=>{
+  const id=$('#vs-project').value;
+  if(!id)return msg('Bitte zuerst ein Projekt auswählen.',true);
+  try{
+    await api('/api/video-studio/projects/'+encodeURIComponent(id),'PATCH',{
+      language:$('#vs-language').value,
+      voice_provider:$('#vs-voice-provider').value,
+      voice:$('#vs-voice').value
+    });
+    await reload();
+    msg('Sprach- und Stimmeneinstellungen gespeichert.');
+  }catch(error){msg(error.message,true);}
+});
 async function reload(){
   try{
     [projects,jobs]=await Promise.all([api('/api/video-studio/projects'),api('/api/video-studio/jobs')]);
@@ -29,6 +82,7 @@ async function reload(){
       projects.map(p=>'<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.name)+' · '+escapeHtml(p.channel)+'</option>').join('');
     if(projects.some(p=>p.id===old))el.value=old;
     else if(projects.length)el.value=projects[0].id;
+    applyProjectSettings();
     $('#vs-jobs').innerHTML=jobs.length?jobs.map(j=>{
       const status=escapeHtml(j.status);
       const available=j.status==='done';
@@ -50,9 +104,9 @@ $('#vs-project-add').addEventListener('click',async()=>{
   if(name.length<2)return msg('Projektname benötigt mindestens zwei Zeichen.',true);
   try{
     const created=await api('/api/video-studio/projects','POST',{
-      name,channel:'Bagisto',language:'en',voice_provider:$('#vs-voice-provider').value,voice:$('#vs-voice').value
+      name,channel:'Bagisto',language:$('#vs-language').value,voice_provider:$('#vs-voice-provider').value,voice:$('#vs-voice').value
     });
-    await reload();$('#vs-project').value=created.id;$('#vs-project-name').value='';
+    await reload();$('#vs-project').value=created.id;applyProjectSettings();$('#vs-project-name').value='';
     msg('Projekt wurde erstellt.');
   }catch(e){msg(e.message,true);}
 });
@@ -100,7 +154,7 @@ $('#vs-jobs').addEventListener('click',async event=>{
   finally{target.disabled=false;}
 });
 $('#vs-refresh').addEventListener('click',reload);
-reload();
+reload();loadReadiness();
 setInterval(()=>{if(document.visibilityState==='visible'&&jobs.some(j=>['running','queued'].includes(j.status))){
   Promise.all(jobs.filter(j=>['running','queued'].includes(j.status)).map(j=>
     api('/api/video-studio/jobs/'+encodeURIComponent(j.id)).catch(()=>null))).then(reload);
