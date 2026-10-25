@@ -1,0 +1,28 @@
+name: Temporary bilingual studio formatter
+on:
+  push:
+    branches: [feature/video-studio-german-english-ready-20261025]
+permissions:
+  contents: write
+jobs:
+  format:
+    if: "!contains(github.event.head_commit.message, '[format-ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/video-studio-german-english-ready-20261025
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --write lib/video-studio.mjs test/video-studio.test.mjs
+      - run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add lib/video-studio.mjs test/video-studio.test.mjs
+            git commit -m "style(video): format multilingual project support [format-ci]"
+            git push
+          fi
