@@ -5106,7 +5106,21 @@ function mcpServer() {
             z.object({
               headline: z.string().max(160).optional(),
               narration: z.string().min(5).max(1400),
-              demoUrl: z.string().url().optional()
+              demoUrl: z.string().url().optional(),
+              demoSteps: z
+                .array(
+                  z.object({
+                    action: z.enum(['click', 'hover', 'fill', 'press', 'scroll', 'wait', 'goto']),
+                    selector: z.string().max(240).optional(),
+                    url: z.string().url().optional(),
+                    value: z.string().max(160).optional(),
+                    key: z.enum(['Enter', 'Tab', 'Escape', 'ArrowDown', 'ArrowUp']).optional(),
+                    pixels: z.number().int().min(-1400).max(1400).optional(),
+                    ms: z.number().int().min(100).max(4000).optional()
+                  })
+                )
+                .max(16)
+                .optional()
             })
           )
           .min(1)
