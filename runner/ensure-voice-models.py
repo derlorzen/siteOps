@@ -23,7 +23,7 @@ MODELS = {
          "md5", "a129b00fb3078df43c96bab6c94535c0"),
         ("de_DE-thorsten-medium.onnx.json",
          "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json",
-         "md5", "0ba02428e952e6556157df235b740e93")
+         "md5", "843a7bd7272724f750534dd5a26d1aad")
     ]
 }
 
