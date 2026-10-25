@@ -48,14 +48,26 @@ $('#vs-form').addEventListener('submit',async event=>{
   event.preventDefault();
   const project_id=$('#vs-project').value;
   if(!project_id)return msg('Bitte zuerst ein Projekt erstellen.',true);
-  const title=$('#vs-title').value.trim(),script=$('#vs-script').value.trim();
-  const scenes=script.split(/\n\s*\n/).map(s=>s.trim()).filter(Boolean);
-  if(!scenes.length||scenes.length>24||scenes.some(s=>s.length<5||s.length>1400))
-    return msg('Skript muss 1–24 Absätze mit jeweils 5–1.400 Zeichen enthalten.',true);
+  const title=$('#vs-title').value.trim();
+  const raw=$('#vs-scene-json').value.trim();
+  let scenes,script=$('#vs-script').value.trim();
+  if(raw){
+    try { scenes=JSON.parse(raw); }
+    catch { return msg('Der strukturierte Szenenplan enthält ungültiges JSON.',true); }
+    if(!Array.isArray(scenes)||!scenes.length||scenes.length>24||
+       scenes.some(s=>!s||typeof s.narration!=='string'||s.narration.length<5||s.narration.length>1400))
+      return msg('Szenenplan: 1–24 Szenen mit jeweils 5–1.400 Zeichen Sprechertext angeben.',true);
+    if(!script) script=scenes.map(s=>s.narration).join('\n\n');
+  }else{
+    const paragraphs=script.split(/\n\s*\n/).map(s=>s.trim()).filter(Boolean);
+    if(!paragraphs.length||paragraphs.length>24||paragraphs.some(s=>s.length<5||s.length>1400))
+      return msg('Skript muss 1–24 Absätze mit jeweils 5–1.400 Zeichen enthalten.',true);
+  }
+  if(script.length<30)return msg('Mindestens 30 Zeichen Sprechertext erforderlich.',true);
   const button=$('#vs-create');button.disabled=true;
   try{
     const job=await api('/api/video-studio/jobs','POST',{
-      project_id,title,topic:$('#vs-topic').value.trim(),script,format:$('#vs-format').value
+      project_id,title,topic:$('#vs-topic').value.trim(),script,scenes,format:$('#vs-format').value
     });
     msg('Videoentwurf gespeichert. Klicke auf „Video rendern“, um den Runner zu starten.');
     await reload();
