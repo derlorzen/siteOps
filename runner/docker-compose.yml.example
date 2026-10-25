@@ -15,7 +15,8 @@ services:
       VIDEO_MODEL_DIR: /data/video-studio/models
       # Optional: OpenAI is only used when a project explicitly selects OpenAI.
       # OPENAI_API_KEY: 'set-through-your-secret-manager'
-      # VIDEO_ALLOWED_HOSTS: 'demo.example.com'
+      # Fallback only until explicitly overridden in SiteOps > Video Studio.
+      # VIDEO_ALLOWED_HOSTS: '*.lorzen.de,shop.lorzen.link'
     volumes:
       - siteops-video-data:/data/video-studio
     ports:

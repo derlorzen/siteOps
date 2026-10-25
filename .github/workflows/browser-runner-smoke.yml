@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'runner/**'
+      - 'test/video-*.test.mjs'
+      - 'lib/video-*.mjs'
+      - 'public/video-studio.js'
       - '.github/workflows/browser-runner-smoke.yml'
   workflow_dispatch:
 
@@ -25,11 +28,17 @@ jobs:
       - name: Install runner dependencies
         working-directory: runner
         run: npm install --ignore-scripts
+      - name: Install SiteOps test dependencies
+        run: npm ci --ignore-scripts
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install Chromium
         working-directory: runner
         run: npx playwright install --with-deps chromium
+      - name: Video policy and real Chromium security tests (local HTTPS fixtures)
+        env:
+          RUN_VIDEO_BROWSER_TESTS: '1'
+        run: node --test test/video-*.test.mjs
       - name: Run real browser smoke test
         shell: bash
         run: |
