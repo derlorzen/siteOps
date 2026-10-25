@@ -33,10 +33,16 @@ RUN npm ci --omit=dev \
          exit 1; \
        fi
 
-# Video Studio uses local Kokoro ONNX voices and FFmpeg (no paid TTS service).
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3-venv \
-    && python3 -m venv /opt/video-venv \
-    && /opt/video-venv/bin/pip install --no-cache-dir kokoro-onnx soundfile \
+# OpenAI API narration only requires FFmpeg. Offline Kokoro can optionally
+# be added at image build time: docker build --build-arg INSTALL_KOKORO=true ...
+ARG INSTALL_KOKORO=false
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && if [ "$INSTALL_KOKORO" = "true" ]; then \
+         apt-get install -y --no-install-recommends python3-venv \
+         && python3 -m venv /opt/video-venv \
+         && /opt/video-venv/bin/pip install --no-cache-dir kokoro-onnx soundfile; \
+       fi \
     && rm -rf /var/lib/apt/lists/*
 
 COPY server.mjs video-studio.mjs video-demo.mjs openai-audio.mjs kokoro-voice.py ./
