@@ -42,6 +42,7 @@ import { createProjectOverview, registerProjectOverviewRoutes } from './lib/proj
 import { createWorkspaceActivity, registerWorkspaceActivityRoutes } from './lib/workspace-activity.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 import { resolveBuildInfo } from './lib/build-info.mjs';
+import { createDashboardSessions } from './lib/dashboard-session.mjs';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -5082,30 +5083,6 @@ function mcpServer() {
   return s;
 }
 
-function dashboardAuth(req, reply) {
-  if (!cfg.dashboardUser || !cfg.dashboardPassword) {
-    reply.code(503).send('SiteOps dashboard authentication is not configured');
-    return false;
-  }
-  const h = req.headers.authorization || '';
-  if (!h.startsWith('Basic ')) {
-    reply.header('WWW-Authenticate', 'Basic realm="SiteOps"');
-    reply.code(401).send('Authentication required');
-    return false;
-  }
-  const decoded = Buffer.from(h.slice(6), 'base64').toString(),
-    i = decoded.indexOf(':'),
-    u = i >= 0 ? decoded.slice(0, i) : '',
-    p = i >= 0 ? decoded.slice(i + 1) : '';
-  if (!safeEqual(u, cfg.dashboardUser) || !safeEqual(p, cfg.dashboardPassword)) {
-    reply.header('WWW-Authenticate', 'Basic realm="SiteOps"');
-    reply.code(401).send('Authentication required');
-    return false;
-  }
-  req.siteopsAuth = { type: 'dashboard', subject: cfg.dashboardUser };
-  return true;
-}
-
 const OAUTH_ACCESS_SCOPE = 'siteops:access',
   OAUTH_OFFLINE_SCOPE = 'offline_access';
 function oauthBase() {
@@ -5702,7 +5679,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/coolify">Coolify</a><a href="/settings">Einstellungen</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/coolify">Coolify</a><a href="/settings">Einstellungen</a><a href="/logout">Abmelden</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -5847,8 +5824,7 @@ function mcpInfoPage() {
     '</div></section>';
   html +=
     '<div class="notice"><strong>Änderungsschutz bleibt bestehen.</strong><span>OAuth ersetzt nur die Anmeldung am MCP. Dateiänderungen laufen weiterhin über <code>change_preview</code> und werden erst nach Freigabe mit <code>change_apply</code> geschrieben.</span></div>';
-  html +=
-    String.raw`<script>function siteOpsFetchErrorHtml(e){const msg=String(e&&e.message||e).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));return "<div class=\"notice bad\"><strong>Laden fehlgeschlagen.</strong><span>"+msg+"</span></div>";}async function loadOauthConnections(){const box=document.getElementById("oauthConnections");try{const r=await fetch("/api/oauth/connections");if(!r.ok)throw new Error("HTTP "+r.status+" "+r.statusText);const rows=await r.json();if(!Array.isArray(rows)||!rows.length){box.innerHTML="<div class=\"empty-state\"><strong>Noch keine OAuth-Verbindung.</strong><p>Verbinde ChatGPT oder Claude mit dem MCP-Endpunkt.</p></div>";return;}box.innerHTML=rows.map(x=>"<div class=\"oauth-connection\"><div><strong>"+String(x.clientName||"MCP Client").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</strong><small>"+String(x.clientId||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</small></div><span class=\"pill "+(x.activeRefresh||x.activeAccess?"ok":"")+"\">"+x.activeAccess+" Access · "+x.activeRefresh+" Refresh</span><button type=\"button\" class=\"ghost\" data-client=\""+encodeURIComponent(x.clientId)+"\">Widerrufen</button></div>").join("");box.querySelectorAll("[data-client]").forEach(b=>b.onclick=async()=>{await fetch("/api/oauth/revoke-client",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({clientId:decodeURIComponent(b.dataset.client)})});loadOauthConnections();});}catch(e){box.innerHTML=siteOpsFetchErrorHtml(e);}}document.getElementById("oauthRevokeAll").onclick=async()=>{if(!confirm("Alle OAuth-Verbindungen widerrufen? ChatGPT und Claude müssen sich danach neu verbinden."))return;await fetch("/api/oauth/revoke-all",{method:"POST"});loadOauthConnections();};loadOauthConnections();async function loadAuditLog(){const box=document.getElementById("auditLog");try{const r=await fetch("/api/audit-log?limit=100");if(!r.ok)throw new Error("HTTP "+r.status+" "+r.statusText);const rows=await r.json(),esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));if(!Array.isArray(rows)||!rows.length){box.innerHTML="<div class=\"empty-state\">Noch keine Audit-Einträge.</div>";return;}box.innerHTML="<table><thead><tr><th>Zeit</th><th>Wer</th><th>Methode</th><th>Pfad / Tool</th><th>Status</th><th>IP</th></tr></thead><tbody>"+rows.map(x=>"<tr><td>"+esc(new Date(x.created_at).toLocaleString("de-DE"))+"</td><td>"+esc(x.actor_type)+(x.actor?" · "+esc(x.actor):"")+(x.client_id?"<small class=\"table-sub\">"+esc(x.client_id)+"</small>":"")+"</td><td>"+esc(x.method)+"</td><td>"+esc(x.mcp_tool||x.path)+"</td><td>"+esc(x.status_code)+"</td><td>"+esc(x.ip)+"</td></tr>").join("")+"</tbody></table>";}catch(e){box.innerHTML=siteOpsFetchErrorHtml(e);}}loadAuditLog();</script>`;
+  html += String.raw`<script>function siteOpsFetchErrorHtml(e){const msg=String(e&&e.message||e).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));return "<div class=\"notice bad\"><strong>Laden fehlgeschlagen.</strong><span>"+msg+"</span></div>";}async function loadOauthConnections(){const box=document.getElementById("oauthConnections");try{const r=await fetch("/api/oauth/connections");if(!r.ok)throw new Error("HTTP "+r.status+" "+r.statusText);const rows=await r.json();if(!Array.isArray(rows)||!rows.length){box.innerHTML="<div class=\"empty-state\"><strong>Noch keine OAuth-Verbindung.</strong><p>Verbinde ChatGPT oder Claude mit dem MCP-Endpunkt.</p></div>";return;}box.innerHTML=rows.map(x=>"<div class=\"oauth-connection\"><div><strong>"+String(x.clientName||"MCP Client").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</strong><small>"+String(x.clientId||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</small></div><span class=\"pill "+(x.activeRefresh||x.activeAccess?"ok":"")+"\">"+x.activeAccess+" Access · "+x.activeRefresh+" Refresh</span><button type=\"button\" class=\"ghost\" data-client=\""+encodeURIComponent(x.clientId)+"\">Widerrufen</button></div>").join("");box.querySelectorAll("[data-client]").forEach(b=>b.onclick=async()=>{await fetch("/api/oauth/revoke-client",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({clientId:decodeURIComponent(b.dataset.client)})});loadOauthConnections();});}catch(e){box.innerHTML=siteOpsFetchErrorHtml(e);}}document.getElementById("oauthRevokeAll").onclick=async()=>{if(!confirm("Alle OAuth-Verbindungen widerrufen? ChatGPT und Claude müssen sich danach neu verbinden."))return;await fetch("/api/oauth/revoke-all",{method:"POST"});loadOauthConnections();};loadOauthConnections();async function loadAuditLog(){const box=document.getElementById("auditLog");try{const r=await fetch("/api/audit-log?limit=100");if(!r.ok)throw new Error("HTTP "+r.status+" "+r.statusText);const rows=await r.json(),esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));if(!Array.isArray(rows)||!rows.length){box.innerHTML="<div class=\"empty-state\">Noch keine Audit-Einträge.</div>";return;}box.innerHTML="<table><thead><tr><th>Zeit</th><th>Wer</th><th>Methode</th><th>Pfad / Tool</th><th>Status</th><th>IP</th></tr></thead><tbody>"+rows.map(x=>"<tr><td>"+esc(new Date(x.created_at).toLocaleString("de-DE"))+"</td><td>"+esc(x.actor_type)+(x.actor?" · "+esc(x.actor):"")+(x.client_id?"<small class=\"table-sub\">"+esc(x.client_id)+"</small>":"")+"</td><td>"+esc(x.method)+"</td><td>"+esc(x.mcp_tool||x.path)+"</td><td>"+esc(x.status_code)+"</td><td>"+esc(x.ip)+"</td></tr>").join("")+"</tbody></table>";}catch(e){box.innerHTML=siteOpsFetchErrorHtml(e);}}loadAuditLog();</script>`;
   return page('MCP & OAuth', html);
 }
 function settingsPage() {
@@ -7163,6 +7139,13 @@ async function start() {
     console.error('database startup', e);
   }
   const app = Fastify({ logger: true, bodyLimit: 8 * 1024 * 1024 });
+  const dashboardSessions = createDashboardSessions({
+    q,
+    baseUrl: () => cfg.publicBaseUrl,
+    username: () => cfg.dashboardUser,
+    password: () => cfg.dashboardPassword,
+    masterKey: () => cfg.masterKey
+  });
   await app.register(rateLimit, {
     global: true,
     max: 120,
@@ -7342,15 +7325,12 @@ async function start() {
         path === '/oauth/register' ||
         path === '/oauth/token' ||
         path === '/oauth/revoke';
-    // Dashboard pages and API responses must never be served stale from a browser cache -
-    // basic-auth-protected pages are especially prone to this, since browsers tend to treat
-    // them as static once authenticated, which can otherwise hide a deployed fix behind a
-    // cached pre-fix page. Only /assets/ (explicitly cache-busted via ?v=) is exempt.
+    // Never cache authenticated pages, login forms or API responses.
     if (!path.startsWith('/assets/')) reply.header('Cache-Control', 'no-store, max-age=0');
-    if (path === '/health' || path.startsWith('/assets/') || oauthPublic) return;
+    if (path === '/health' || path.startsWith('/assets/') || oauthPublic || path === '/login') return;
     if (path === '/mcp') {
       if (!(await mcpAuth(req, reply))) return reply;
-    } else if (!dashboardAuth(req, reply)) return reply;
+    } else if (!(await dashboardSessions.guard(req, reply))) return reply;
   });
   app.addHook('onResponse', async (req, reply) => {
     if (req.method === 'GET') return;
@@ -7368,6 +7348,12 @@ async function start() {
       ip: req.ip
     });
   });
+  app.get('/login', (req, reply) => dashboardSessions.loginPage(req, reply));
+  app.post('/login', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, (req, reply) =>
+    dashboardSessions.loginSubmit(req, reply)
+  );
+  app.get('/logout', (req, reply) => dashboardSessions.logoutPage(req, reply));
+  app.post('/logout', (req, reply) => dashboardSessions.logoutSubmit(req, reply));
   app.get('/.well-known/oauth-protected-resource', async () => oauthProtectedResourceMetadata());
   app.get('/.well-known/oauth-protected-resource/mcp', async () => oauthProtectedResourceMetadata());
   app.get('/.well-known/oauth-authorization-server', async () => oauthAuthorizationServerMetadata());

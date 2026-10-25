@@ -31,7 +31,7 @@
   layout.innerHTML='<aside class="ops-sidebar"><div class="ops-identity"><span class="ops-mark">S</span>'+
     '<div><strong>SiteOps</strong><small>Workspace</small></div></div>'+
     '<nav class="ops-side-links" aria-label="SiteOps-Navigation">'+menu+'</nav>'+
-    '<div class="ops-side-footer">Monitoring · Deployments · Kundenprojekte</div></aside>'+
+    '<div class="ops-side-footer"><a href="/logout" class="ops-nav-item" style="margin-bottom:10px">Abmelden</a><span>Monitoring · Deployments · Kundenprojekte</span></div></aside>'+
     '<div class="ops-content"><div class="ops-workspace-bar"><div><span class="ops-mobile-mark">S</span>'+
     '<span>SiteOps</span><span class="ops-chevron">›</span><strong>'+esc(active)+'</strong></div>'+
     '<div class="ops-top-actions"><a href="/setup" class="ops-top-new">+ Website</a></div></div></div>';
