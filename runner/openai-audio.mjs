@@ -7,11 +7,13 @@ export async function narrateWithOpenAI(text, outputPath, {
   apiKey = process.env.OPENAI_API_KEY,
   model = process.env.VIDEO_OPENAI_AUDIO_MODEL || 'gpt-audio-1.5',
   voice = process.env.VIDEO_OPENAI_AUDIO_VOICE || 'alloy',
+  language = 'en',
   fetchImpl = fetch
 } = {}) {
   if (typeof apiKey !== 'string' || !apiKey.trim())
     throw new Error('Set OPENAI_API_KEY on the private Browser Runner to use OpenAI narration.');
   if (!VOICES.has(voice)) throw new Error('Unsupported OpenAI audio voice.');
+  if (!['en', 'de'].includes(language)) throw new Error('Unsupported narration language.');
   if (model !== 'gpt-audio-1.5') throw new Error('Unsupported OpenAI narration model.');
   if (typeof text !== 'string' || text.length < 5 || text.length > 1400)
     throw new Error('Narration must contain between 5 and 1400 characters.');
@@ -24,7 +26,7 @@ export async function narrateWithOpenAI(text, outputPath, {
     messages: [
       {
         role: 'user',
-        content: 'Read the following narration aloud in natural English, without adding introductions, explanations, or unrelated remarks. Maintain the exact meaning and wording. Narration:\n\n' + text
+        content: (language === 'de' ? 'Lies den folgenden Sprechertext natürlich auf Deutsch vor. Ändere den Wortlaut nicht und füge nichts hinzu. Sprechertext:\n\n' : 'Read the following narration aloud in natural English, without adding introductions or changing the wording. Narration:\n\n') + text
       }
     ]
   };
