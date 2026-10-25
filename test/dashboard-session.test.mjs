@@ -5,12 +5,30 @@ import { createDashboardSessions, safeReturnPath } from '../lib/dashboard-sessio
 const master = Buffer.alloc(32, 7).toString('base64');
 function fakeReply() {
   return {
-    status: 200, headers: {}, result: null, redirectTo: null,
-    code(n) { this.status = n; return this; },
-    type(v) { this.headers['content-type'] = v; return this; },
-    header(n, v) { this.headers[n.toLowerCase()] = v; return this; },
-    send(v) { this.result = v; return this; },
-    redirect(v) { this.redirectTo = v; return this; }
+    status: 200,
+    headers: {},
+    result: null,
+    redirectTo: null,
+    code(n) {
+      this.status = n;
+      return this;
+    },
+    type(v) {
+      this.headers['content-type'] = v;
+      return this;
+    },
+    header(n, v) {
+      this.headers[n.toLowerCase()] = v;
+      return this;
+    },
+    send(v) {
+      this.result = v;
+      return this;
+    },
+    redirect(v) {
+      this.redirectTo = v;
+      return this;
+    }
   };
 }
 function fakeStore() {
@@ -64,16 +82,31 @@ async function login(service, next = '/oauth/authorize?state=test') {
   await service.loginPage({ headers: {}, query: { next } }, loginReply);
   const { nonce, csrf } = parseLogin(loginReply);
   const reply = fakeReply();
-  await service.loginSubmit({ headers: { cookie: nonce }, body: {
-    next, csrf, username: 'siteops-admin', password: 'correct-long-password'
-  } }, reply);
+  await service.loginSubmit(
+    {
+      headers: { cookie: nonce },
+      body: {
+        next,
+        csrf,
+        username: 'siteops-admin',
+        password: 'correct-long-password'
+      }
+    },
+    reply
+  );
   assert.equal(reply.status, 303);
   assert.equal(reply.redirectTo, next);
   return sessionCookie(reply);
 }
 
 test('safe return path rejects off-site, protocol-relative and control-character redirects', () => {
-  for (const value of ['https://evil.example', '//evil.example', '/\\evil.example', '/\ninvalid', 'javascript:alert(1)'])
+  for (const value of [
+    'https://evil.example',
+    '//evil.example',
+    '/\\evil.example',
+    '/\ninvalid',
+    'javascript:alert(1)'
+  ])
     assert.equal(safeReturnPath(value), '/');
   assert.equal(safeReturnPath('/oauth/authorize?client_id=a&state=b'), '/oauth/authorize?client_id=a&state=b');
 });
@@ -96,15 +129,33 @@ test('login rejects invalid credentials and CSRF without creating a session', as
   await service.loginPage({ headers: {}, query: { next: '/' } }, form);
   const { nonce, csrf } = parseLogin(form);
   const incorrect = fakeReply();
-  await service.loginSubmit({ headers: { cookie: nonce }, body: {
-    next: '/', csrf, username: 'siteops-admin', password: 'incorrect'
-  } }, incorrect);
+  await service.loginSubmit(
+    {
+      headers: { cookie: nonce },
+      body: {
+        next: '/',
+        csrf,
+        username: 'siteops-admin',
+        password: 'incorrect'
+      }
+    },
+    incorrect
+  );
   assert.match(incorrect.result, /nicht korrekt/);
   assert.equal(store.sessions.size, 0);
   const invalidCsrf = fakeReply();
-  await service.loginSubmit({ headers: { cookie: nonce }, body: {
-    next: '/', csrf: 'wrong', username: 'siteops-admin', password: 'correct-long-password'
-  } }, invalidCsrf);
+  await service.loginSubmit(
+    {
+      headers: { cookie: nonce },
+      body: {
+        next: '/',
+        csrf: 'wrong',
+        username: 'siteops-admin',
+        password: 'correct-long-password'
+      }
+    },
+    invalidCsrf
+  );
   assert.equal(invalidCsrf.status, 403);
 });
 
@@ -124,18 +175,25 @@ test('session writes require same-origin request or session CSRF; logout revokes
   const { service } = setup();
   const cookie = await login(service);
   const bad = fakeReply();
-  assert.equal(await service.guard({ headers: { cookie, origin: 'https://evil.example' },
-    url: '/api/settings', method: 'POST' }, bad), false);
+  assert.equal(
+    await service.guard(
+      { headers: { cookie, origin: 'https://evil.example' }, url: '/api/settings', method: 'POST' },
+      bad
+    ),
+    false
+  );
   assert.equal(bad.status, 403);
   const good = fakeReply();
-  const req = { headers: { cookie, origin: 'https://siteops.example.com' },
-    url: '/api/settings', method: 'POST' };
+  const req = { headers: { cookie, origin: 'https://siteops.example.com' }, url: '/api/settings', method: 'POST' };
   assert.equal(await service.guard(req, good), true);
   const token = req.siteopsSession.csrf;
   const csrfReq = { headers: { cookie, 'x-siteops-csrf': token }, url: '/api/settings', method: 'POST' };
   assert.equal(await service.guard(csrfReq, fakeReply()), true);
   const logout = fakeReply();
-  await service.logoutSubmit({ headers: { cookie }, body: { csrf: token }, siteopsSession: req.siteopsSession }, logout);
+  await service.logoutSubmit(
+    { headers: { cookie }, body: { csrf: token }, siteopsSession: req.siteopsSession },
+    logout
+  );
   assert.equal(logout.status, 303);
   assert.equal(logout.redirectTo, '/login');
   assert.equal(await service.guard({ headers: { cookie }, url: '/', method: 'GET' }, fakeReply()), false);
