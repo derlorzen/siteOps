@@ -9,7 +9,8 @@ import { narrateWithOpenAI } from './openai-audio.mjs';
 
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
 const ALLOWED=(process.env.VIDEO_ALLOWED_HOSTS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
-const VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
+const KOKORO_VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
+const OPENAI_VOICES=new Set(['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar']);
 const MAX_JOBS=Number(process.env.VIDEO_MAX_JOBS||30);
 let active=0;
 const queue=[];
@@ -34,7 +35,10 @@ function validate(payload){
   if(!uuid(payload?.id))throw new Error('Valid UUID required.');
   if(!Array.isArray(payload.scenes)||!payload.scenes.length||payload.scenes.length>24)
     throw new Error('1–24 scenes required.');
-  if(!VOICES.has(payload.voice))throw new Error('Unsupported voice.');
+  const voiceProvider=payload.voiceProvider || 'kokoro';
+  if(!['kokoro','openai'].includes(voiceProvider))throw new Error('Unsupported voice provider.');
+  if(!(voiceProvider==='kokoro'?KOKORO_VOICES:OPENAI_VOICES).has(payload.voice))
+    throw new Error('Unsupported voice for '+voiceProvider+'.');
   if(!['en','de'].includes(payload.language)||!['landscape','portrait'].includes(payload.format))
     throw new Error('Unsupported language or format.');
   const scenes=payload.scenes.map((s,i)=>{
@@ -44,7 +48,7 @@ function validate(payload){
     return {narration,headline,demoUrl,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,ALLOWED)};
   });
   return {id:payload.id,title:String(payload.title||'').slice(0,200),voice:payload.voice,
-    language:payload.language,format:payload.format,scenes};
+    voiceProvider,language:payload.language,format:payload.format,scenes};
 }
 async function persist(job){
   await fs.mkdir(path.join(ROOT,job.id),{recursive:true});
@@ -106,13 +110,13 @@ async function voice(scene,job,i,dir){
   const target=path.join(dir,'voice-'+String(i).padStart(2,'0')+'.wav');
   const narration=path.join(dir,'text-'+String(i).padStart(2,'0')+'.txt');
   await fs.writeFile(narration,scene.narration);
-  const voiceProvider=process.env.VIDEO_TTS_PROVIDER || (process.env.OPENAI_API_KEY ? 'openai' : 'kokoro');
+  const voiceProvider=job.voiceProvider || 'kokoro';
   if(process.env.VIDEO_TTS_MODE==='silent'){
     await exec('ffmpeg',['-y','-f','lavfi','-i','anullsrc=r=24000:cl=mono','-t',
       String(Math.min(120,Math.max(4,scene.narration.split(/\s+/).length/2.3))),
       '-c:a','pcm_s16le',target],{timeoutMs:30000});
   }else if(voiceProvider==='openai'){
-    await narrateWithOpenAI(scene.narration,target);
+    await narrateWithOpenAI(scene.narration,target,{voice:job.voice});
   }else if(voiceProvider==='kokoro'){
     await exec(process.env.VIDEO_PYTHON||'python3',
       [new URL('./kokoro-voice.py',import.meta.url).pathname,
