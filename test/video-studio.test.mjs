@@ -9,7 +9,14 @@ test('Video Studio creates a project, stores scene paragraphs and lists jobs', a
   const db = {
     query: async (sql, params = []) => {
       if (sql.startsWith('INSERT INTO video_studio_projects')) {
-        rows.project = { id: params[0], name: params[1], channel: params[2], language: params[3], voice_provider: params[4], voice: params[5] };
+        rows.project = {
+          id: params[0],
+          name: params[1],
+          channel: params[2],
+          language: params[3],
+          voice_provider: params[4],
+          voice: params[5]
+        };
         return [{ affectedRows: 1 }];
       }
       if (sql.startsWith('SELECT * FROM video_studio_projects')) return [[rows.project].filter(Boolean)];
@@ -47,14 +54,19 @@ test('Video Studio creates a project, stores scene paragraphs and lists jobs', a
   await assert.rejects(studio.renderJob(job.id), /Browser Runner/);
 });
 test('Video Studio supports explicit OpenAI projects and rejects mismatched voices', async () => {
-  const db = { query: async (sql, params = []) => {
-    if (sql.startsWith('INSERT INTO video_studio_projects')) return [{ affectedRows: 1 }];
-    if (sql.startsWith('SELECT * FROM video_studio_projects'))
-      return [[{ id: '11111111-1111-4111-8111-111111111111', voice_provider: 'openai', voice: 'alloy' }]];
-    return [[]];
-  }};
+  const db = {
+    query: async (sql, params = []) => {
+      if (sql.startsWith('INSERT INTO video_studio_projects')) return [{ affectedRows: 1 }];
+      if (sql.startsWith('SELECT * FROM video_studio_projects'))
+        return [[{ id: '11111111-1111-4111-8111-111111111111', voice_provider: 'openai', voice: 'alloy' }]];
+      return [[]];
+    }
+  };
   const studio = createVideoStudio({ db, runnerUrl: () => '', runnerToken: () => '' });
-  await assert.rejects(studio.createProject({ name: 'Bad Voice', voice_provider: 'openai', voice: 'am_adam' }), /Stimme/);
+  await assert.rejects(
+    studio.createProject({ name: 'Bad Voice', voice_provider: 'openai', voice: 'am_adam' }),
+    /Stimme/
+  );
   const project = await studio.createProject({ name: 'OpenAI Videos', voice_provider: 'openai', voice: 'alloy' });
   assert.equal(project.voice_provider, 'openai');
 });

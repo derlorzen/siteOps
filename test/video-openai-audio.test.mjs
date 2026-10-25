@@ -28,9 +28,12 @@ test('OpenAI audio adapter requests approved model and persists returned WAV onl
         assert.equal(body.modalities.includes('audio'), true);
         assert.match(body.messages[0].content, /Welcome to the Bagisto tutorial/);
         checked = true;
-        return { ok: true, json: async () => ({
-          choices: [{ message: { audio: { data: wav.toString('base64') } } }]
-        }) };
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [{ message: { audio: { data: wav.toString('base64') } } }]
+          })
+        };
       }
     });
     assert.equal(checked, true);
@@ -44,20 +47,41 @@ test('OpenAI audio adapter requests approved model and persists returned WAV onl
 test('OpenAI adapter rejects unsupported voices and bad audio, without storing secrets', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'video-openai-test-'));
   try {
-    await assert.rejects(narrateWithOpenAI('A safe sentence for audio.', path.join(dir, 'a.wav'), {
-      apiKey: '', fetchImpl: async () => { throw Error('not called'); }
-    }), /OPENAI_API_KEY/);
-    await assert.rejects(narrateWithOpenAI('A safe sentence for audio.', path.join(dir, 'a.wav'), {
-      apiKey: 'dummy', voice: 'unlisted'
-    }), /Unsupported OpenAI/);
-    await assert.rejects(narrateWithOpenAI('A safe sentence for audio.', path.join(dir, 'a.wav'), {
-      apiKey: 'dummy', fetchImpl: async () => ({ ok: true, json: async () => ({
-        choices: [{ message: { audio: { data: 'not valid base64!' } } }]
-      }) })
-    }), /returned no WAV audio/);
-    await assert.rejects(narrateWithOpenAI('A safe sentence for audio.', path.join(dir, 'a.wav'), {
-      apiKey: 'dummy', fetchImpl: async () => ({ ok: false, status: 429 })
-    }), /HTTP 429/);
+    await assert.rejects(
+      narrateWithOpenAI('A safe sentence for audio.', path.join(dir, 'a.wav'), {
+        apiKey: '',
+        fetchImpl: async () => {
+          throw Error('not called');
+        }
+      }),
+      /OPENAI_API_KEY/
+    );
+    await assert.rejects(
+      narrateWithOpenAI('A safe sentence for audio.', path.join(dir, 'a.wav'), {
+        apiKey: 'dummy',
+        voice: 'unlisted'
+      }),
+      /Unsupported OpenAI/
+    );
+    await assert.rejects(
+      narrateWithOpenAI('A safe sentence for audio.', path.join(dir, 'a.wav'), {
+        apiKey: 'dummy',
+        fetchImpl: async () => ({
+          ok: true,
+          json: async () => ({
+            choices: [{ message: { audio: { data: 'not valid base64!' } } }]
+          })
+        })
+      }),
+      /returned no WAV audio/
+    );
+    await assert.rejects(
+      narrateWithOpenAI('A safe sentence for audio.', path.join(dir, 'a.wav'), {
+        apiKey: 'dummy',
+        fetchImpl: async () => ({ ok: false, status: 429 })
+      }),
+      /HTTP 429/
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
