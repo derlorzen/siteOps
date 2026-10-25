@@ -12,7 +12,7 @@ The SiteOps dashboard now has a Video Studio workspace for creating faceless You
 - Authenticated downloads, progress polling and persistent job metadata
 - MCP tools: video_studio_projects, video_studio_create_job, video_studio_render_job, video_studio_job_status
 
-This first stage produces a narrated slideshow, NOT animated software screencasts. A demo URL creates a still screenshot. Interactive browser recording, AI script generation within the SiteOps UI, video timeline editing, multiple edited Shorts and YouTube OAuth publication are later stages. ChatGPT can author a script and create a draft through the MCP tools without another paid text-generation API.
+The initial stage produced a narrated slideshow. The second stage adds real Playwright-recorded browser actions for selected scenes. A demo URL without steps still creates a still screenshot. Interactive browser recording, AI script generation within the SiteOps UI, video timeline editing, multiple edited Shorts and YouTube OAuth publication are later stages. ChatGPT can author a script and create a draft through the MCP tools without another paid text-generation API.
 
 ## Runner setup
 
@@ -53,3 +53,41 @@ With ChatGPT connected to SiteOps MCP: "List my Video Studio projects. Write a f
 Jobs use UUID directories, an allowlist of download types and a single active renderer. Demo screenshots accept HTTPS URLs only on hosts explicitly listed in VIDEO_ALLOWED_HOSTS. No arbitrary shell, JavaScript, SQL or filesystem paths are accepted. Avoid live customer data. The default has no automatic video expiration: configure volume limits and backup/retention policy. Large render jobs need CPU, RAM and disk space. Jobs interrupted by runner restart become failed, so create a new draft to retry.
 
 Next stages: optional in-app LLM integration, approved screen-recorded interactions, better Shorts, YouTube OAuth uploads after editorial approval.
+
+
+## Recorded browser scenes (second stage)
+
+This stage adds real **Playwright screen recording**. A scene can provide `demoUrl` and up to 16 bounded `demoSteps`. For example, submit this payload through `POST /api/video-studio/jobs` or create the same scene via `video_studio_create_job` in the SiteOps MCP connector:
+
+```json
+{
+  "project_id": "REPLACE-WITH-VIDEO-PROJECT-UUID",
+  "title": "Bagisto catalog walkthrough",
+  "script": "Open the catalog and locate an example product.\n\nThis demonstration shows the inventory table.",
+  "format": "landscape",
+  "scenes": [
+    {
+      "headline": "Bagisto products",
+      "narration": "Open the catalog and locate an example product.",
+      "demoUrl": "https://demo.example.com/admin/catalog",
+      "demoSteps": [
+        { "action": "click", "selector": "#products" },
+        { "action": "wait", "ms": 600 },
+        { "action": "scroll", "pixels": 450 }
+      ]
+    },
+    {
+      "headline": "Inventory overview",
+      "narration": "This demonstration shows the inventory table."
+    }
+  ]
+}
+```
+
+`demoSteps` actions are restricted to `click`, `hover`, `fill`, `press`, `scroll`, `wait` and `goto`. No arbitrary JavaScript, shell commands, script injection, operating system reads, arbitrary keystrokes or credential recording are supported. Supported press keys are Enter, Tab, Escape, ArrowDown and ArrowUp. Password inputs cannot be filled by recorder actions. Each step has bounded parameters and short wait times.
+
+An approved HTTPS host must be listed in the runner's `VIDEO_ALLOWED_HOSTS` comma-separated environment variable; this includes secondary navigation and asset requests, which are blocked unless they use another allowed HTTPS host. Set it to **a dedicated staging demonstration hostname**, not your live shop or customer site. The browser does not bypass a site's authentication: for a protected demo, arrange an approved, safe demo login in staging without recording actual credentials.
+
+The renderer records user-visible interactions in a WebM video, overlays the generated narration, and holds the last frame until the audio is finished. Slides and static screenshots remain available. In the UI, the **Erweiterter Szenenplan (JSON)** editor accepts the `scenes` array from the example (without the outer job fields). You can create it directly from a ChatGPT MCP tool call as well.
+
+Video publishing to YouTube, AI-generated on-screen actions without a reviewed plan, credential vaults and voice synchronization editing remain future work.
