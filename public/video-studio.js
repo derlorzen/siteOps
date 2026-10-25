@@ -12,15 +12,33 @@ const api=async(url,method='GET',data)=>{
 const formatDate=x=>new Date(x).toLocaleString('de-DE');
 let projects=[],jobs=[];
 const voiceChoices={
-  kokoro:[['am_michael','Michael – English'],['am_adam','Adam – English'],['af_heart','Heart – English'],['bf_emma','Emma – British'],['bm_george','George – British']],
+  kokoro:[['am_michael','Michael – US English'],['am_adam','Adam – US English'],['af_heart','Heart – US English'],['bf_emma','Emma – British English'],['bm_george','George – British English']],
+  piper:[['de_DE-thorsten-medium','Thorsten – Hochdeutsch']],
   openai:[['alloy','Alloy'],['coral','Coral'],['nova','Nova'],['onyx','Onyx'],['shimmer','Shimmer'],['marin','Marin'],['cedar','Cedar']]
 };
 function updateVoiceChoices(){
   const provider=$('#vs-voice-provider').value;
-  $('#vs-voice').innerHTML=voiceChoices[provider].map(([value,label])=>
+  const el=$('#vs-voice');
+  const old=el.value;
+  el.innerHTML=voiceChoices[provider].map(([value,label])=>
     '<option value="'+value+'">'+label+'</option>').join('');
+  if(voiceChoices[provider].some(([key])=>key===old))el.value=old;
 }
-$('#vs-voice-provider').addEventListener('change',updateVoiceChoices);
+function syncLanguage(){
+  const language=$('#vs-language').value;
+  const provider=$('#vs-voice-provider').value;
+  if(language==='de'&&provider==='kokoro')$('#vs-voice-provider').value='piper';
+  if(language==='en'&&provider==='piper')$('#vs-voice-provider').value='kokoro';
+  updateVoiceChoices();
+}
+$('#vs-language').addEventListener('change',syncLanguage);
+$('#vs-voice-provider').addEventListener('change',()=>{
+  const p=$('#vs-voice-provider').value;
+  if(p==='piper')$('#vs-language').value='de';
+  else if(p==='kokoro')$('#vs-language').value='en';
+  updateVoiceChoices();
+});
+syncLanguage();
 async function reload(){
   try{
     [projects,jobs]=await Promise.all([api('/api/video-studio/projects'),api('/api/video-studio/jobs')]);
@@ -50,7 +68,7 @@ $('#vs-project-add').addEventListener('click',async()=>{
   if(name.length<2)return msg('Projektname benötigt mindestens zwei Zeichen.',true);
   try{
     const created=await api('/api/video-studio/projects','POST',{
-      name,channel:'Bagisto',language:'en',voice_provider:$('#vs-voice-provider').value,voice:$('#vs-voice').value
+      name,channel:'Bagisto',language:$('#vs-language').value,voice_provider:$('#vs-voice-provider').value,voice:$('#vs-voice').value
     });
     await reload();$('#vs-project').value=created.id;$('#vs-project-name').value='';
     msg('Projekt wurde erstellt.');
