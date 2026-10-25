@@ -10,6 +10,9 @@ Group=siteops-runner
 WorkingDirectory=/opt/siteops-browser-runner
 EnvironmentFile=/etc/siteops-browser-runner.env
 Environment=PLAYWRIGHT_BROWSERS_PATH=0
+Environment=VIDEO_MODELS_DIR=/var/lib/siteops-voice-models
+Environment=VIDEO_OUTPUT_DIR=/var/lib/siteops-video-studio
+Environment=VIDEO_PYTHON=/opt/siteops-browser-runner/venv/bin/python3
 ExecStartPre=/opt/siteops-browser-runner/venv/bin/python3 /opt/siteops-browser-runner/setup-voice-models.py --models-dir /var/lib/siteops-voice-models --language all
 ExecStart=/usr/bin/env node /opt/siteops-browser-runner/server.mjs
 Restart=on-failure
