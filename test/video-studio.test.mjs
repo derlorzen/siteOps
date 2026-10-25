@@ -83,7 +83,7 @@ test('Video Studio validates scenes and project identifiers', async () => {
 });
 test('Video Studio registers dashboard, JSON API and guarded media download routes', () => {
   const paths = [];
-  const app = { addHook: () => {}, get: path => paths.push('GET ' + path), post: path => paths.push('POST ' + path) };
+  const app = { addHook: () => {}, get: path => paths.push('GET ' + path), post: path => paths.push('POST ' + path), patch: path => paths.push('PATCH ' + path) };
   registerVideoStudioRoutes(
     app,
     {},
