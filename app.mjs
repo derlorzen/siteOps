@@ -5092,10 +5092,45 @@ function mcpServer() {
     async () => toolText(await videoStudioService.listProjects())
   );
   s.registerTool(
+    'video_studio_create_project',
+    {
+      description: 'Create a German or English faceless YouTube channel project. Local Kokoro (en) and Piper (de) are free; OpenAI is optional.',
+      inputSchema: z.object({
+        name: z.string().min(2).max(120),
+        channel: z.string().min(2).max(120).optional(),
+        language: z.enum(['en','de']).default('en'),
+        voice_provider: z.enum(['kokoro','piper','openai']).optional(),
+        voice: z.string().min(2).max(40).optional()
+      })
+    },
+    async input => toolText(await videoStudioService.createProject(input))
+  );
+  s.registerTool(
+    'video_studio_update_project',
+    {
+      description: 'Update an existing Video Studio project language and voice. Does not alter existing video files.',
+      inputSchema: z.object({
+        id: z.uuid(),
+        language: z.enum(['en','de']).optional(),
+        voice_provider: z.enum(['kokoro','piper','openai']).optional(),
+        voice: z.string().min(2).max(40).optional()
+      })
+    },
+    async ({id,...updates}) => toolText(await videoStudioService.updateProject(id,updates))
+  );
+  s.registerTool(
+    'video_studio_runner_status',
+    {
+      description: 'Read current readiness of Kokoro, Piper, OpenAI and local video rendering without exposing secrets.',
+      inputSchema: z.object({})
+    },
+    async () => toolText(await videoStudioService.capabilities())
+  );
+  s.registerTool(
     'video_studio_create_job',
     {
       description:
-        'Create a draft video from an authored English narration script. Separate scenes with blank lines. Review the draft before rendering.',
+        'Create a draft German or English video from an authored narration script. Separate scenes with blank lines. Review the draft before rendering.',
       inputSchema: z.object({
         project_id: z.uuid(),
         title: z.string().min(3).max(200),
