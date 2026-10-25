@@ -1,0 +1,55 @@
+# SiteOps Video Studio
+
+The SiteOps dashboard now has a Video Studio workspace for creating faceless YouTube tutorials. The main app manages projects and draft jobs in MySQL. The separate Browser Runner renders narrated video.
+
+## What works in this stage
+
+- Project / channel selection and a script editor at /video-studio
+- One blank-line-separated paragraph per scene (maximum 24 scenes)
+- Offline Kokoro ONNX voice synthesis for English
+- Playwright-designed scene slides or real screenshots from allowlisted demo URLs
+- FFmpeg renders a landscape or portrait MP4, a vertical short (first 59 seconds), an SRT transcript, and a thumbnail
+- Authenticated downloads, progress polling and persistent job metadata
+- MCP tools: video_studio_projects, video_studio_create_job, video_studio_render_job, video_studio_job_status
+
+This first stage produces a narrated slideshow, NOT animated software screencasts. A demo URL creates a still screenshot. Interactive browser recording, AI script generation within the SiteOps UI, video timeline editing, multiple edited Shorts and YouTube OAuth publication are later stages. ChatGPT can author a script and create a draft through the MCP tools without another paid text-generation API.
+
+## Runner setup
+
+Build the updated Docker image from runner/Dockerfile. Mount persistent writable /data/video-studio storage and two offline model assets as read-only files in /models:
+
+- kokoro-v1.0.onnx
+- voices-v1.0.bin
+
+Download model assets from the Kokoro ONNX project's releases: https://github.com/thewh1teagle/kokoro-onnx. Review and verify assets before installation. Do not put them in Git.
+
+Runner environment:
+- BROWSER_RUNNER_TOKEN: existing SiteOps runner token
+- VIDEO_OUTPUT_DIR=/data/video-studio
+- VIDEO_PYTHON=/opt/video-venv/bin/python3 (Docker default)
+- KOKORO_MODEL_PATH=/models/kokoro-v1.0.onnx
+- KOKORO_VOICES_PATH=/models/voices-v1.0.bin
+- VIDEO_ALLOWED_HOSTS=demo.example.com,shop.example.com (optional trusted HTTPS demo screenshot hosts)
+
+Systemd installation: runner/install-systemd.sh installs FFmpeg and a Python virtualenv with kokoro-onnx and soundfile. Model files still need to be supplied separately with paths configured in /etc/siteops-browser-runner.env. Ensure the output directory is writable by siteops-runner.
+
+For non-production smoke testing, VIDEO_TTS_MODE=silent uses a silent audio track. The production default requires offline Kokoro assets.
+
+In SiteOps > Einstellungen > Synthetic Runner configure the existing HTTPS URL and bearer token. Video Studio reuses those credentials. The renderer has no public endpoints without authentication.
+
+## First video
+
+1. Add a project like Bagisto Tutorials (English).
+2. Enter a title and a reviewed voiceover script with blank lines between scenes.
+3. Save the draft, then select Video rendern.
+4. Refresh the job status while the private runner renders.
+5. Download MP4, vertical short, SRT and thumbnail.
+6. Review and publish to YouTube manually.
+
+With ChatGPT connected to SiteOps MCP: "List my Video Studio projects. Write a factual 4-minute English Bagisto tutorial script and create a video draft using that script. Do not render before I approve."
+
+## Safety and limits
+
+Jobs use UUID directories, an allowlist of download types and a single active renderer. Demo screenshots accept HTTPS URLs only on hosts explicitly listed in VIDEO_ALLOWED_HOSTS. No arbitrary shell, JavaScript, SQL or filesystem paths are accepted. Avoid live customer data. The default has no automatic video expiration: configure volume limits and backup/retention policy. Large render jobs need CPU, RAM and disk space. Jobs interrupted by runner restart become failed, so create a new draft to retry.
+
+Next stages: optional in-app LLM integration, approved screen-recorded interactions, better Shorts, YouTube OAuth uploads after editorial approval.

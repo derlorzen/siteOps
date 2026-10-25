@@ -33,11 +33,22 @@ RUN npm ci --omit=dev \
          exit 1; \
        fi
 
-COPY server.mjs ./
+# Video Studio uses local Kokoro ONNX voices and FFmpeg (no paid TTS service).
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3-venv \
+    && python3 -m venv /opt/video-venv \
+    && /opt/video-venv/bin/pip install --no-cache-dir kokoro-onnx soundfile \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY server.mjs video-studio.mjs kokoro-voice.py ./
+ENV VIDEO_PYTHON=/opt/video-venv/bin/python3
+ENV VIDEO_OUTPUT_DIR=/data/video-studio
+ENV KOKORO_MODEL_PATH=/models/kokoro-v1.0.onnx
+ENV KOKORO_VOICES_PATH=/models/voices-v1.0.bin
 
 RUN groupadd --system siteops-runner \
     && useradd --system --gid siteops-runner --home-dir /app --shell /usr/sbin/nologin siteops-runner \
-    && chown -R siteops-runner:siteops-runner /app
+    && mkdir -p /data/video-studio \
+    && chown -R siteops-runner:siteops-runner /app /data/video-studio
 
 USER siteops-runner
 
