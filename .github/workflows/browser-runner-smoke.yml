@@ -96,6 +96,26 @@ jobs:
           test "$(stat -c%s /tmp/siteops-video-test.mp4)" -gt 10000
           test "$(stat -c%s /tmp/siteops-video-short.mp4)" -gt 10000
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 /tmp/siteops-video-test.mp4
+          # Validate a German video with the local Piper profile using silent CI audio.
+          curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+            -H 'Content-Type: application/json' \
+            --data '{"id":"44444444-4444-4444-8444-444444444444","title":"Deutsche Videodemonstration","voiceProvider":"piper","voice":"de_DE-thorsten-medium","language":"de","format":"landscape","scenes":[{"headline":"Bagisto Produktverwaltung","narration":"Hier wird ein Testprodukt in Bagisto angelegt und sicher verwaltet."}]}' \
+            http://127.0.0.1:3299/video/jobs > /tmp/siteops-video-german-created.json
+          for i in {1..90}; do
+            curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+              http://127.0.0.1:3299/video/jobs/44444444-4444-4444-8444-444444444444 \
+              > /tmp/siteops-video-german-status.json
+            result="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/siteops-video-german-status.json','utf8')).status")"
+            if [[ "$result" == "done" ]]; then break; fi
+            if [[ "$result" == "failed" ]]; then cat /tmp/siteops-video-german-status.json; exit 1; fi
+            sleep 2
+          done
+          test "$result" = "done"
+          curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+            'http://127.0.0.1:3299/video/jobs/44444444-4444-4444-8444-444444444444/file?kind=subtitles' \
+            -o /tmp/siteops-german.srt
+          grep -q "Hier wird ein Testprodukt" /tmp/siteops-german.srt
+
 
           # Record a real browser scene with a safe, allowlisted HTTPS site.
           curl -fsS -H 'Authorization: Bearer ci-runner-token' \
@@ -144,6 +164,7 @@ jobs:
           trap 'kill "$SITE_PID" 2>/dev/null || true; docker rm -f siteops-runner-smoke >/dev/null 2>&1 || true' EXIT
 
           docker run -d --name siteops-runner-smoke --network host \
+            -e VIDEO_AUTO_INSTALL_MODELS=false \
             -e BROWSER_RUNNER_TOKEN=ci-runner-token -e HOST=127.0.0.1 -e PORT=3299 \
             siteops-browser-runner
 
