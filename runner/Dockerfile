@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3-
     && /opt/video-venv/bin/pip install --no-cache-dir kokoro-onnx soundfile \
     && rm -rf /var/lib/apt/lists/*
 
-COPY server.mjs video-studio.mjs kokoro-voice.py ./
+COPY server.mjs video-studio.mjs video-demo.mjs kokoro-voice.py ./
 ENV VIDEO_PYTHON=/opt/video-venv/bin/python3
 ENV VIDEO_OUTPUT_DIR=/data/video-studio
 ENV KOKORO_MODEL_PATH=/models/kokoro-v1.0.onnx
