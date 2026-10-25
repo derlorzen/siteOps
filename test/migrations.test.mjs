@@ -48,6 +48,60 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
     assert.equal((await videoStudio.listJobs(videoProject.id)).length, 1);
     await videoStudio.updateMetadata(videoJob.id, { ...videoJob.youtube, title: 'CI Updated title' });
     assert.equal((await videoStudio.getJob(videoJob.id)).youtube.title, 'CI Updated title');
+    const { createYouTubeService } = await import('../lib/youtube.mjs');
+    const { encryptWithKey, decryptWithKey } = await import('../lib/crypto.mjs');
+    const { randomUUID } = await import('node:crypto');
+    const accountId = randomUUID(),
+      testKey = Buffer.alloc(32, 9);
+    const encrypted = encryptWithKey(
+      { access_token: 'ci-youtube-test-token', refresh_token: 'ci-refresh-test', expires_at: Date.now() + 3600000 },
+      testKey
+    );
+    await db.query('INSERT INTO youtube_accounts(id,channel_id,title,encrypted_credentials) VALUES(?,?,?,?)', [
+      accountId,
+      'UC' + accountId,
+      'CI YouTube channel',
+      encrypted
+    ]);
+    const youtube = createYouTubeService({
+      db,
+      encrypt: value => encryptWithKey(value, testKey),
+      decrypt: value => decryptWithKey(value, testKey),
+      publicBaseUrl: () => 'https://siteops.example.com',
+      studio: () => ({
+        refreshJob: id => videoStudio.getJob(id),
+        capabilities: async () => ({ artifactRanges: true })
+      }),
+      fetcher: async () => Response.json({ id: 'testvideo01' })
+    });
+    try {
+      assert.ok((await youtube.accounts()).some(x => x.id === accountId));
+      const preview = await youtube.preview({
+        account_id: accountId,
+        action: 'videos.update',
+        parameters: { part: 'snippet' },
+        body: { id: 'testvideo01', snippet: { title: 'CI YouTube title', categoryId: '28' } }
+      });
+      await youtube.execute({ preview_token: preview.preview_token, approved: true });
+      assert.equal((await youtube.previewStatus(preview.preview_token)).status, 'done');
+      await db.query('UPDATE video_studio_jobs SET status=?,result=? WHERE id=?', [
+        'done',
+        JSON.stringify({ files: ['video'] }),
+        videoJob.id
+      ]);
+      const upload = await youtube.previewUpload({
+        account_id: accountId,
+        job_id: videoJob.id,
+        made_for_kids: false,
+        contains_synthetic_media: true
+      });
+      await youtube.execute({ preview_token: upload.preview_token, approved: true });
+      assert.equal((await youtube.uploads(accountId)).length, 1);
+    } finally {
+      await db.query('DELETE FROM youtube_uploads WHERE account_id=?', [accountId]);
+      await db.query('DELETE FROM youtube_previews WHERE account_id=?', [accountId]);
+      await db.query('DELETE FROM youtube_accounts WHERE id=?', [accountId]);
+    }
   } finally {
     if (videoJob) await db.query('DELETE FROM video_studio_jobs WHERE id=?', [videoJob.id]);
     await db.query('DELETE FROM video_studio_projects WHERE id=?', [videoProject.id]);

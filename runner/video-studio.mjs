@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
 import { narrateWithOpenAI } from './openai-audio.mjs';
+import { videoFileRange } from './video-file-range.mjs';
 
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
 const KOKORO_VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
@@ -242,7 +243,7 @@ export function registerVideoRunner(app,auth){
     let demoEnvironmentPolicy=null,demoEnvironmentError=null;
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
-      demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,
+      demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
       offlineModels:{kokoro:kokoroFiles.every(Boolean),piper:piperFiles.every(Boolean)},
       modelAutoinstall:true, openaiConfigured:Boolean(process.env.OPENAI_API_KEY),
@@ -277,6 +278,12 @@ export function registerVideoRunner(app,auth){
     if(!job||job.status!=='done')return reply.code(404).send({error:'Video not ready'});
     const names={video:'video.mp4',short:'short.mp4',subtitles:'subtitles.srt',thumbnail:'thumbnail.png'};
     const types={video:'video/mp4',short:'video/mp4',subtitles:'text/plain; charset=utf-8',thumbnail:'image/png'};
-    return reply.type(types[kind]).header('Cache-Control','private, no-store').send(createReadStream(path.join(ROOT,id,names[kind])));
+    const filename=path.join(ROOT,id,names[kind]);
+    const size=(await fs.stat(filename)).size;
+    let range;
+    try{range=videoFileRange(req.headers.range,size);}catch{return reply.code(416).header('Content-Range','bytes */'+size).send({error:'Invalid byte range.'});}
+    reply.code(range.status).type(types[kind]).header('Cache-Control','private, no-store').header('Accept-Ranges','bytes').header('Content-Length',range.length);
+    if(range.status===206)reply.header('Content-Range','bytes '+range.start+'-'+range.end+'/'+size);
+    return reply.send(createReadStream(filename,{start:range.start,end:range.end}));
   });
 }

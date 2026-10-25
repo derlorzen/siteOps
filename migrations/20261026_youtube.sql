@@ -1,0 +1,25 @@
+CREATE TABLE IF NOT EXISTS youtube_accounts (
+ id CHAR(36) NOT NULL PRIMARY KEY, channel_id VARCHAR(80) NOT NULL UNIQUE, title VARCHAR(200) NOT NULL,
+ encrypted_credentials LONGTEXT NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS youtube_oauth_states (
+ state_hash CHAR(64) NOT NULL PRIMARY KEY, encrypted_payload LONGTEXT NOT NULL, expires_at DATETIME(3) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS youtube_previews (
+ token_hash CHAR(64) NOT NULL PRIMARY KEY, account_id CHAR(36) NOT NULL, encrypted_payload LONGTEXT NOT NULL,
+ status VARCHAR(20) NOT NULL DEFAULT 'pending', result JSON NULL, error VARCHAR(1000) NULL,
+ expires_at DATETIME(3) NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ INDEX idx_youtube_preview_expiry(expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS youtube_uploads (
+ id CHAR(36) NOT NULL PRIMARY KEY, account_id CHAR(36) NOT NULL, video_job_id CHAR(36) NOT NULL,
+ kind VARCHAR(20) NOT NULL, status VARCHAR(24) NOT NULL DEFAULT 'queued', metadata JSON NOT NULL,
+ encrypted_session LONGTEXT NULL, total_bytes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+ uploaded_bytes BIGINT UNSIGNED NOT NULL DEFAULT 0, remote_video_id VARCHAR(80) NULL, error VARCHAR(1000) NULL,
+ attempts INT NOT NULL DEFAULT 0, lease_until DATETIME(3) NULL, lease_token VARCHAR(64) NULL, next_attempt_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+ CONSTRAINT fk_youtube_video_job FOREIGN KEY(video_job_id) REFERENCES video_studio_jobs(id) ON DELETE RESTRICT,
+ INDEX idx_youtube_upload_queue(status,next_attempt_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

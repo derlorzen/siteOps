@@ -89,6 +89,16 @@ SiteOps is intended for people or agencies that manage multiple customer website
 
 ## What SiteOps does
 
+### Video Studio and YouTube
+
+Produce English/German videos and Shorts directly from ChatGPT through the
+existing MCP integration, reuse approved test-only demo scenes, and prepare
+localized YouTube metadata. The YouTube workspace connects your channel with
+Google OAuth and provides reviewed channel/video/playlist/comment/caption
+management plus private resumable uploads from Video Studio.
+See [video production](docs/VIDEO_PRODUCTION.md) and
+[YouTube setup and supported API functions](docs/YOUTUBE.md).
+
 ### LorzCMS administration
 
 The **LorzCMS** page manages the shared CMS core, release publication, selected
