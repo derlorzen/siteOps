@@ -1,0 +1,28 @@
+name: Temporary auth branch formatter
+on:
+  push:
+    branches: [fix/session-login-oauth-20261025]
+permissions:
+  contents: write
+jobs:
+  format:
+    if: "!contains(github.event.head_commit.message, '[format-ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/session-login-oauth-20261025
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --write app.mjs lib/dashboard-session.mjs test/dashboard-session.test.mjs
+      - run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add app.mjs lib/dashboard-session.mjs test/dashboard-session.test.mjs
+            git commit -m "style(auth): autoformat session login [format-ci]"
+            git push
+          fi
