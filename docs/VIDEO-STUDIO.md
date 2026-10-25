@@ -12,7 +12,7 @@ The SiteOps dashboard now has a Video Studio workspace for creating faceless You
 - Authenticated downloads, progress polling and persistent job metadata
 - MCP tools: video_studio_projects, video_studio_create_job, video_studio_render_job, video_studio_job_status
 
-The initial stage produced a narrated slideshow. The second stage adds real Playwright-recorded browser actions for selected scenes. A demo URL without steps still creates a still screenshot. Interactive browser recording, AI script generation within the SiteOps UI, video timeline editing, multiple edited Shorts and YouTube OAuth publication are later stages. ChatGPT can author a script and create a draft through the MCP tools without another paid text-generation API.
+The initial stage produced a narrated slideshow. Later stages add real Playwright-recorded browser actions and German narration for selected scenes. A demo URL without steps still creates a still screenshot. Interactive browser recording, AI script generation within the SiteOps UI, video timeline editing, multiple edited Shorts and YouTube OAuth publication are later stages. ChatGPT can author a script and create a draft through the MCP tools without another paid text-generation API.
 
 ## Sprecherstimmen: Kokoro oder OpenAI
 
@@ -104,3 +104,30 @@ An approved HTTPS host must be listed in the runner's `VIDEO_ALLOWED_HOSTS` comm
 The renderer records user-visible interactions in a WebM video, overlays the generated narration, and holds the last frame until the audio is finished. Slides and static screenshots remain available. In the UI, the **Erweiterter Szenenplan (JSON)** editor accepts the `scenes` array from the example (without the outer job fields). You can create it directly from a ChatGPT MCP tool call as well.
 
 Video publishing to YouTube, AI-generated on-screen actions without a reviewed plan, credential vaults and voice synchronization editing remain future work.
+
+
+## Bilingual German and English production (current)
+
+At project creation, select the video language and narration provider:
+
+| Language | Local (no API usage cost) | Optional paid API |
+| --- | --- | --- |
+| English (`en`) | Kokoro: `am_michael`, `am_adam`, `af_heart`, `bf_emma`, `bm_george` | OpenAI `gpt-audio-1.5` |
+| German (`de`) | Piper: `de_DE-thorsten-medium` (Standard German) | OpenAI `gpt-audio-1.5` |
+
+The language and voice provider are validated together. German cannot be synthesized using English Kokoro and English cannot be synthesized with the German-only Piper model. Narration instructions for the OpenAI mode are sent in the selected language. You can still create different English and German projects for the same channel.
+
+### Voice model setup
+
+Voice model files are no longer a manual prerequisite: for local voices the runner downloads the required English Kokoro or German Piper ONNX assets on the **first render**, verifies their published cryptographic checksums, and caches them in `VIDEO_MODEL_DIR` (`/data/video-studio/models` in Docker). Downloads may initially take time and require outbound HTTPS. Later renders reuse the saved model files.
+
+Kokoro voice assets: thewh1teagle/kokoro-onnx's fixed `model-files-v1.0` release.
+Piper German assets: rhasspy/piper-voices, `de_DE-thorsten-medium.onnx` and its `.json` configuration. The published voice model card names its training dataset as CC0. Please review the model card and dependencies before redistributing.
+
+Both local engines run inside the Browser Runner. The default runner Docker image includes `kokoro-onnx`, `piper-tts`, Python virtualenv, eSpeak library and FFmpeg. The Docker Compose example now mounts a persistent named volume `siteops-video-data`; don't remove it during routine redeployments. Never store model files inside Git.
+
+The authenticated `/video/capabilities` runner endpoint and SiteOps's `/api/video-studio/capabilities` proxy report supported languages, availability of cached model assets, and whether the optional OpenAI key has been configured. **Model cached** does not by itself guarantee a successful synthesis; verify the first complete German and English rendering.
+
+For an existing systemd installation, deploy the updated runner code and run `runner/install-systemd.sh` on the VPS (as root); it installs Piper and creates the writable model directory. Existing credentials and the bearer token are preserved.
+
+**Deployment boundary:** SiteOps running a newer web-app revision does not automatically redeploy the separate Browser Runner at `browse.lorzen.de`. The runner must be updated too. If the model download is blocked or the machine lacks free storage, voice generation fails with an error instead of silently falling back to paid OpenAI. No OpenAI API calls are performed unless the project explicitly chooses OpenAI.

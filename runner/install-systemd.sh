@@ -32,11 +32,14 @@ install -m 0644 "${SOURCE_DIR}/video-studio.mjs" "${APP_DIR}/video-studio.mjs"
 install -m 0644 "${SOURCE_DIR}/video-demo.mjs" "${APP_DIR}/video-demo.mjs"
 install -m 0644 "${SOURCE_DIR}/openai-audio.mjs" "${APP_DIR}/openai-audio.mjs"
 install -m 0644 "${SOURCE_DIR}/kokoro-voice.py" "${APP_DIR}/kokoro-voice.py"
+install -m 0644 "${SOURCE_DIR}/piper-voice.py" "${APP_DIR}/piper-voice.py"
+install -m 0644 "${SOURCE_DIR}/ensure-voice-models.py" "${APP_DIR}/ensure-voice-models.py"
 # FFmpeg and Kokoro are needed only for Video Studio rendering.
-apt-get update && apt-get install -y --no-install-recommends ffmpeg python3-venv
+apt-get update && apt-get install -y --no-install-recommends ffmpeg python3-venv libespeak-ng1
 if [[ ! -x "${APP_DIR}/venv/bin/python3" ]]; then python3 -m venv "${APP_DIR}/venv"; fi
-"${APP_DIR}/venv/bin/pip" install --upgrade kokoro-onnx soundfile
+"${APP_DIR}/venv/bin/pip" install --upgrade kokoro-onnx soundfile piper-tts
 install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0750 /var/lib/siteops-video-studio
+install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0750 /var/lib/siteops-video-studio/models
 
 cd "${APP_DIR}"
 PLAYWRIGHT_BROWSERS_PATH=0 npm install --omit=dev
@@ -52,6 +55,7 @@ PORT=3200
 BROWSER_RUNNER_TOKEN=${TOKEN}
 VIDEO_PYTHON=/opt/siteops-browser-runner/venv/bin/python3
 VIDEO_OUTPUT_DIR=/var/lib/siteops-video-studio
+VIDEO_MODEL_DIR=/var/lib/siteops-video-studio/models
 EOF
   echo
   echo "Generated runner token (store it in SiteOps -> Einstellungen -> Synthetic Runner):"

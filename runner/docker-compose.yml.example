@@ -11,5 +11,15 @@ services:
     restart: unless-stopped
     environment:
       BROWSER_RUNNER_TOKEN: 'replace-with-a-long-random-token'
+      VIDEO_OUTPUT_DIR: /data/video-studio
+      VIDEO_MODEL_DIR: /data/video-studio/models
+      # Optional: OpenAI is only used when a project explicitly selects OpenAI.
+      # OPENAI_API_KEY: 'set-through-your-secret-manager'
+      # VIDEO_ALLOWED_HOSTS: 'demo.example.com'
+    volumes:
+      - siteops-video-data:/data/video-studio
     ports:
       - '127.0.0.1:3200:3200'
+
+volumes:
+  siteops-video-data:

@@ -10,8 +10,22 @@ import { narrateWithOpenAI } from './openai-audio.mjs';
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
 const ALLOWED=(process.env.VIDEO_ALLOWED_HOSTS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
 const KOKORO_VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
+const PIPER_VOICES=new Set(['de_DE-thorsten-medium']);
 const OPENAI_VOICES=new Set(['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar']);
 const MAX_JOBS=Number(process.env.VIDEO_MAX_JOBS||30);
+const MODEL_DIR=process.env.VIDEO_MODEL_DIR||path.join(ROOT,'models');
+const modelInstallers=new Map();
+async function ensureOfflineModels(provider){
+  if(process.env.VIDEO_TTS_MODE==='silent')return;
+  if(!modelInstallers.has(provider)){
+    const action=exec(process.env.VIDEO_PYTHON||'python3',[
+      new URL('./ensure-voice-models.py',import.meta.url).pathname,
+      '--provider',provider,'--directory',MODEL_DIR],{timeoutMs:900000});
+    modelInstallers.set(provider,action);
+    action.catch(()=>modelInstallers.delete(provider));
+  }
+  await modelInstallers.get(provider);
+}
 let active=0;
 const queue=[];
 const statuses=new Map();
@@ -36,9 +50,12 @@ function validate(payload){
   if(!Array.isArray(payload.scenes)||!payload.scenes.length||payload.scenes.length>24)
     throw new Error('1–24 scenes required.');
   const voiceProvider=payload.voiceProvider || 'kokoro';
-  if(!['kokoro','openai'].includes(voiceProvider))throw new Error('Unsupported voice provider.');
-  if(!(voiceProvider==='kokoro'?KOKORO_VOICES:OPENAI_VOICES).has(payload.voice))
-    throw new Error('Unsupported voice for '+voiceProvider+'.');
+  if(!['kokoro','piper','openai'].includes(voiceProvider))throw new Error('Unsupported voice provider.');
+  const voiceSet=voiceProvider==='kokoro'?KOKORO_VOICES:voiceProvider==='piper'?PIPER_VOICES:OPENAI_VOICES;
+  if(!voiceSet.has(payload.voice))throw new Error('Unsupported voice for '+voiceProvider+'.');
+  if ((payload.language==='de' && voiceProvider==='kokoro') ||
+      (payload.language==='en' && voiceProvider==='piper'))
+    throw new Error('Language does not match offline voice provider.');
   if(!['en','de'].includes(payload.language)||!['landscape','portrait'].includes(payload.format))
     throw new Error('Unsupported language or format.');
   const scenes=payload.scenes.map((s,i)=>{
@@ -80,7 +97,7 @@ const scenePage=(scene,title,index,total,orientation)=>{
     '.foot{position:absolute;bottom:63px;left:'+(vertical?'68px':'145px')+';opacity:.65;font-size:23px}'+
     '.orb{position:absolute;right:-190px;bottom:-300px;border:2px solid #389dd633;border-radius:50%;width:730px;height:730px}'+
     '</style></head><body><div class="brand">LORZEN · VIDEO STUDIO</div><div class="orb"></div><div class="frame">'+
-    '<span class="tag">SCENE '+String(index+1).padStart(2,'0')+'</span>'+
+    '<span class="tag">'+(scene.language==='de'?'SZENE ':'SCENE ')+String(index+1).padStart(2,'0')+'</span>'+
     '<h1>'+esc(scene.headline||title)+'</h1><div class="rule"></div>'+
     '<p>'+esc(scene.narration.slice(0,230))+'</p></div>'+
     '<div class="foot">'+esc(title)+' · '+(index+1)+' / '+total+'</div></body></html>';
@@ -116,14 +133,21 @@ async function voice(scene,job,i,dir){
       String(Math.min(120,Math.max(4,scene.narration.split(/\s+/).length/2.3))),
       '-c:a','pcm_s16le',target],{timeoutMs:30000});
   }else if(voiceProvider==='openai'){
-    await narrateWithOpenAI(scene.narration,target,{voice:job.voice});
+    await narrateWithOpenAI(scene.narration,target,{voice:job.voice,language:job.language});
   }else if(voiceProvider==='kokoro'){
+    await ensureOfflineModels('kokoro');
     await exec(process.env.VIDEO_PYTHON||'python3',
       [new URL('./kokoro-voice.py',import.meta.url).pathname,
-        '--model',process.env.KOKORO_MODEL_PATH||'/models/kokoro-v1.0.onnx',
-        '--voices',process.env.KOKORO_VOICES_PATH||'/models/voices-v1.0.bin',
+        '--model',process.env.KOKORO_MODEL_PATH||path.join(MODEL_DIR,'kokoro-v1.0.onnx'),
+        '--voices',process.env.KOKORO_VOICES_PATH||path.join(MODEL_DIR,'voices-v1.0.bin'),
         '--text',narration,'--output',target,'--voice',job.voice,'--language',job.language],
       {timeoutMs:240000});
+  }else if(voiceProvider==='piper'){
+    await ensureOfflineModels('piper');
+    await exec(process.env.VIDEO_PYTHON||'python3',
+      [new URL('./piper-voice.py',import.meta.url).pathname,
+        '--model',path.join(MODEL_DIR,'de_DE-thorsten-medium.onnx'),
+        '--text',narration,'--output',target],{timeoutMs:240000});
   }else{
     throw new Error('Unsupported VIDEO_TTS_PROVIDER: '+voiceProvider);
   }
@@ -158,7 +182,7 @@ async function render(job){
     const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:1,ignoreHTTPSErrors:false});
     const page=await context.newPage();
     for(let i=0;i<job.scenes.length;i++){
-      const scene=job.scenes[i];
+      const scene={...job.scenes[i],language:job.language};
       job.progress=Math.round(i/job.scenes.length*85);
       await persist(job);
       const recording = Boolean(scene.demoUrl && scene.demoSteps?.length);
@@ -219,6 +243,18 @@ function dispatch(){
   }
 }
 export function registerVideoRunner(app,auth){
+  app.get('/video/capabilities',async(req,reply)=>{
+    if(!auth(req,reply))return;
+    const exists=async file=>fs.access(file).then(()=>true).catch(()=>false);
+    const kokoroFiles=await Promise.all(['kokoro-v1.0.onnx','voices-v1.0.bin'].map(n=>exists(path.join(MODEL_DIR,n))));
+    const piperFiles=await Promise.all(['de_DE-thorsten-medium.onnx','de_DE-thorsten-medium.onnx.json'].map(n=>exists(path.join(MODEL_DIR,n))));
+    return {
+      languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
+      offlineModels:{kokoro:kokoroFiles.every(Boolean),piper:piperFiles.every(Boolean)},
+      modelAutoinstall:true, openaiConfigured:Boolean(process.env.OPENAI_API_KEY),
+      ffmpegRequired:true,queued:queue.length,running:active
+    };
+  });
   app.post('/video/jobs',async(req,reply)=>{
     if(!auth(req,reply))return;
     let parsed;
