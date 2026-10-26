@@ -162,6 +162,9 @@
           .join('');
       if (projects.some(p => p.id === old)) el.value = old;
       else if (projects.length) el.value = projects[0].id;
+      if (el.value !== old) el.dispatchEvent(new Event('change'));
+      const selected = projects.find(p => p.id === el.value);
+      if (selected) { $('#vs-project-name').value = selected.name; $('#vs-channel').value = selected.channel; $('#vs-language').value = selected.language; $('#vs-voice-provider').value = selected.voice_provider || (selected.language === 'de' ? 'piper' : 'kokoro'); syncLanguage(); $('#vs-voice').value = selected.voice; }
       $('#vs-jobs').innerHTML = jobs.length
         ? jobs
             .map(j => {
@@ -187,7 +190,9 @@
                 escapeHtml(formatDate(j.created_at)) +
                 '</small>' +
                 (j.error ? '<p class="vs-error">' + escapeHtml(j.error) + '</p>' : '') +
+                (available ? '<video class="suite-result-video" controls preload="none" src="/api/video-suite/preview/' + encodeURIComponent(j.id) + '" aria-label="Videovorschau"></video>' : '') +
                 '<div class="vs-row">' +
+                '<button type="button" class="ghost" data-edit="' + escapeHtml(j.id) + '">Als Entwurf öffnen</button>' +
                 (['draft', 'failed'].includes(j.status)
                   ? '<button type="button" data-render="' + escapeHtml(j.id) + '">Video rendern</button>'
                   : '') +
@@ -199,7 +204,7 @@
                     fileLink('short', 'Short 9:16') +
                     fileLink('subtitles', 'Untertitel') +
                     fileLink('thumbnail', 'Thumbnail') +
-                    fileLink('metadata', 'YouTube-Metadaten')
+                    fileLink('metadata', 'YouTube-Metadaten') + '<a href="/youtube#upload?job=' + encodeURIComponent(j.id) + '">An YouTube übergeben →</a>'
                   : '') +
                 '</div></article>'
               );
@@ -297,6 +302,7 @@
       });
       await reload();
       $('#vs-project').value = created.id;
+      $('#vs-project').dispatchEvent(new Event('change'));
       $('#vs-project-name').value = '';
       msg('Projekt wurde erstellt.');
     } catch (e) {
@@ -356,6 +362,11 @@
     }
   });
   $('#vs-jobs').addEventListener('click', async event => {
+    const edit = event.target.closest('[data-edit]');
+    if (edit) {
+      try { const r = await api('/api/video-studio/jobs/' + edit.dataset.edit); document.dispatchEvent(new CustomEvent('suite-open-production', { detail: r })); } catch (e) { msg(e.message, true); }
+      return;
+    }
     const render = event.target.closest('[data-render]'),
       check = event.target.closest('[data-check]');
     if (!render && !check) return;

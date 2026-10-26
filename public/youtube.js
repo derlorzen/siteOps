@@ -219,6 +219,7 @@
       if (video) renderPlayer();
       if (channel && !library.length) await loadVideos();
     }
+    if (tab === 'captions') await importSuiteThumbnail();
     if (tab === 'upload') {
       await loadJobs();
       if ($('yt-account').value) await loadUploads();
@@ -640,6 +641,18 @@
     });
     return { mime_type: file.type || 'application/octet-stream', data_base64: data };
   }
+  async function importSuiteThumbnail() {
+    const id = new URLSearchParams(location.hash.split('?')[1] || '').get('asset');
+    if (!id || !/^[a-f0-9-]{36}$/i.test(id)) return;
+    const image = new Image(); image.src = '/api/video-suite/assets/' + encodeURIComponent(id); await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width=1280; canvas.height=720;
+    const h=image.width*9/16; canvas.getContext('2d').drawImage(image,0,(image.height-h)/2,image.width,h,0,0,1280,720);
+    const blob = await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.9));
+    if (!blob) throw Error('Titelbild konnte nicht übernommen werden.');
+    const transfer = new DataTransfer(); transfer.items.add(new File([blob],'video-suite-thumbnail.jpg',{type:'image/jpeg'}));
+    $('yt-thumbnail').files=transfer.files; $('yt-thumbnail').dispatchEvent(new Event('change'));
+    notify('Titelbild aus Video Suite übernommen. Video-ID wählen und Thumbnailänderung prüfen.');
+  }
   $('yt-thumbnail').addEventListener('change', () => {
     if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
     thumbnailUrl = undefined;
@@ -668,6 +681,8 @@
     if (!r.ok) throw Error('Video-Studio-Aufträge konnten nicht geladen werden.');
     const jobs = (await r.json()).filter(x => x.status === 'done');
     choices('yt-upload-job', jobs, x => x.title);
+    const requestedJob = new URLSearchParams(location.hash.split('?')[1] || '').get('job');
+    if (jobs.some(j => j.id === requestedJob)) $('yt-upload-job').value = requestedJob;
     if (!jobs.length) $('yt-upload-job').append(new Option('Keine abgeschlossenen Aufträge vorhanden', ''));
   }
   click('yt-upload-preview', async () => {
@@ -837,6 +852,7 @@
       $('yt-operation-result').textContent = JSON.stringify(await read(definition.action, parameters), null, 2);
     else await preview(definition.action, parameters, body, media);
   });
+  if (['upload','videos','channel','playlists','comments','captions','advanced'].includes(location.hash.slice(1).split('?')[0])) selectTab(location.hash.slice(1).split('?')[0]).catch(e=>notify(e.message,true));
   loadStatus().catch(e => {
     notify(e.message, true);
     $('yt-status').textContent = 'Verbindung konnte nicht geprüft werden.';

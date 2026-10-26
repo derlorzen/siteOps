@@ -48,6 +48,7 @@ import { createYouTubeService } from './lib/youtube.mjs';
 import { createYouTubeUploadWorker } from './lib/youtube-upload.mjs';
 import { registerYouTubeRoutes, registerYouTubeTools } from './lib/youtube-api.mjs';
 import { renderYouTube } from './lib/youtube-ui.mjs';
+import { createVideoSuiteAgent, registerVideoSuiteRoutes } from './lib/video-suite-agent.mjs';
 import { renderVideoStudio } from './lib/video-studio-ui.mjs';
 import { createDashboardSessions } from './lib/dashboard-session.mjs';
 
@@ -5697,7 +5698,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/coolify">Coolify</a><a href="/youtube">YouTube</a><a href="/settings">Einstellungen</a><a href="/logout">Abmelden</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/coolify">Coolify</a><a href="/video-suite">Video Suite</a><a href="/settings">Einstellungen</a><a href="/logout">Abmelden</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -7346,6 +7347,13 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/lorzcms.js', import.meta.url), 'utf8'))
   );
+  for (const asset of ['video-suite.css', 'video-suite.js'])
+    app.get('/assets/' + asset, async (_req, reply) =>
+      reply
+        .type(asset.endsWith('.css') ? 'text/css' : 'text/javascript')
+        .header('Cache-Control', 'no-store')
+        .send(await readFile(new URL('./public/' + asset, import.meta.url), 'utf8'))
+    );
   app.get('/assets/youtube.js', async (_req, reply) =>
     reply.type('text/javascript').send(await readFile(new URL('./public/youtube.js', import.meta.url), 'utf8'))
   );
@@ -7477,6 +7485,11 @@ async function start() {
     runnerToken: () => cfg.browserRunnerToken,
     publicBaseUrl: () => cfg.publicBaseUrl,
     downloadKey: () => key()
+  });
+  registerVideoSuiteRoutes(app, createVideoSuiteAgent({ db, encrypt, decrypt, studio: videoStudioService }), {
+    page,
+    render: renderVideoStudio,
+    origin: () => new URL(cfg.publicBaseUrl).origin
   });
   registerVideoStudioRoutes(app, videoStudioService, page, renderVideoStudio, () => new URL(cfg.publicBaseUrl).origin);
   registerYouTubeRoutes(app, youtubeService, {
