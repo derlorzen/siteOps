@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
+import { authenticateDemo, validateDemoLogin } from './video-login.mjs';
 import { narrateWithOpenAI } from './openai-audio.mjs';
 import { videoFileRange } from './video-file-range.mjs';
 
@@ -30,6 +31,8 @@ async function ensureOfflineModels(provider){
 let active=0;
 const queue=[];
 const statuses=new Map();
+// Credentials and browser sessions are kept in RAM only, never in job status or files.
+const jobLogins=new Map();
 const esc=v=>String(v??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const uuid=x=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(x||''));
@@ -64,8 +67,15 @@ function validate(payload){
     const narration=String(s.narration||'').trim(),headline=String(s.headline||'').trim();
     if(narration.length<5||narration.length>1400||headline.length>160)throw new Error('Invalid scene '+(i+1));
     const demoUrl=safeDemoUrl(s.demoUrl,policy.hosts);
-    return {narration,headline,demoUrl,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,policy.hosts)};
+    if(s.login_profile_id && (!uuid(s.login_profile_id) || !demoUrl || s.test_data_only!==true))throw Error('Authenticated demos require a valid profile and confirmed test data.');
+    return {narration,headline,demoUrl,login_profile_id:s.login_profile_id,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,policy.hosts)};
   });
+  if(payload.demoLogins!==undefined && (!Array.isArray(payload.demoLogins)||payload.demoLogins.length>10))throw Error('Invalid demo login profiles.');
+  const logins=(payload.demoLogins||[]).map(profile=>validateDemoLogin(profile,policy.hosts));
+  for(const scene of scenes.filter(s=>s.login_profile_id)){
+    const login=logins.find(x=>x.id===scene.login_profile_id);
+    if(!login || new URL(login.login_url).origin!==new URL(scene.demoUrl).origin)throw Error('Matching demo login profile required.');
+  }
   return {id:payload.id,title:String(payload.title||'').slice(0,200),voice:payload.voice,
     voiceProvider,language:payload.language,format:payload.format,scenes,demoPolicy:policy};
 }
@@ -104,14 +114,16 @@ const scenePage=(scene,title,index,total,orientation)=>{
     '<p>'+esc(scene.narration.slice(0,230))+'</p></div>'+
     '<div class="foot">'+esc(title)+' · '+(index+1)+' / '+total+'</div></body></html>';
 };
-export async function captureSceneScreenshot(browser,scene,job,i,dir,proxyFactory){
-  const guarded=await createDemoContext(browser,{viewport:job.format==='portrait'?{width:1080,height:1920}:{width:1920,height:1080}},job.demoPolicy.hosts,proxyFactory);
+export async function captureSceneScreenshot(browser,scene,job,i,dir,proxyFactory,storageState){
+  const guarded=await createDemoContext(browser,{...(storageState?{storageState}:{}),viewport:job.format==='portrait'?{width:1080,height:1920}:{width:1920,height:1080}},job.demoPolicy.hosts,proxyFactory);
   try {
   const page=await guarded.context.newPage();
   const target=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
   if(scene.demoUrl){
-    await page.goto(scene.demoUrl,{waitUntil:'domcontentloaded',timeout:30000});
+    const response=await page.goto(scene.demoUrl,{waitUntil:'domcontentloaded',timeout:30000});
+    if(storageState && !response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
     validatedDemoUrl(page.url(),job.demoPolicy.hosts);
+    if(storageState && await page.locator('input[type="password"]').first().isVisible())throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
     await page.waitForTimeout(1200);
   }else await page.setContent(scenePage(scene,job.title,i,job.scenes.length,job.format),{waitUntil:'load'});
   await page.screenshot({path:target,type:'png',animations:'disabled'});
@@ -161,6 +173,17 @@ async function duration(wav){
   if(!Number.isFinite(n)||n<=0)throw Error('Invalid narration duration');
   return n;
 }
+export async function verifyVideoDimensions(filename,width,height) {
+  const actual=await new Promise((resolve,reject)=>{
+    const child=spawn('ffprobe',['-v','error','-select_streams','v:0','-show_entries','stream=width,height','-of','csv=p=0',filename]);
+    let output=''; const timer=setTimeout(()=>{child.kill('SIGKILL');reject(Error('Video quality check timed out.'));},30000);
+    child.stdout.on('data',chunk=>{output+=chunk.toString().slice(0,100);});
+    child.on('error',error=>{clearTimeout(timer);reject(error);});
+    child.on('close',code=>{clearTimeout(timer);code===0?resolve(output.trim()):reject(Error('Video quality check failed.'));});
+  });
+  if(actual!==width+','+height)throw Error('Full-HD-Prüfung fehlgeschlagen: erwartet '+width+'×'+height+', erhalten '+actual+'.');
+  return {width,height};
+}
 function srtTime(seconds){
   const ms=Math.round(seconds*1000),h=Math.floor(ms/3600000),m=Math.floor(ms/60000)%60,s=Math.floor(ms/1000)%60,n=ms%1000;
   return [h,m,s].map(x=>String(x).padStart(2,'0')).join(':')+','+String(n).padStart(3,'0');
@@ -171,6 +194,7 @@ async function render(job){
   const width=portrait?1080:1920,height=portrait?1920:1080;
   let browser=null;
   const parts=[],subtitles=[];
+  const sessions=new Map();
   let current=0;
   try{
     browser=await chromium.launch({headless:true,args:demoBrowserArgs});
@@ -178,19 +202,22 @@ async function render(job){
       const scene={...job.scenes[i],language:job.language};
       job.progress=Math.round(i/job.scenes.length*85);
       await persist(job);
+      const profile=(jobLogins.get(job.id)||[]).find(x=>x.id===scene.login_profile_id);
+      if(scene.login_profile_id && !sessions.has(scene.login_profile_id)) sessions.set(scene.login_profile_id,await authenticateDemo(browser,profile,job.demoPolicy.hosts));
+      const storageState=sessions.get(scene.login_profile_id);
       const recording = Boolean(scene.demoUrl && scene.demoSteps?.length);
       const png = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
       if (recording) {
-        await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png);
+        await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png,undefined,storageState);
       } else {
-        await captureSceneScreenshot(browser,scene,job,i,dir);
+        await captureSceneScreenshot(browser,scene,job,i,dir,undefined,storageState);
       }
       const wav=await voice(scene,job,i,dir);
       const len=await duration(wav),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
       if (recording) {
         await exec('ffmpeg',['-y','-i',webm,'-i',wav,
-          '-vf','fps=25,tpad=stop_mode=clone:stop_duration=125',
+          '-vf','scale='+width+':'+height+',setsar=1,fps=25,tpad=stop_mode=clone:stop_duration=125',
           '-t',String(len),'-c:v','libx264','-preset','veryfast',
           '-pix_fmt','yuv420p','-r','25','-c:a','aac','-b:a','128k',
           '-movflags','+faststart',out]);
@@ -212,11 +239,15 @@ async function render(job){
       'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=0x071126',
       '-c:v','libx264','-preset','veryfast','-c:a','aac','-movflags','+faststart',path.join(dir,'short.mp4')]);
     await fs.copyFile(path.join(dir,'scene-00.png'),path.join(dir,'thumbnail.png'));
+    await verifyVideoDimensions(path.join(dir,'video.mp4'),width,height);
+    await verifyVideoDimensions(path.join(dir,'short.mp4'),1080,1920);
+    job.resolution={width,height};
     job.status='done';job.progress=100;job.duration=Math.round(current);
     job.files=['video','short','subtitles','thumbnail'];
   }catch(error){
     job.status='failed';job.error=String(error.message||error).slice(0,1000);
   }finally{
+    jobLogins.delete(job.id); sessions.clear();
     if(browser)await browser.close().catch(()=>{});
     await persist(job);
     active=Math.max(0,active-1);
@@ -229,6 +260,7 @@ function dispatch(){
     active++;
     job.status='running';job.progress=0;
     persist(job).then(()=>render(job)).catch(async error=>{
+      jobLogins.delete(job.id);
       job.status='failed';job.error=String(error.message||error);await persist(job);
       active=Math.max(0,active-1);dispatch();
     });
@@ -243,12 +275,22 @@ export function registerVideoRunner(app,auth){
     let demoEnvironmentPolicy=null,demoEnvironmentError=null;
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
+      demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
       offlineModels:{kokoro:kokoroFiles.every(Boolean),piper:piperFiles.every(Boolean)},
       modelAutoinstall:true, openaiConfigured:Boolean(process.env.OPENAI_API_KEY),
       ffmpegRequired:true,queued:queue.length,running:active
     };
+  });
+  app.post('/video/demo-login/test',{config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if(!auth(req,reply))return;
+    let policy,profile;
+    try{policy=demoPolicy(req.body?.demoPolicy);profile=validateDemoLogin(req.body?.profile,policy.hosts);}catch{return reply.code(422).send({error:'Ungültiges Demo-Loginprofil oder nicht freigegebene Domain.'});}
+    let browser;
+    try{browser=await chromium.launch({headless:true,args:demoBrowserArgs});await authenticateDemo(browser,profile,policy.hosts);return {ok:true};}
+    catch(error){return reply.code(422).send({error:error.message});}
+    finally{await browser?.close().catch(()=>{});}
   });
   app.post('/video/jobs',async(req,reply)=>{
     if(!auth(req,reply))return;
@@ -259,7 +301,10 @@ export function registerVideoRunner(app,auth){
     if(old) return reply.code(409).send({error:'Job already exists.'});
     if(queue.length+active>=MAX_JOBS)return reply.code(429).send({error:'Video queue full.'});
     const job={...parsed,status:'queued',progress:0,files:[],error:null,createdAt:new Date().toISOString()};
-    await persist(job);queue.push(job);dispatch();
+    const profiles=(req.body.demoLogins||[]).map(x=>validateDemoLogin(x,parsed.demoPolicy.hosts));
+    if(profiles.length)jobLogins.set(job.id,profiles);
+    try{await persist(job);}catch(error){jobLogins.delete(job.id);throw error;}
+    queue.push(job);dispatch();
     return reply.code(202).send({id:job.id,status:'queued'});
   });
   app.get('/video/jobs/:id',async(req,reply)=>{
@@ -267,7 +312,7 @@ export function registerVideoRunner(app,auth){
     if(!uuid(req.params.id))return reply.code(400).send({error:'Invalid job ID'});
     const job=await load(req.params.id);
     if(!job)return reply.code(404).send({error:'Job not found'});
-    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration};
+    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution};
   });
   app.get('/video/jobs/:id/file',async(req,reply)=>{
     if(!auth(req,reply))return;

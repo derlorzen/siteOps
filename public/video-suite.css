@@ -118,3 +118,5 @@ body.siteops-workspace .suite .suite-content{padding:0;max-width:none;margin:0;w
 .suite-knowledge-list article { padding: 1rem; border: 1px solid var(--border,#dce2e9); border-radius: 10px; }
 .suite-knowledge-list h3 { margin: 0; font-size: 1rem; }
 .suite-knowledge-list small { overflow-wrap: anywhere; color: var(--muted,#64748b); }
+
+.suite-chat-attachments{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}.suite-chat-attachments>div{display:flex;flex-direction:column;gap:5px;max-width:180px;overflow-wrap:anywhere}.suite-chat-image{display:block;max-width:min(100%,360px);max-height:180px;object-fit:contain;border:1px solid #dce2e9;border-radius:8px}.suite-chat-attachments .suite-chat-image{width:160px;height:96px}.suite-chat-message>a{display:inline-block;margin:12px 8px 0 0}

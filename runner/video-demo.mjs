@@ -126,7 +126,8 @@ export async function recordDemoScene(
   { width, height },
   hosts,
   imagePath,
-  proxyFactory = createDemoProxy
+  proxyFactory = createDemoProxy,
+  storageState
 ) {
   const url = validatedDemoUrl(scene.demoUrl, hosts);
   const steps = validatedDemoSteps(scene.demoSteps || [], url, hosts);
@@ -138,6 +139,7 @@ export async function recordDemoScene(
       browser,
       {
         viewport: { width, height },
+        ...(storageState ? {storageState} : {}),
         recordVideo: { dir: tmpDir, size: { width, height } },
         ignoreHTTPSErrors: false,
         reducedMotion: 'reduce',
@@ -149,11 +151,14 @@ export async function recordDemoScene(
     const { context } = guarded;
     const page = await context.newPage();
     page.setDefaultTimeout(12000);
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    const response=await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    if(storageState && !response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
+    if(storageState && await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
     await page.waitForTimeout(700);
     for (const step of steps) {
       await executeDemoStep(page, step);
       validatedDemoUrl(page.url(), hosts);
+      if(storageState && await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung abgelaufen. Keine gültige Aufnahme.');
       await page.waitForTimeout(500);
     }
     await page.waitForTimeout(700);

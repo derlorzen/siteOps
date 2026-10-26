@@ -24,7 +24,7 @@
   });
   window.addEventListener('hashchange', () => view(location.hash.slice(1)));
   view(location.hash.slice(1));
-  let projectId = '', conversationId, latest, scenes = [], saveTimer, dirty = false, loading = false, sending = false;
+  let projectId = '', conversationId, latest, scenes = [], saveTimer, dirty = false, loading = false, sending = false, uploadingImages = false, chatAttachments = [];
   const draftFields = ['vs-title', 'vs-topic', 'vs-script', 'vs-scene-json', 'vs-youtube-json', 'vs-format'];
   const snapshot = () => ({ title: $('vs-title').value, topic: $('vs-topic').value, script: $('vs-script').value, scene_json: $('vs-scene-json').value, youtube_json: $('vs-youtube-json').value, format: $('vs-format').value });
   function fillDraft(draft) {
@@ -67,12 +67,14 @@
     $('vs-scene-json').value = JSON.stringify(scenes, null, 2);
     $('vs-script').value = scenes.map(s => s.narration).join('\n\n'); changed();
   }
+  let availableTemplates=[];
+  document.addEventListener('suite-templates-loaded',event=>{availableTemplates=event.detail || [];drawScenes();});
   function drawScenes() {
     const container = $('suite-scene-list'); container.replaceChildren();
     scenes.forEach((scene, i) => {
       const card = document.createElement('div'); card.className = 'suite-scene-card';
       const head = document.createElement('div'); head.className = 'suite-scene-head';
-      const title = document.createElement('strong'); title.textContent = 'Szene ' + (i + 1) + (scene.demoUrl ? ' · Browser-Demo' : ''); head.append(title);
+      const title = document.createElement('strong'); title.textContent = 'Szene ' + (i + 1) + (scene.demoUrl || scene.template_id ? ' · Browser-Demo' : ''); head.append(title);
       for (const [text, label, action] of [
         ['↑', 'Szene nach oben', () => { if (i) [scenes[i-1], scenes[i]] = [scenes[i], scenes[i-1]]; }],
         ['↓', 'Szene nach unten', () => { if (i < scenes.length-1) [scenes[i+1], scenes[i]] = [scenes[i], scenes[i+1]]; }],
@@ -87,6 +89,19 @@
         if (multiline) field.rows = key === 'narration' ? 3 : 2;
         field.addEventListener('input', () => { scene[key] = field.value; commitScenes(); }); l.append(field); card.append(l);
       }
+      const demoLabel=document.createElement('label'); demoLabel.textContent='Bildschirmaufnahme';
+      const demoSelect=document.createElement('select'); demoSelect.append(new Option('Texttafel / keine Bildschirmaufnahme',''));
+      for(const template of availableTemplates.filter(t=>t.language===$('vs-language').value)) demoSelect.append(new Option(template.name+(template.scene.login_profile_id?' · angemeldete Demo':''),template.id));
+      demoSelect.value=scene.template_id || '';
+      if(scene.demoUrl && !scene.template_id){const custom=new Option('Individueller Browser-Ablauf','custom');demoSelect.append(custom);demoSelect.value='custom';}
+      demoSelect.addEventListener('change',()=>{
+        const template=availableTemplates.find(t=>t.id===demoSelect.value);
+        for(const key of ['template_id','demoUrl','demoSteps','login_profile_id','test_data_only'])delete scene[key];
+        if(template)Object.assign(scene,template.scene,{template_id:template.id,narration:scene.narration,headline:scene.headline});
+        commitScenes();drawScenes();
+      });
+      demoLabel.append(demoSelect);card.append(demoLabel);
+      const hint=document.createElement('small');hint.textContent=scene.demoUrl || scene.template_id ? 'Echte Browser-Demo'+(scene.login_profile_id?' mit Anmeldung vor der Aufnahme.':'.') : 'Diese Szene zeigt eine Texttafel. Für echte Shop-Aufnahmen eine gespeicherte Demoszene auswählen.';card.append(hint);
       container.append(card);
     });
   }
@@ -95,13 +110,14 @@
   $('vs-template-use').addEventListener('click', () => { syncScenes(); if (scenes.length) commitScenes(); location.hash = 'script'; });
   async function selectProject() {
     const next = $('vs-project').value;
-    if (!next || next === projectId || loading || sending) return;
+    if (!next || next === projectId || loading || sending || uploadingImages) return;
     try { await saveCurrent(); }
     catch { $('vs-project').value = projectId; return; }
     const previous = projectId; projectId = next; loading = true;
     $('vs-project').disabled = true;
     try {
       const draft = await api('drafts/' + next);
+      chatAttachments=[]; drawAttachments();
       fillDraft(draft); conversationId = undefined; latest = undefined;
       $('suite-chat-log').replaceChildren();
       $('suite-thumbnail-canvas').hidden = true; $('suite-thumbnail-download').hidden = true;
@@ -118,11 +134,12 @@
     $('suite-conversation').replaceChildren(new Option('Neue Unterhaltung', ''), ...items.map(x => new Option(x.title, x.id)));
     if (conversationId) $('suite-conversation').value = conversationId;
   }
-  function appendMessage(role, text, result) {
+  function appendMessage(role, text, result, attachments=[]) {
     $('suite-chat-log').querySelector('.suite-chat-empty')?.remove();
     const item = document.createElement('div'); item.className = 'suite-chat-message'; item.dataset.role = role;
     const label = document.createElement('strong'); label.textContent = role === 'user' ? 'Du' : 'Creative Agent';
     const content = document.createElement('div'); content.textContent = text; item.append(label, content);
+    for(const attachment of attachments){const link=document.createElement('a');link.href=attachment.url;link.target='_blank';link.rel='noopener';const img=document.createElement('img');img.src=attachment.url;img.alt=attachment.name;img.loading='lazy';img.className='suite-chat-image';link.append(img);item.append(link);}
     if (result?.draft) {
       const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Vorschlag ansehen & übernehmen'; b.addEventListener('click', () => reviewDraft(result.draft)); item.append(b);
     }
@@ -155,12 +172,12 @@
     $('suite-social-posts').replaceChildren();
     for (const post of posts) { const article = document.createElement('article'); const h = document.createElement('h3'); h.textContent = post.platform; const p = document.createElement('p'); p.style.whiteSpace = 'pre-wrap'; p.textContent = post.text; const b = document.createElement('button'); b.type='button'; b.className='ghost'; b.textContent='Text kopieren'; b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(post.text); b.textContent='Kopiert'; } catch { b.textContent='Bitte Text markieren und kopieren'; } }); article.append(h,p,b); $('suite-social-posts').append(article); }
   }
-  $('suite-new-chat').addEventListener('click', () => { if (sending) return; conversationId = undefined; latest = undefined; $('suite-conversation').value = ''; $('suite-chat-log').replaceChildren(); });
+  $('suite-new-chat').addEventListener('click', () => { if (sending) return; conversationId = undefined; latest = undefined; chatAttachments=[]; drawAttachments(); $('suite-conversation').value = ''; $('suite-chat-log').replaceChildren(); });
   $('suite-conversation').addEventListener('change', async () => {
     if (sending) return;
     conversationId = $('suite-conversation').value || undefined; $('suite-chat-log').replaceChildren();
     if (!conversationId) return;
-    try { const data = await api('conversations/' + conversationId + '?project_id=' + projectId); for (const m of data.messages) appendMessage(m.role, m.text || m.result.reply, m.result); latest = data.messages.at(-1)?.result; if (latest?.social_posts) showPosts(latest.social_posts); }
+    try { const data = await api('conversations/' + conversationId + '?project_id=' + projectId); for (const m of data.messages) appendMessage(m.role, m.text || m.result.reply, m.result, m.attachments || []); latest = data.messages.at(-1)?.result; if (latest?.social_posts) showPosts(latest.social_posts); }
     catch (e) { $('suite-agent-status').textContent = e.message; }
   });
   const presets = {
@@ -171,21 +188,63 @@
     social: 'Leite aus meinem Skript einen LinkedIn-Beitrag, einen kurzen WhatsApp-Kanalbeitrag und eine Idee für einen YouTube Short ab. Keine neuen unbelegten Behauptungen.'
   };
   document.querySelectorAll('[data-agent-preset]').forEach(b => b.addEventListener('click', () => { $('suite-agent-mode').value = b.dataset.agentPreset; $('suite-prompt').value = presets[b.dataset.agentPreset]; $('suite-prompt').focus(); }));
+  function drawAttachments(){
+    $('suite-chat-attachments').replaceChildren();
+    for(const attachment of chatAttachments){
+      const card=document.createElement('div'), img=document.createElement('img'), name=document.createElement('span'), remove=document.createElement('button');
+      img.src=attachment.url;img.alt=attachment.name;img.className='suite-chat-image';name.textContent=attachment.name;
+      remove.type='button';remove.className='ghost';remove.textContent='Entfernen';remove.setAttribute('aria-label','Bild entfernen: '+attachment.name);remove.disabled=sending || uploadingImages;
+      remove.addEventListener('click',()=>{chatAttachments=chatAttachments.filter(x=>x.id!==attachment.id);drawAttachments();});
+      card.append(img,name,remove);$('suite-chat-attachments').append(card);
+    }
+  }
+  async function attachImages(files){
+    if(sending || uploadingImages)return;
+    if(!projectId){$('suite-agent-status').textContent='Zuerst ein Projekt auswählen.';return;}
+    if(chatAttachments.length+files.length>3){$('suite-agent-status').textContent='Maximal drei Bilder pro Nachricht.';return;}
+    uploadingImages=true;$('suite-send').disabled=true;$('suite-chat-images').disabled=true;drawAttachments();
+    try{
+      for(const file of files){
+        if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('Bitte PNG, JPG oder WebP auswählen.');
+        if(file.size>10*1024*1024)throw Error('Originalbild ist zu groß (maximal 10 MB).');
+        $('suite-agent-status').textContent='Bild vorbereiten und hochladen …';
+        const objectUrl=URL.createObjectURL(file),img=new Image();
+        try{
+          img.src=objectUrl;await img.decode();
+          const ratio=Math.min(1,2048/Math.max(img.naturalWidth,img.naturalHeight)),canvas=document.createElement('canvas');
+          canvas.width=Math.max(1,Math.round(img.naturalWidth*ratio));canvas.height=Math.max(1,Math.round(img.naturalHeight*ratio));
+          const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
+          const data=canvas.toDataURL('image/jpeg',.88).split(',')[1];
+          if(data.length>2796204)throw Error('Bild bleibt nach Aufbereitung zu groß. Bitte kleiner zuschneiden.');
+          chatAttachments.push(await api('chat-images',{project_id:projectId,name:(file.name || 'Screenshot').slice(0,160),mime_type:'image/jpeg',data}));
+        }finally{URL.revokeObjectURL(objectUrl);}
+      }
+      $('suite-agent-status').textContent=chatAttachments.length+' Bilder angehängt. Beim Absenden werden sie vom Agenten berücksichtigt.';
+    }catch(e){$('suite-agent-status').textContent=e.message;}finally{uploadingImages=false;$('suite-send').disabled=false;$('suite-chat-images').disabled=false;$('suite-chat-images').value='';drawAttachments();}
+  }
+  $('suite-chat-images').addEventListener('change',event=>attachImages(Array.from(event.target.files || [])));
+  $('suite-prompt').addEventListener('paste',event=>{
+    const files=Array.from(event.clipboardData?.items || []).filter(x=>x.kind==='file' && x.type.startsWith('image/')).map(x=>x.getAsFile()).filter(Boolean);
+    if(files.length){event.preventDefault();attachImages(files);}
+  });
+  $('suite-agent-form').addEventListener('keydown',event=>{
+    if(event.key==='Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing){event.preventDefault();if(!sending && !uploadingImages)$('suite-agent-form').requestSubmit($('suite-send'));}
+  });
   $('suite-agent-form').addEventListener('submit', async event => {
-    event.preventDefault(); if (sending) return;
+    event.preventDefault(); if (sending || uploadingImages) return;
     if (!projectId) { $('suite-agent-status').textContent = 'Bitte zuerst unter Einstellungen ein Projekt anlegen.'; return; }
     const text = $('suite-prompt').value.trim(); if (text.length < 2) return;
-    sending = true; $('suite-send').disabled = true; $('vs-project').disabled = true; $('suite-conversation').disabled = true;
+    sending = true; $('suite-chat-images').disabled=true; drawAttachments(); $('suite-send').disabled = true; $('vs-project').disabled = true; $('suite-conversation').disabled = true;
     $('suite-agent-status').textContent = 'Der Agent arbeitet an deiner Anfrage …';
     try {
       const data = snapshot();
-      const result = await api('chat', { project_id: projectId, conversation_id: conversationId, message: text, mode: $('suite-agent-mode').value, context: { title: data.title, topic: data.topic, script: data.script, format: data.format, ...(data.scene_json ? { scenes: JSON.parse(data.scene_json) } : {}), ...(data.youtube_json ? { youtube: JSON.parse(data.youtube_json) } : {}) } });
-      appendMessage('user', text); appendMessage('assistant', result.reply, result); conversationId = result.conversation_id; latest = result;
+      const result = await api('chat', { project_id: projectId, conversation_id: conversationId, message: text, image_ids:chatAttachments.map(x=>x.id), mode: $('suite-agent-mode').value, context: { title: data.title, topic: data.topic, script: data.script, format: data.format, ...(data.scene_json ? { scenes: JSON.parse(data.scene_json) } : {}), ...(data.youtube_json ? { youtube: JSON.parse(data.youtube_json) } : {}) } });
+      appendMessage('user', text, undefined, result.attachments || chatAttachments); chatAttachments=[];drawAttachments(); appendMessage('assistant', result.reply, result); conversationId = result.conversation_id; latest = result;
       $('suite-prompt').value = ''; if (result.social_posts.length) showPosts(result.social_posts);
       $('suite-agent-status').textContent = 'Antwort gespeichert' + (result.usage?.total_tokens ? ' · ' + result.usage.total_tokens + ' Tokens' : '');
       await loadConversations();
     } catch (e) { $('suite-agent-status').textContent = e.message; }
-    finally { sending = false; $('suite-send').disabled = false; $('vs-project').disabled = false; $('suite-conversation').disabled = false; }
+    finally { sending = false; $('suite-chat-images').disabled=false;drawAttachments(); $('suite-send').disabled = false; $('vs-project').disabled = false; $('suite-conversation').disabled = false; }
   });
   function loadSeo() {
     try {
@@ -207,6 +266,45 @@
       changed(); $('suite-seo-status').textContent = 'SEO in den Arbeitsentwurf übernommen. Für die Produktion den Entwurf unter Skript & Szenen speichern.';
     } catch (e) { $('suite-seo-status').textContent = e.message; }
   });
+  let demoLoginProfiles=[];
+  async function loadDemoLogins(selected='') {
+    const response=await fetch('/api/video-studio/demo-logins',{credentials:'same-origin'}), data=await response.json();
+    if(!response.ok) throw Error(data.message || 'Demo-Konten konnten nicht geladen werden.');
+    demoLoginProfiles=data;
+    const select=$('suite-demo-login-id'); select.replaceChildren(new Option('Neues Demo-Konto',''));
+    for(const profile of data) select.append(new Option(profile.name,profile.id));
+    select.value=selected;
+  }
+  $('suite-demo-login-id').addEventListener('change',()=>{
+    const profile=demoLoginProfiles.find(x=>x.id===$('suite-demo-login-id').value);
+    const mapping={'suite-demo-login-name':'name','suite-demo-login-url':'login_url','suite-demo-landing-url':'landing_url','suite-demo-login-user':'username','suite-demo-user-selector':'username_selector','suite-demo-password-selector':'password_selector','suite-demo-submit-selector':'submit_selector','suite-demo-ready-selector':'ready_selector'};
+    const defaults={username_selector:"input[name='email']",password_selector:"input[name='password']",submit_selector:"form button",ready_selector:"body"};
+    for(const [id,key] of Object.entries(mapping)) $(id).value=profile?.[key] || defaults[key] || '';
+    $('suite-demo-login-password').value=''; $('suite-demo-test-data').checked=profile?.test_data_only===true;
+    $('suite-demo-login-status').textContent=profile ? 'Profil-ID: '+profile.id+' · Passwort ist gespeichert.' : '';
+  });
+  $('suite-demo-login-form').addEventListener('submit', async event=>{
+    event.preventDefault();const button=event.submitter;button.disabled=true;
+    try {
+      const payload={name:$('suite-demo-login-name').value,login_url:$('suite-demo-login-url').value,landing_url:$('suite-demo-landing-url').value,username:$('suite-demo-login-user').value,password:$('suite-demo-login-password').value,username_selector:$('suite-demo-user-selector').value,password_selector:$('suite-demo-password-selector').value,submit_selector:$('suite-demo-submit-selector').value,ready_selector:$('suite-demo-ready-selector').value,test_data_only:$('suite-demo-test-data').checked};
+      if($('suite-demo-login-id').value) payload.id=$('suite-demo-login-id').value;
+      const response=await fetch('/api/video-studio/demo-logins',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}), result=await response.json();
+      if(!response.ok)throw Error(result.message || result.error || 'Speichern fehlgeschlagen.');
+      $('suite-demo-login-password').value=''; await loadDemoLogins(result.id);
+      $('suite-demo-login-status').textContent='Verschlüsselt gespeichert. Profil-ID: '+result.id+'. Jetzt Anmeldung testen und mit einer Demoszene verknüpfen.';
+    } catch(e){$('suite-demo-login-status').textContent=e.message;} finally{button.disabled=false;}
+  });
+  $('suite-demo-test-login').addEventListener('click',async event=>{
+    const button=event.currentTarget,id=$('suite-demo-login-id').value;
+    if(!id){$('suite-demo-login-status').textContent='Demo-Konto zuerst speichern oder auswählen.';return;}
+    button.disabled=true;$('suite-demo-login-status').textContent='Anmeldung ohne Bildschirmaufnahme prüfen …';
+    try{
+      const response=await fetch('/api/video-studio/demo-logins/'+encodeURIComponent(id)+'/test',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:'{}'}), result=await response.json();
+      if(!response.ok)throw Error(result.message || result.error || 'Anmeldung fehlgeschlagen.');
+      $('suite-demo-login-status').textContent=result.message;
+    }catch(e){$('suite-demo-login-status').textContent=e.message;}finally{button.disabled=false;}
+  });
+  loadDemoLogins().catch(e=>{$('suite-demo-login-status').textContent=e.message;});
   $('suite-settings-form').addEventListener('submit', async event => {
     event.preventDefault(); const b = event.submitter; b.disabled = true;
     try { const result = await api('settings', { api_key: $('suite-api-key').value, model: $('suite-model').value, image_model: $('suite-image-model').value }); $('suite-api-key').value = ''; $('suite-settings-status').textContent = 'Verschlüsselt gespeichert. Die nächste Anfrage verwendet diese Verbindung.'; setAiState(result); }

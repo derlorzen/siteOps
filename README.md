@@ -91,6 +91,15 @@ SiteOps is intended for people or agencies that manage multiple customer website
 
 ### Video Studio and YouTube
 
+The Creative Agent supports **Ctrl+Enter** (Cmd+Enter on macOS) to send; Enter inserts a newline. Attach up to three PNG/JPG/WebP screenshots or paste an image into the composer. Images are resized to a maximum 2048-pixel edge and stored privately with project-bound IDs; the actual image data is included in Responses API input. The latest three earlier images remain available to follow-up questions. Uploads are limited to 10 MB before client preparation and 2 MB after preparation.
+
+For authenticated Bagisto screen recordings, update the **existing Browser Runner to 1.1.0**, allow the demo hostname under Suite settings, and save a dedicated test account under **Bagisto-Demo anmelden**. Supply its login URL and a protected landing page; the actual login selectors are editable. The login runs in a separate context without recording. Credentials remain encrypted in SiteOps and only travel to the authenticated Runner; the session lives in memory for the job and is never put in prompts, scene JSON, job status or cookie files. Failed authentication stops production. CAPTCHA/2FA are not bypassed.
+
+Associate the saved account with reusable demo scenes. Scene actions still need to be verified once against the real UI. The agent receives only language-matching template references, not passwords or raw login actions. Each scene now has a **Bildschirmaufnahme** selector; planning notes alone produce text slides. Creating a job snapshots the verified actions, and rendering invokes the Runner for real screen capture.
+
+Landscape videos are **1920×1080 Full HD**, portrait/Shorts **1080×1920**. Runner 1.1.0 verifies the exported dimensions using FFprobe before marking a job done. Existing videos are not automatically re-rendered.
+
+
 Video Suite settings include an encrypted, source-attributed Bagisto plugin knowledge base shared with every agent request. Edit/import the JSON inventory there; private product documentation is not shipped in the repository. Keep versions dated and distinguish published products, internal packages and demos.
 
 Use **Verbindung testen** after saving OpenAI settings to test the selected model with the actual Responses API schema. Provider rejections include HTTP status, provider error code/parameter, request ID and a specific remediation hint; credentials are redacted. **Verfügbare Modelle laden** offers model IDs without changing the saved selection. Model listing alone does not establish Responses API compatibility or permission.

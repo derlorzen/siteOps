@@ -31,6 +31,7 @@ test(
       conversations = [];
     let trashed = false,
       knowledge = { plugins: [] };
+    let chatRequest;
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     const project = '11111111-1111-4111-8111-111111111111';
@@ -132,7 +133,18 @@ test(
           body = { saved: true };
         } else body = draft;
       } else if (url.pathname === '/api/video-suite/conversations') body = conversations;
+      else if (url.pathname === '/api/video-suite/chat-images' && req.method() === 'POST')
+        body = { id: project, name: 'screenshot.png', url: '/api/video-suite/chat-images/' + project };
+      else if (url.pathname === '/api/video-suite/chat-images/' + project)
+        return route.fulfill({
+          contentType: 'image/png',
+          body: Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAwAAC0lEQVR42mP8/x8AAusB9Wl6gS8AAAAASUVORK5CYII=',
+            'base64'
+          )
+        });
       else if (url.pathname === '/api/video-suite/chat') {
+        chatRequest = req.postDataJSON();
         conversations = [{ id: project, title: 'Plan a video' }];
         body = { ...proposal, conversation_id: project };
       } else if (url.pathname === '/api/youtube/status')
@@ -144,8 +156,23 @@ test(
     await page.waitForFunction(() => document.querySelector('#suite-draft-state').textContent === 'Neuer Entwurf');
 
     await page.locator('[data-suite-nav=agent]').click();
+    await page.getByLabel('Screenshots oder Bilder anhängen', { exact: true }).setInputFiles({
+      name: 'screenshot.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6gS8AAAAASUVORK5CYII=',
+        'base64'
+      )
+    });
+    await page.waitForFunction(() => document.querySelector('#suite-chat-attachments img'));
     await page.locator('#suite-prompt').fill('Plan a video');
-    await page.locator('#suite-send').click();
+    await page.locator('#suite-prompt').press('Enter');
+    if (chatRequest) throw Error('Enter must not send the chat.');
+    await page.locator('#suite-prompt').press('Control+Enter');
+    await page.waitForFunction(() =>
+      document.querySelector('#suite-agent-status').textContent.startsWith('Antwort gespeichert')
+    );
+    if (chatRequest?.image_ids?.[0] !== project) throw Error('Screenshot was not sent with chat.');
     await page.waitForTimeout(500);
     await page.getByText('Vorschlag ansehen & übernehmen').click();
     await page.getByText('In aktuellen Entwurf übernehmen', { exact: true }).click();

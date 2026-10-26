@@ -246,6 +246,9 @@
   async function loadTemplates() {
     try {
       templates = await api('/api/video-studio/demo-templates');
+      const profiles=await api('/api/video-studio/demo-logins');
+      $('#vs-template-login').innerHTML='<option value="">Ohne Anmeldung</option>'+profiles.map(p=>'<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.name)+'</option>').join('');
+      document.dispatchEvent(new CustomEvent('suite-templates-loaded',{detail:templates}));
       $('#vs-template').innerHTML =
         '<option value="">Neue Demoszene</option>' +
         templates.map(t => '<option value="' + escapeHtml(t.id) + '">' + escapeHtml(t.name) + '</option>').join('');
@@ -257,18 +260,21 @@
     const x = templates.find(t => t.id === $('#vs-template').value);
     $('#vs-template-name').value = x?.name || '';
     $('#vs-template-json').value = x ? JSON.stringify(x.scene, null, 2) : '';
+    $('#vs-template-login').value=x?.scene.login_profile_id || '';
   });
   $('#vs-template-save').addEventListener('click', async () => {
     const b = $('#vs-template-save');
     b.disabled = true;
     try {
+      const scene=JSON.parse($('#vs-template-json').value);
+      if($('#vs-template-login').value) scene.login_profile_id=$('#vs-template-login').value; else delete scene.login_profile_id;
       await api(
         '/api/video-studio/demo-templates' + ($('#vs-template').value ? '/' + $('#vs-template').value : ''),
         'POST',
         {
           name: $('#vs-template-name').value,
           language: $('#vs-language').value,
-          scene: JSON.parse($('#vs-template-json').value)
+          scene
         }
       );
       await loadTemplates();
@@ -283,6 +289,8 @@
     try {
       const scene = JSON.parse($('#vs-template-json').value),
         current = JSON.parse($('#vs-scene-json').value || '[]');
+      if($('#vs-template-login').value) scene.login_profile_id=$('#vs-template-login').value; else delete scene.login_profile_id;
+      if($('#vs-template').value) scene.template_id=$('#vs-template').value;
       current.push(scene);
       $('#vs-scene-json').value = JSON.stringify(current, null, 2);
       msg('Demoszene zum Szenenplan hinzugefügt.');
@@ -412,7 +420,7 @@
         ' · Deutsch/Piper: ' +
         (data.offlineModels?.piper ? 'Modell bereit' : 'automatischer Download bei erster Nutzung') +
         ' · OpenAI: ' +
-        (data.openaiConfigured ? 'API konfiguriert' : 'API-Schlüssel fehlt');
+        (data.openaiConfigured ? 'API konfiguriert' : 'API-Schlüssel fehlt') + ' · Full HD: ' + (data.outputResolution ? '1920 × 1080 / 1080 × 1920' : 'Runner-Auflösung noch nicht verifiziert') + ' · Demo-Login: ' + (data.demoLoginVersion === 1 ? 'bereit' : 'Runner aktualisieren');
     } catch (e) {
       $('#vs-capabilities').textContent = 'Runner noch nicht bereit: ' + e.message;
     }

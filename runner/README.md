@@ -171,3 +171,11 @@ Supported `/run` actions: `goto`, `click`, `fill`, `press`, `select`, `check`, `
 `/render` takes `{ "url": "https://...", "timeoutMs": 20000 }`, navigates once, waits for the network to go quiet (or the timeout, whichever comes first) and returns the rendered `html`. SiteOps' SEO crawler uses this as a fallback for pages that look too thin in the raw HTTP response (client-rendered content, e.g. Next.js).
 
 The runner also captures console errors, uncaught page errors, failed network requests and HTTP 4xx/5xx responses. Visual screenshots run with reduced motion and disabled animations to reduce false-positive pixel diffs.
+
+### Authenticated demo recordings (Runner 1.1.0)
+
+Update this existing service from the current repository; preserve its token, output/model volumes and other environment settings. Docker builds include `video-login.mjs`; the systemd installer copies it too. `/health` reports version 1.1.0, and authenticated `/video/capabilities` advertises `demoLoginVersion: 1` and the Full-HD output sizes.
+
+SiteOps passes only the demo profiles referenced by a reviewed job. Login occurs without a recorder, using one allowlisted HTTPS origin, a checked form destination, and a successful protected landing-page check. Credentials and cookies stay in RAM on the Runner and are removed at job completion. Browser recordings receive the resulting same-origin session, never login actions or passwords. Password inputs remain forbidden in recorded steps. Failed/expired sessions fail production. Login test requests are rate-limited; no CAPTCHA or 2FA bypass is supported.
+
+Final MP4 and Short dimensions are checked by FFprobe before completion. Both are at least Full HD: 1920×1080 landscape and 1080×1920 portrait.

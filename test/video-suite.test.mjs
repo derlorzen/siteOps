@@ -8,13 +8,22 @@ import { renderVideoStudio } from '../lib/video-studio-ui.mjs';
 import { renderYouTube } from '../lib/youtube-ui.mjs';
 const project = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
-function fixture(fetcher) {
+function fixture(fetcher, templates = []) {
   const settings = new Map(),
     conversations = new Map(),
     drafts = new Map(),
+    images = new Map(),
     calls = [];
   const db = {
     query: async (query, p = []) => {
+      if (query.startsWith('INSERT INTO video_suite_chat_images')) {
+        images.set(p[0], { id: p[0], project_id: p[1], name: p[2], mime_type: p[3], image: p[4] });
+        return [[]];
+      }
+      if (query.startsWith('SELECT id,project_id,name,mime_type,image')) {
+        const image = images.get(p[0]);
+        return [[...(image && (!p[1] || image.project_id === p[1]) ? [image] : [])]];
+      }
       if (query.startsWith('SELECT setting'))
         return [[...(settings.has(p[0]) ? [{ setting_value: settings.get(p[0]) }] : [])]];
       if (query.startsWith('INSERT INTO app_settings')) {
@@ -46,6 +55,7 @@ function fixture(fetcher) {
     encrypt: x => 'encrypted:' + JSON.stringify(x),
     decrypt: x => JSON.parse(x.slice(10)),
     studio: {
+      listDemoTemplates: async () => templates,
       getProject: async id => {
         if (id !== project) throw Object.assign(Error('Missing'), { statusCode: 404 });
         return { name: 'Software tutorials', channel: 'Lorzen', language: 'en' };
@@ -268,4 +278,74 @@ test('connection test uses saved model and same output schema as the agent', asy
   const payload = JSON.parse(calls[0][1].body);
   assert.equal(payload.model, 'gpt-6-luna');
   assert.equal(payload.text.format.type, 'json_schema');
+});
+
+test('screenshots are project-bound, validated, sent as images and retained for follow-up questions', async () => {
+  const { service, calls } = fixture(() => response(answer));
+  await service.configure({ api_key: 'sk-test', model: 'gpt-6-luna', image_model: 'gpt-image-1' });
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6gS8AAAAASUVORK5CYII=';
+  const image = await service.uploadChatImage({
+    project_id: project,
+    name: 'A screenshot.png',
+    mime_type: 'image/png',
+    data: png
+  });
+  await assert.rejects(
+    service.uploadChatImage({
+      project_id: project,
+      name: 'bad.png',
+      mime_type: 'image/png',
+      data: Buffer.from('<svg>bad</svg>').toString('base64')
+    }),
+    { statusCode: 422 }
+  );
+  await assert.rejects(
+    service.chat({ project_id: other, message: 'Use another project image', context, image_ids: [image.id] }),
+    { statusCode: 404 }
+  );
+  const first = await service.chat({
+    project_id: project,
+    message: 'Explain this screenshot',
+    context,
+    image_ids: [image.id]
+  });
+  const payload = JSON.parse(calls[0][1].body);
+  assert.equal(payload.input[0].content[1].type, 'input_image');
+  assert.equal(payload.input[0].content[1].image_url, 'data:image/png;base64,' + png);
+  assert.equal(first.attachments[0].id, image.id);
+  const saved = await service.conversation(first.conversation_id, project);
+  assert.equal(saved.messages[0].attachments[0].name, 'A screenshot.png');
+  assert.doesNotMatch(JSON.stringify(saved), /data:image/);
+  await service.chat({
+    project_id: project,
+    conversation_id: first.conversation_id,
+    message: 'What should I change?',
+    context
+  });
+  assert.equal(JSON.parse(calls[1][1].body).input[0].content[1].type, 'input_image');
+});
+test('agent gets verified language-matching demo references without login secrets or raw actions', async () => {
+  const templates = [
+    {
+      id: other,
+      name: 'Products demo',
+      language: 'en',
+      scene: {
+        headline: 'Products',
+        narration: 'Open the verified product list.',
+        login_profile_id: other,
+        demoSteps: [{ action: 'fill', value: 'Do not send raw fields' }]
+      }
+    },
+    { id: project, name: 'German only', language: 'de', scene: {} }
+  ];
+  const { service, calls } = fixture(() => response(answer), templates);
+  await service.configure({ api_key: 'sk-test', model: 'gpt-6-luna', image_model: 'gpt-image-1' });
+  await service.chat({ project_id: project, message: 'Plan a real screen recording', context });
+  const request = JSON.parse(calls[0][1].body),
+    data = JSON.parse(request.input[0].content);
+  assert.equal(data.available_demo_templates.length, 1);
+  assert.equal(data.available_demo_templates[0].template_id, other);
+  assert.doesNotMatch(request.input[0].content, /Do not send raw fields/);
+  assert.match(request.instructions, /real screen recording is not configured/);
 });

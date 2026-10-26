@@ -107,7 +107,7 @@ function comparePng(current, baseline) {
     dimensionMismatch: false
   };
 }
-app.get('/health', async () => ({ status: 'ok', service: 'siteops-browser-runner', version: '1.0.0' }));
+app.get('/health', async () => ({ status: 'ok', service: 'siteops-browser-runner', version: '1.1.0' }));
 app.get('/auth-test', async (req, reply) => {
   if (!auth(req, reply)) return;
   return { ok: true, version: '1.0.0' };

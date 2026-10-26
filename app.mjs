@@ -7481,6 +7481,8 @@ async function start() {
   registerSiteProjectRoutes(app, siteProjectService);
   videoStudioService = createVideoStudio({
     db,
+    encrypt,
+    decrypt,
     runnerUrl: () => cfg.browserRunnerUrl,
     runnerToken: () => cfg.browserRunnerToken,
     publicBaseUrl: () => cfg.publicBaseUrl,

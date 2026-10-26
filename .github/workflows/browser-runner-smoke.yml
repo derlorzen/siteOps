@@ -46,6 +46,10 @@ jobs:
         env:
           RUN_VIDEO_BROWSER_TESTS: '1'
         run: node --test test/youtube*.test.mjs
+      - name: Authenticated Full-HD recording and Video Suite chat UI
+        env:
+          RUN_SUITE_BROWSER_TESTS: '1'
+        run: node --test test/video-login-browser.test.mjs test/video-suite-browser.test.mjs
       - name: Run real browser smoke test
         shell: bash
         run: |
