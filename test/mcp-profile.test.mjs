@@ -1,10 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  CHATGPT_MCP_TOOL_NAMES,
-  isChatGptMcpClient,
-  shouldRegisterMcpTool
-} from '../lib/mcp-profile.mjs';
+import { CHATGPT_MCP_TOOL_NAMES, isChatGptMcpClient, shouldRegisterMcpTool } from '../lib/mcp-profile.mjs';
 
 test('ChatGPT catalog is bounded and contains no duplicate names', () => {
   assert.ok(CHATGPT_MCP_TOOL_NAMES.length > 20);
@@ -36,7 +32,11 @@ test('ChatGPT CIMD and DCR clients are detected without trusting user-agent', ()
   );
   assert.equal(isChatGptMcpClient({ clientId: 'https://claude.ai/client/metadata', clientName: 'Claude' }), false);
   assert.equal(
-    isChatGptMcpClient({ clientId: 'siteops_abcd', clientName: 'Claude', redirectUris: ['https://claude.ai/api/mcp/auth_callback'] }),
+    isChatGptMcpClient({
+      clientId: 'siteops_abcd',
+      clientName: 'Claude',
+      redirectUris: ['https://claude.ai/api/mcp/auth_callback']
+    }),
     false
   );
   assert.equal(isChatGptMcpClient(null), false);
