@@ -5704,10 +5704,7 @@ async function mcpAuth(req, reply) {
         subject: row.subject,
         clientId: row.client_id,
         scope: row.scope,
-        profile:
-          process.env.MCP_CHATGPT_COMPACT !== 'false' && isChatGptMcpClient(client)
-            ? 'chatgpt'
-            : 'full'
+        profile: process.env.MCP_CHATGPT_COMPACT !== 'false' && isChatGptMcpClient(client) ? 'chatgpt' : 'full'
       };
       return true;
     }
@@ -7435,11 +7432,7 @@ async function start() {
   const nodeHandler = toNodeHandler(createMcpHandler(() => mcpServer())),
     chatgptNodeHandler = toNodeHandler(createMcpHandler(() => mcpServer('chatgpt')));
   app.all('/mcp', async (req, reply) =>
-    (req.siteopsAuth?.profile === 'chatgpt' ? chatgptNodeHandler : nodeHandler)(
-      req.raw,
-      reply.raw,
-      req.body
-    )
+    (req.siteopsAuth?.profile === 'chatgpt' ? chatgptNodeHandler : nodeHandler)(req.raw, reply.raw, req.body)
   );
   app.get('/', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/websites', async (_r, reply) => reply.type('text/html').send(await dashboard()));
