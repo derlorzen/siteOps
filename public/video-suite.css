@@ -112,3 +112,9 @@ body.ops-mode .ops-main .suite .yt-workspace .yt-tabs button[aria-current=page]{
 
 /* Suite content now lives inside the shared SiteOps workspace. */
 body.siteops-workspace .suite .suite-content{padding:0;max-width:none;margin:0;width:100%}
+
+.suite-diagnostics { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; background: var(--surface-muted, #f3f5f8); border-radius: 10px; font-size: .8rem; }
+.suite-knowledge-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,300px),1fr)); gap: 1rem; margin: 1rem 0; }
+.suite-knowledge-list article { padding: 1rem; border: 1px solid var(--border,#dce2e9); border-radius: 10px; }
+.suite-knowledge-list h3 { margin: 0; font-size: 1rem; }
+.suite-knowledge-list small { overflow-wrap: anywhere; color: var(--muted,#64748b); }

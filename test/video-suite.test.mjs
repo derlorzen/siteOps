@@ -94,7 +94,8 @@ test('agent uses Responses API with trusted project context and server-side hist
   assert.equal(calls[0][0], 'https://api.openai.com/v1/responses');
   assert.equal(payload.store, false);
   assert.equal(JSON.parse(payload.input[0].content).project.language, 'en');
-  assert.equal(payload.text.format.type, 'json_object');
+  assert.equal(payload.text.format.type, 'json_schema');
+  assert.equal(payload.text.format.strict, true);
   await service.chat({
     project_id: project,
     conversation_id: first.conversation_id,
@@ -112,7 +113,7 @@ test('agent rejects invalid output and masks upstream secrets and error details'
   await failed.service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
   await assert.rejects(
     failed.service.chat({ project_id: project, message: 'Plan a video', context }),
-    e => e.statusCode === 502 && !e.message.includes('sk-test')
+    e => e.statusCode === 401 && !e.message.includes('sk-test')
   );
 });
 test('working draft survives a reload without saving a render job', async () => {
@@ -206,4 +207,65 @@ test('protected production preview streams runner ranges without buffering', asy
   assert.equal(result.headers['content-range'], 'bytes 0-3/100');
   assert.deepEqual(calls[0], [project, 'video', { start: 0, end: '3' }]);
   await app.close();
+});
+
+test('connection diagnosis preserves provider code, parameter and request ID while masking keys', async () => {
+  const { service } = fixture(() =>
+    Response.json(
+      {
+        error: {
+          code: 'unsupported_parameter',
+          param: 'text.format',
+          message: 'Unsupported format; key sk-private-secret'
+        }
+      },
+      { status: 400, headers: { 'x-request-id': 'req_123' } }
+    )
+  );
+  await service.configure({ api_key: 'sk-private-secret', model: 'gpt-6-luna', image_model: 'gpt-image-1' });
+  const result = await service.testConnection();
+  assert.equal(result.ok, false);
+  assert.equal(result.diagnostic.http_status, 400);
+  assert.equal(result.diagnostic.parameter, 'text.format');
+  assert.equal(result.diagnostic.request_id, 'req_123');
+  assert.match(result.message, /kein Nachweis/);
+  assert.doesNotMatch(JSON.stringify(result), /sk-private-secret/);
+  assert.equal((await service.status()).last_error.error_code, 'unsupported_parameter');
+});
+test('encrypted private plugin knowledge is validated and included in every agent request', async () => {
+  const { service, settings, calls } = fixture(() => response(answer));
+  const knowledge = {
+    plugins: [
+      {
+        id: 'sample-plugin',
+        name: 'Example plugin',
+        version: '1.0.0',
+        summary: 'Verified example plugin functions.',
+        features: ['Verified function'],
+        limitations: ['No fabricated workflow'],
+        availability: 'internal',
+        source: 'Installed package README',
+        verified_at: '2026-10-26'
+      }
+    ]
+  };
+  await service.saveKnowledge(knowledge);
+  assert.match(settings.get('video_suite_plugin_knowledge'), /^encrypted:/);
+  assert.deepEqual(await service.knowledge(), knowledge);
+  await assert.rejects(service.saveKnowledge({ plugins: [...knowledge.plugins, ...knowledge.plugins] }), {
+    statusCode: 422
+  });
+  await service.configure({ api_key: 'sk-test', model: 'gpt-6-luna', image_model: 'gpt-image-1' });
+  await service.chat({ project_id: project, message: 'Plan a Bagisto tutorial', context });
+  const payload = JSON.parse(calls[0][1].body);
+  assert.deepEqual(JSON.parse(payload.input[0].content).product_knowledge, knowledge);
+  assert.match(payload.instructions, /must not be advertised as publicly available/);
+});
+test('connection test uses saved model and same output schema as the agent', async () => {
+  const { service, calls } = fixture(() => response(answer));
+  await service.configure({ api_key: 'sk-test', model: 'gpt-6-luna', image_model: 'gpt-image-1' });
+  assert.equal((await service.testConnection()).ok, true);
+  const payload = JSON.parse(calls[0][1].body);
+  assert.equal(payload.model, 'gpt-6-luna');
+  assert.equal(payload.text.format.type, 'json_schema');
 });

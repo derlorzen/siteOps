@@ -212,8 +212,49 @@
     try { const result = await api('settings', { api_key: $('suite-api-key').value, model: $('suite-model').value, image_model: $('suite-image-model').value }); $('suite-api-key').value = ''; $('suite-settings-status').textContent = 'Verschlüsselt gespeichert. Die nächste Anfrage verwendet diese Verbindung.'; setAiState(result); }
     catch (e) { $('suite-settings-status').textContent = e.message; } finally { b.disabled = false; }
   });
-  function setAiState(data) { $('suite-ai-state').textContent = data.configured ? 'OpenAI bereit · ' + data.model : 'OpenAI noch nicht verbunden'; $('suite-model').value = data.model; $('suite-image-model').value = data.image_model; }
+  function setAiState(data) { $('suite-ai-state').textContent = data.configured ? 'OpenAI eingerichtet · ' + data.model : 'OpenAI noch nicht verbunden'; $('suite-model').value = data.model; $('suite-image-model').value = data.image_model; }
   api('settings').then(setAiState).catch(e => { $('suite-ai-state').textContent = e.message; });
+  $('suite-test-connection').addEventListener('click', async event => {
+    const button = event.currentTarget; button.disabled = true;
+    $('suite-settings-status').textContent = 'Teste gespeichertes Modell und Agent-Ausgabeformat …';
+    try {
+      const result = await api('test-connection', {});
+      $('suite-settings-status').textContent = result.message;
+      $('suite-diagnostics').hidden = !result.diagnostic;
+      $('suite-diagnostics').textContent = result.diagnostic ? JSON.stringify(result.diagnostic, null, 2) : '';
+      $('suite-ai-state').textContent = result.ok ? 'Verbindung geprüft · ' + result.model : 'OpenAI-Test fehlgeschlagen · ' + result.model;
+    } catch(e) { $('suite-settings-status').textContent = e.message; } finally { button.disabled = false; }
+  });
+  $('suite-load-models').addEventListener('click', async event => {
+    const button = event.currentTarget; button.disabled = true;
+    try {
+      const result = await api('models'); $('suite-model-options').replaceChildren();
+      for (const model of result.models) { const option = document.createElement('option'); option.value = model; $('suite-model-options').append(option); }
+      $('suite-settings-status').textContent = result.models.length + ' Modelle geladen. Die Auswahl bleibt unverändert. Der Verbindungstest prüft die konkrete Responses-Anfrage.';
+    } catch(e) { $('suite-settings-status').textContent = e.message; } finally { button.disabled = false; }
+  });
+  function showKnowledge(data) {
+    const plugins = data.plugins || [];
+    $('suite-knowledge-json').value = JSON.stringify({plugins}, null, 2);
+    $('suite-knowledge-count').textContent = plugins.length + ' Plugins im Agent-Kontext';
+    $('suite-knowledge-list').replaceChildren();
+    for(const plugin of plugins) {
+      const item = document.createElement('article'), title = document.createElement('h3'), text = document.createElement('p'), source = document.createElement('small');
+      title.textContent = plugin.name + (plugin.version ? ' · ' + plugin.version : ''); text.textContent = plugin.summary;
+      source.textContent = ({published:'Veröffentlicht',internal:'Intern',demo:'Demo',unknown:'Verfügbarkeit ungeprüft'}[plugin.availability] || 'Ungeprüft') + ' · Stand ' + plugin.verified_at + ' · ' + plugin.source;
+      item.append(title,text,source); $('suite-knowledge-list').append(item);
+    }
+  }
+  api('knowledge').then(showKnowledge).catch(e => { $('suite-knowledge-count').textContent = e.message; });
+  $('suite-knowledge-form').addEventListener('submit', async event => {
+    event.preventDefault(); const button = event.submitter; button.disabled = true;
+    try {
+      let data; try { data = JSON.parse($('suite-knowledge-json').value); } catch { throw Error('Bitte gültiges JSON eingeben.'); }
+      const result = await api('knowledge',data); showKnowledge(await api('knowledge'));
+      $('suite-knowledge-status').textContent = result.count + ' Plugins gespeichert. Der Agent verwendet sie ab der nächsten Anfrage.';
+    } catch(e) { $('suite-knowledge-status').textContent = e.message; } finally { button.disabled = false; }
+  });
+
   async function previewAsset(url) {
     const img = new Image(); img.src = url; await img.decode();
     const canvas = $('suite-thumbnail-canvas'), ctx = canvas.getContext('2d');

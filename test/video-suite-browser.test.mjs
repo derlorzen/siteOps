@@ -29,6 +29,8 @@ test(
     const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
     let draft = null,
       conversations = [];
+    let trashed = false,
+      knowledge = { plugins: [] };
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     const project = '11111111-1111-4111-8111-111111111111';
@@ -86,19 +88,42 @@ test(
             voice: 'am_adam'
           }
         ];
-      else if (url.pathname === '/api/video-studio/jobs')
-        body = [
-          {
-            id: project,
-            project_id: project,
-            title: 'Manage Bagisto with ChatGPT',
-            status: 'done',
-            created_at: new Date().toISOString()
-          }
-        ];
+      else if (url.pathname.endsWith('/trash')) {
+        trashed = true;
+        body = { deleted: true };
+      } else if (url.pathname.endsWith('/restore')) {
+        trashed = false;
+        body = { restored: true };
+      } else if (url.pathname === '/api/video-studio/jobs')
+        body =
+          (url.searchParams.get('deleted') === 'true') !== trashed
+            ? []
+            : [
+                {
+                  id: project,
+                  project_id: project,
+                  title: 'Manage Bagisto with ChatGPT',
+                  status: 'done',
+                  deleted_at: trashed ? '2026-10-26' : null,
+                  created_at: new Date().toISOString()
+                }
+              ];
       else if (url.pathname.endsWith('/demo-policy'))
         body = { supported: true, source: 'environment', environmentPolicy: { hosts: [] } };
       else if (url.pathname.endsWith('/capabilities')) body = { offlineModels: { kokoro: true, piper: true } };
+      else if (url.pathname === '/api/video-suite/knowledge') {
+        if (req.method() === 'POST') {
+          knowledge = req.postDataJSON();
+          body = { saved: true, count: knowledge.plugins.length };
+        } else body = knowledge;
+      } else if (url.pathname === '/api/video-suite/test-connection')
+        body = {
+          ok: false,
+          model: 'gpt-4.1',
+          message: 'OpenAI HTTP 400 · unsupported_parameter',
+          diagnostic: { http_status: 400, error_code: 'unsupported_parameter', parameter: 'text.format' }
+        };
+      else if (url.pathname === '/api/video-suite/models') body = { models: ['gpt-4.1', 'gpt-6-luna'] };
       else if (url.pathname === '/api/video-suite/settings')
         body = { configured: true, model: 'gpt-4.1', image_model: 'gpt-image-1' };
       else if (url.pathname.startsWith('/api/video-suite/drafts/')) {
@@ -137,7 +162,40 @@ test(
       () => document.querySelector('#suite-draft-state').textContent === 'Entwurf online geladen'
     );
     if ((await page.locator('#suite-scene-list .suite-scene-card').count()) !== 2) throw Error('Draft reload failed');
-    await page.locator('[data-suite-nav=agent]').click();
+    await page.goto('https://suite.test/video-suite#production');
+    await page.getByRole('button', { name: 'Produktion löschen', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('[data-trash]'));
+    await page.getByRole('button', { name: 'Papierkorb', exact: true }).click();
+    await page.getByRole('button', { name: 'Wiederherstellen', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('[data-restore]'));
+    await page.getByRole('button', { name: 'Aktive Produktionen', exact: true }).click();
+    await page.locator('[data-trash]').waitFor();
+    await page.goto('https://suite.test/video-suite#settings');
+    await page.getByRole('button', { name: 'Verbindung testen', exact: true }).click();
+    await page.waitForFunction(() =>
+      document.querySelector('#suite-diagnostics').textContent.includes('unsupported_parameter')
+    );
+    await page.getByRole('button', { name: 'Verfügbare Modelle laden', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('#suite-model-options option[value="gpt-6-luna"]'));
+    await page.getByText('Wissensbasis bearbeiten oder importieren', { exact: true }).click();
+    await page.getByLabel('Plugin-Wissen (JSON)', { exact: true }).fill(
+      JSON.stringify({
+        plugins: [
+          {
+            name: 'A verified plugin',
+            summary: 'Private product context',
+            version: '1.0',
+            availability: 'internal',
+            source: 'README',
+            verified_at: '2026-10-26'
+          }
+        ]
+      })
+    );
+    await page.getByRole('button', { name: 'Plugin-Wissen speichern', exact: true }).click();
+    await page.waitForFunction(
+      () => document.querySelector('#suite-knowledge-count').textContent === '1 Plugins im Agent-Kontext'
+    );
     await page.setViewportSize({ width: 390, height: 844 });
     for (const pane of ['overview', 'agent', 'script', 'assets', 'production', 'settings']) {
       await page.goto('https://suite.test/video-suite#' + pane);

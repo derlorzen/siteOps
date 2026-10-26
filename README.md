@@ -91,6 +91,13 @@ SiteOps is intended for people or agencies that manage multiple customer website
 
 ### Video Studio and YouTube
 
+Video Suite settings include an encrypted, source-attributed Bagisto plugin knowledge base shared with every agent request. Edit/import the JSON inventory there; private product documentation is not shipped in the repository. Keep versions dated and distinguish published products, internal packages and demos.
+
+Use **Verbindung testen** after saving OpenAI settings to test the selected model with the actual Responses API schema. Provider rejections include HTTP status, provider error code/parameter, request ID and a specific remediation hint; credentials are redacted. **Verfügbare Modelle laden** offers model IDs without changing the saved selection. Model listing alone does not establish Responses API compatibility or permission.
+
+Productions support a recoverable **Papierkorb**. Deleting a production hides it from active lists; restore it from the trash to render or prepare a new YouTube upload. Files, ongoing jobs, upload history and already published YouTube videos are retained. This does not reclaim disk space.
+
+
 Produce English/German videos and Shorts directly from ChatGPT through the
 existing MCP integration, reuse approved test-only demo scenes, and prepare
 localized YouTube metadata. The YouTube workspace connects your channel with

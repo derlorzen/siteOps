@@ -141,9 +141,10 @@
     updateVoiceChoices();
   });
   syncLanguage();
+  let showingTrash = false;
   async function reload() {
     try {
-      [projects, jobs] = await Promise.all([api('/api/video-studio/projects'), api('/api/video-studio/jobs')]);
+      [projects, jobs] = await Promise.all([api('/api/video-studio/projects'), api('/api/video-studio/jobs' + (showingTrash ? '?deleted=true' : ''))]);
       const el = $('#vs-project'),
         old = el.value;
       el.innerHTML =
@@ -168,6 +169,7 @@
       $('#vs-jobs').innerHTML = jobs.length
         ? jobs
             .map(j => {
+              if (j.deleted_at) return '<article class="vs-job"><strong>' + escapeHtml(j.title) + '</strong><p>Im Papierkorb · Dateien bleiben erhalten. Veröffentlichte YouTube-Videos werden nicht gelöscht.</p><button type="button" data-restore="' + escapeHtml(j.id) + '">Wiederherstellen</button></article>';
               const status = escapeHtml(j.status);
               const available = j.status === 'done';
               const fileLink = (kind, label) =>
@@ -206,11 +208,11 @@
                     fileLink('thumbnail', 'Thumbnail') +
                     fileLink('metadata', 'YouTube-Metadaten') + '<a href="/youtube#upload?job=' + encodeURIComponent(j.id) + '">An YouTube übergeben →</a>'
                   : '') +
-                '</div></article>'
+                '<button type="button" class="ghost" data-trash="' + escapeHtml(j.id) + '">Produktion löschen</button></div></article>'
               );
             })
             .join('')
-        : '<p class="vs-note">Noch keine Videoprojekte erstellt.</p>';
+        : '<p class="vs-note">' + (showingTrash ? 'Der Papierkorb ist leer.' : 'Noch keine Videoprojekte erstellt.') + '</p>';
     } catch (e) {
       msg('Daten konnten nicht geladen werden: ' + e.message, true);
     }
@@ -362,6 +364,16 @@
     }
   });
   $('#vs-jobs').addEventListener('click', async event => {
+    const trash = event.target.closest('[data-trash]'), restore = event.target.closest('[data-restore]');
+    if (trash || restore) {
+      const button = trash || restore; button.disabled = true;
+      try {
+        await api('/api/video-studio/jobs/' + encodeURIComponent(button.dataset.trash || button.dataset.restore) + (trash ? '/trash' : '/restore'), 'POST', {});
+        msg(trash ? 'Produktion in den Papierkorb verschoben. Dort kannst du sie wiederherstellen. Dateien und YouTube-Veröffentlichungen bleiben erhalten.' : 'Produktion wiederhergestellt.');
+        await reload();
+      } catch (e) { msg(e.message, true); } finally { button.disabled = false; }
+      return;
+    }
     const edit = event.target.closest('[data-edit]');
     if (edit) {
       try { const r = await api('/api/video-studio/jobs/' + edit.dataset.edit); document.dispatchEvent(new CustomEvent('suite-open-production', { detail: r })); } catch (e) { msg(e.message, true); }
@@ -405,6 +417,7 @@
       $('#vs-capabilities').textContent = 'Runner noch nicht bereit: ' + e.message;
     }
   }
+  $('#vs-trash-toggle').addEventListener('click', () => { showingTrash = !showingTrash; $('#vs-trash-toggle').setAttribute('aria-pressed', String(showingTrash)); $('#vs-trash-toggle').textContent = showingTrash ? 'Aktive Produktionen' : 'Papierkorb'; reload(); });
   $('#vs-refresh').addEventListener('click', () => {
     reload();
     checkRenderer();

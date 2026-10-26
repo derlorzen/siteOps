@@ -136,3 +136,28 @@ test('Video Studio registers dashboard, JSON API and guarded media download rout
     assert.ok(paths.includes(p), p);
   assert.match(renderVideoStudio(), /data-suite-page="overview"/);
 });
+
+test('production trash and restoration retain records and prevent rendering while deleted', async () => {
+  const job = { id, project_id: id, title: 'Keep the video', status: 'done', scenes: '[]', deleted_at: null };
+  const queries = [];
+  const db = {
+    query: async (sql, params = []) => {
+      queries.push(sql);
+      if (sql.startsWith('SELECT * FROM video_studio_jobs')) return [[job]];
+      if (sql.startsWith('UPDATE video_studio_jobs SET deleted_at=COALESCE')) job.deleted_at = '2026-10-26';
+      if (sql.startsWith('UPDATE video_studio_jobs SET deleted_at=NULL')) job.deleted_at = null;
+      if (sql.startsWith('SELECT id,project_id'))
+        return [[...((sql.includes('IS NOT NULL') ? job.deleted_at : !job.deleted_at) ? [job] : [])]];
+      return [[]];
+    }
+  };
+  const studio = createVideoStudio({ db, runnerUrl: () => '', runnerToken: () => '' });
+  await studio.trashJob(id);
+  assert.equal((await studio.listJobs()).length, 0);
+  assert.equal((await studio.listJobs(undefined, { deleted: true })).length, 1);
+  await assert.rejects(studio.renderJob(id), { statusCode: 409 });
+  await studio.restoreJob(id);
+  assert.equal((await studio.listJobs()).length, 1);
+  assert.equal((await studio.getJob(id)).title, 'Keep the video');
+  assert.ok(queries.every(sql => !sql.startsWith('DELETE')));
+});
