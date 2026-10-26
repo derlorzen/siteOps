@@ -172,9 +172,9 @@
     $('suite-social-posts').replaceChildren();
     for (const post of posts) { const article = document.createElement('article'); const h = document.createElement('h3'); h.textContent = post.platform; const p = document.createElement('p'); p.style.whiteSpace = 'pre-wrap'; p.textContent = post.text; const b = document.createElement('button'); b.type='button'; b.className='ghost'; b.textContent='Text kopieren'; b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(post.text); b.textContent='Kopiert'; } catch { b.textContent='Bitte Text markieren und kopieren'; } }); article.append(h,p,b); $('suite-social-posts').append(article); }
   }
-  $('suite-new-chat').addEventListener('click', () => { if (sending) return; conversationId = undefined; latest = undefined; chatAttachments=[]; drawAttachments(); $('suite-conversation').value = ''; $('suite-chat-log').replaceChildren(); });
+  $('suite-new-chat').addEventListener('click', () => { if (sending || uploadingImages) return; conversationId = undefined; latest = undefined; chatAttachments=[]; drawAttachments(); $('suite-conversation').value = ''; $('suite-chat-log').replaceChildren(); });
   $('suite-conversation').addEventListener('change', async () => {
-    if (sending) return;
+    if (sending || uploadingImages) return;
     conversationId = $('suite-conversation').value || undefined; $('suite-chat-log').replaceChildren();
     if (!conversationId) return;
     try { const data = await api('conversations/' + conversationId + '?project_id=' + projectId); for (const m of data.messages) appendMessage(m.role, m.text || m.result.reply, m.result, m.attachments || []); latest = data.messages.at(-1)?.result; if (latest?.social_posts) showPosts(latest.social_posts); }
@@ -202,7 +202,7 @@
     if(sending || uploadingImages)return;
     if(!projectId){$('suite-agent-status').textContent='Zuerst ein Projekt auswählen.';return;}
     if(chatAttachments.length+files.length>3){$('suite-agent-status').textContent='Maximal drei Bilder pro Nachricht.';return;}
-    uploadingImages=true;$('suite-send').disabled=true;$('suite-chat-images').disabled=true;drawAttachments();
+    uploadingImages=true;$('vs-project').disabled=true;$('suite-conversation').disabled=true;$('suite-send').disabled=true;$('suite-chat-images').disabled=true;drawAttachments();
     try{
       for(const file of files){
         if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('Bitte PNG, JPG oder WebP auswählen.');
@@ -220,7 +220,7 @@
         }finally{URL.revokeObjectURL(objectUrl);}
       }
       $('suite-agent-status').textContent=chatAttachments.length+' Bilder angehängt. Beim Absenden werden sie vom Agenten berücksichtigt.';
-    }catch(e){$('suite-agent-status').textContent=e.message;}finally{uploadingImages=false;$('suite-send').disabled=false;$('suite-chat-images').disabled=false;$('suite-chat-images').value='';drawAttachments();}
+    }catch(e){$('suite-agent-status').textContent=e.message;}finally{uploadingImages=false;$('vs-project').disabled=false;$('suite-conversation').disabled=false;$('suite-send').disabled=false;$('suite-chat-images').disabled=false;$('suite-chat-images').value='';drawAttachments();}
   }
   $('suite-chat-images').addEventListener('change',event=>attachImages(Array.from(event.target.files || [])));
   $('suite-prompt').addEventListener('paste',event=>{
