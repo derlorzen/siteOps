@@ -45,6 +45,42 @@ SiteOps stores only SHA-256 hashes of OAuth access/refresh tokens and authorizat
 
 SiteOps advertises RFC 9207 issuer identification and returns `iss` on authorization responses.
 
+
+### ChatGPT action-discovery compatibility
+
+SiteOps may expose more than 100 MCP tools, including complex Video Studio and
+deployment input schemas. Some ChatGPT clients have difficulty discovering very
+large manifests even when the OAuth authorization succeeded; this is a diagnostic
+hypothesis, not a documented fixed ChatGPT size limit.
+
+To reduce the discovery payload **without changing Claude**, OAuth clients
+identified through ChatGPT CIMD or DCR metadata receive a deliberately smaller,
+fixed tool catalog. Claude, other MCP clients, and legacy bearer users continue
+to receive all tools. Tool execution still uses the same authorization and
+change-preview/approval controls.
+
+For diagnostic comparison, `MCP_CHATGPT_COMPACT=false` disables the ChatGPT
+catalog restriction after application restart (no OAuth tokens need to be
+revoked). Leave the setting unset for the smaller catalog.
+
+After deployment:
+
+1. In SiteOps → MCP & OAuth → Audit, inspect POST requests for
+   `server/discover`, `initialize` and `tools/list`. The method is recorded
+   in the existing `mcp_tool` column, without the bearer token.
+2. If no discovery request reaches SiteOps, check ChatGPT's connection,
+   public HTTPS routing and its OAuth callback. If discovery returns 401,
+   inspect token resource/scope and the `WWW-Authenticate` challenge.
+3. If discovery reaches SiteOps with HTTP 200 but ChatGPT still refuses the
+   actions, compare the bounded ChatGPT catalog and full Claude catalog. Inspect
+   the actual response schema size and any invalid tool schemas.
+4. In ChatGPT Plugins, refresh the connection's tool metadata or reconnect,
+   then start a new conversation to test the actions.
+
+This change is intentionally isolated to ChatGPT's discovered tool catalog;
+it is not proof that the original error was caused by manifest size. The
+live authenticated `tools/list` response and ChatGPT UI must still be tested.
+
 ## Claude
 
 1. Open Claude → Settings → Connectors.

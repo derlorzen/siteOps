@@ -14,6 +14,7 @@ import { Readable, Writable } from 'node:stream';
 import nodemailer from 'nodemailer';
 import PHPParser from 'php-parser';
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
+import { shouldRegisterMcpTool, isChatGptMcpClient } from './lib/mcp-profile.mjs';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
@@ -2010,7 +2011,8 @@ async function auditLogList(limit = 200) {
 }
 function mcpToolFromBody(body) {
   const msg = Array.isArray(body) ? body[0] : body;
-  return msg && msg.method === 'tools/call' && typeof msg.params?.name === 'string' ? msg.params.name : null;
+  if (msg?.method === 'tools/call' && typeof msg.params?.name === 'string') return msg.params.name;
+  return ['initialize', 'server/discover', 'tools/list'].includes(msg?.method) ? msg.method : null;
 }
 async function processMonitor(site) {
   const result = await checkSiteNow(site);
@@ -4160,10 +4162,15 @@ const youtubeService = createYouTubeService({
   studio: () => videoStudioService
 });
 const youtubeWorker = createYouTubeUploadWorker(youtubeService);
-function mcpServer() {
+function mcpServer(profile = 'full') {
   const s = new McpServer({ name: 'lorzen-siteops', version: buildInfo.version });
-  registerCoolifyDeploymentTools(s, coolifyDeployer, toolText);
-  s.registerTool(
+  const registerTool = (name, ...args) => {
+    if (!shouldRegisterMcpTool(profile, name)) return undefined;
+    return s.registerTool(name, ...args);
+  };
+  const filteredServer = { registerTool };
+  registerCoolifyDeploymentTools(filteredServer, coolifyDeployer, toolText);
+  registerTool(
     'sites_list',
     {
       description: 'List managed websites with deployment and monitor mode. Never returns credentials.',
@@ -4184,7 +4191,7 @@ function mcpServer() {
         }))
       )
   );
-  s.registerTool(
+  registerTool(
     'server_profiles_list',
     {
       description:
@@ -4193,7 +4200,7 @@ function mcpServer() {
     },
     async () => toolText(await connectionProfiles.list())
   );
-  s.registerTool(
+  registerTool(
     'site_provision',
     {
       description:
@@ -4202,7 +4209,7 @@ function mcpServer() {
     },
     async input => toolText(await provisionWebsite(input))
   );
-  s.registerTool(
+  registerTool(
     'site_get',
     {
       description:
@@ -4211,7 +4218,7 @@ function mcpServer() {
     },
     async ({ site }) => toolText(publicSite(await getSite(site)))
   );
-  s.registerTool(
+  registerTool(
     'site_overview',
     {
       description:
@@ -4220,7 +4227,7 @@ function mcpServer() {
     },
     async ({ site }) => toolText(await siteOverview(site))
   );
-  s.registerTool(
+  registerTool(
     'site_status',
     {
       description:
@@ -4229,7 +4236,7 @@ function mcpServer() {
     },
     async ({ site }) => toolText(await checkSiteNow(await getSite(site)))
   );
-  s.registerTool(
+  registerTool(
     'site_delete_preview',
     {
       description:
@@ -4239,7 +4246,7 @@ function mcpServer() {
     },
     async input => toolText(await siteDeletion.preview(input))
   );
-  s.registerTool(
+  registerTool(
     'site_delete_confirm',
     {
       description:
@@ -4249,7 +4256,7 @@ function mcpServer() {
     },
     async input => toolText(await siteDeletion.confirm(input))
   );
-  s.registerTool(
+  registerTool(
     'site_update',
     {
       description: 'Update non-secret site operations settings. Does not alter connection credentials.',
@@ -4282,7 +4289,7 @@ function mcpServer() {
       return toolText(publicSite(await updateSite(site, changes)));
     }
   );
-  s.registerTool(
+  registerTool(
     'site_connection_test',
     {
       description: 'Test the currently stored webspace or Git deployment connection without changing configuration.',
@@ -4290,7 +4297,7 @@ function mcpServer() {
     },
     async ({ site }) => toolText(await testStoredConnection(await getSite(site)))
   );
-  s.registerTool(
+  registerTool(
     'site_connection_update',
     {
       description:
@@ -4318,7 +4325,7 @@ function mcpServer() {
       return toolText(publicSite(await updateSiteConnection(site, changes)));
     }
   );
-  s.registerTool(
+  registerTool(
     'deployment_info',
     {
       description: 'Show current deployment mode and source state, including Git branch HEAD when available.',
@@ -4326,7 +4333,7 @@ function mcpServer() {
     },
     async ({ site }) => toolText(await deploymentInfo(site))
   );
-  s.registerTool(
+  registerTool(
     'monitor_history',
     {
       description: 'List recent monitoring checks with detailed check results.',
@@ -4334,7 +4341,7 @@ function mcpServer() {
     },
     async ({ site, limit }) => toolText(await listMonitorChecks(site, limit))
   );
-  s.registerTool(
+  registerTool(
     'incidents_list',
     {
       description: 'List recent incidents for a website.',
@@ -4342,7 +4349,7 @@ function mcpServer() {
     },
     async ({ site, limit }) => toolText(await listIncidents(site, limit))
   );
-  s.registerTool(
+  registerTool(
     'incident_get',
     {
       description: 'Get an incident and its full event/alert/recovery timeline.',
@@ -4350,7 +4357,7 @@ function mcpServer() {
     },
     async ({ incident_id }) => toolText(await getIncident(incident_id))
   );
-  s.registerTool(
+  registerTool(
     'files_list',
     {
       description:
@@ -4359,7 +4366,7 @@ function mcpServer() {
     },
     async ({ site, path }) => toolText(await listRemote(site, path))
   );
-  s.registerTool(
+  registerTool(
     'files_find',
     {
       description: 'Recursively find files/directories by path/name substring, bounded by a result limit.',
@@ -4371,7 +4378,7 @@ function mcpServer() {
     },
     async ({ site, query, limit }) => toolText(await findFiles(site, query, limit))
   );
-  s.registerTool(
+  registerTool(
     'text_search',
     {
       description:
@@ -4386,7 +4393,7 @@ function mcpServer() {
     async ({ site, query, max_files, max_bytes }) =>
       toolText(await searchText(site, query, { maxFiles: max_files, maxBytes: max_bytes }))
   );
-  s.registerTool(
+  registerTool(
     'file_read',
     {
       description: 'Read a text file from the current source of truth.',
@@ -4394,7 +4401,7 @@ function mcpServer() {
     },
     async ({ site, path }) => toolText(await readRemoteText(site, path))
   );
-  s.registerTool(
+  registerTool(
     'change_preview',
     {
       description: 'Prepare safe file changes. content=null deletes. No production/source write yet.',
@@ -4406,7 +4413,7 @@ function mcpServer() {
     },
     async ({ site, description, files }) => toolText(await createPreview(site, files, description))
   );
-  s.registerTool(
+  registerTool(
     'change_apply',
     {
       description:
@@ -4415,7 +4422,7 @@ function mcpServer() {
     },
     async ({ preview_id }) => toolText(await applyPreview(preview_id))
   );
-  s.registerTool(
+  registerTool(
     'history_list',
     {
       description: 'List recent recorded changes.',
@@ -4423,7 +4430,7 @@ function mcpServer() {
     },
     async ({ site, limit }) => toolText(await listHistory(site, limit))
   );
-  s.registerTool(
+  registerTool(
     'history_diff',
     {
       description: 'Get Git diff for a recorded SiteOps change.',
@@ -4431,7 +4438,7 @@ function mcpServer() {
     },
     async ({ change_id }) => toolText(await changeDiff(change_id))
   );
-  s.registerTool(
+  registerTool(
     'rollback_preview',
     {
       description: 'Prepare rollback of a recorded change; does not write until change_apply.',
@@ -4439,7 +4446,7 @@ function mcpServer() {
     },
     async ({ change_id }) => toolText(await rollbackPreview(change_id))
   );
-  s.registerTool(
+  registerTool(
     'site_backup',
     {
       description: 'Create a full Git-backed SiteOps snapshot from the current source of truth.',
@@ -4447,12 +4454,12 @@ function mcpServer() {
     },
     async ({ site }) => toolText(await fullBackup(await getSite(site)))
   );
-  s.registerTool(
+  registerTool(
     'backup_status',
     { description: 'Get scheduled backup state and the latest backup.', inputSchema: z.object({ site: z.string() }) },
     async ({ site }) => toolText(await backupStatus(site))
   );
-  s.registerTool(
+  registerTool(
     'backups_list',
     {
       description: 'List full backups.',
@@ -4460,7 +4467,7 @@ function mcpServer() {
     },
     async ({ site, limit }) => toolText(await listBackups(await getSite(site), limit))
   );
-  s.registerTool(
+  registerTool(
     'backup_restore_preview',
     {
       description: 'Create a safe restore preview from a full backup. A fresh safety backup is created first.',
@@ -4468,7 +4475,7 @@ function mcpServer() {
     },
     async ({ backup_id }) => toolText(await backupRestorePreview(backup_id))
   );
-  s.registerTool(
+  registerTool(
     'seo_start',
     {
       description:
@@ -4489,7 +4496,7 @@ function mcpServer() {
         })
       )
   );
-  s.registerTool(
+  registerTool(
     'seo_run_status',
     {
       description: 'Get status and summary of an SEO audit run.',
@@ -4497,7 +4504,7 @@ function mcpServer() {
     },
     async ({ run_id }) => toolText(await seoRunGet(run_id))
   );
-  s.registerTool(
+  registerTool(
     'seo_latest',
     {
       description: 'Get the latest SEO audit and page-level metrics for a website.',
@@ -4505,7 +4512,7 @@ function mcpServer() {
     },
     async ({ site }) => toolText(await seoLatest(site))
   );
-  s.registerTool(
+  registerTool(
     'seo_page',
     {
       description: 'Get full SEO details, WDF-IDF terms, Lighthouse values and outgoing links for one crawled page.',
@@ -4513,7 +4520,7 @@ function mcpServer() {
     },
     async ({ page_id }) => toolText(await seoPageGet(page_id))
   );
-  s.registerTool(
+  registerTool(
     'seo_graph',
     {
       description:
@@ -4522,7 +4529,7 @@ function mcpServer() {
     },
     async ({ site, limit }) => toolText(await seoGraph(site, limit))
   );
-  s.registerTool(
+  registerTool(
     'seo_issues',
     {
       description: 'List SEO issues from the latest crawl, optionally filtered by severity.',
@@ -4534,7 +4541,7 @@ function mcpServer() {
     },
     async ({ site, level, limit }) => toolText(await seoIssuesList(site, { level, limit }))
   );
-  s.registerTool(
+  registerTool(
     'seo_compare',
     {
       description:
@@ -4543,7 +4550,7 @@ function mcpServer() {
     },
     async ({ site }) => toolText(await seoCompare(site))
   );
-  s.registerTool(
+  registerTool(
     'quality_overview',
     {
       description:
@@ -4552,7 +4559,7 @@ function mcpServer() {
     },
     async ({ site }) => toolText(await qualityOverview(site))
   );
-  s.registerTool(
+  registerTool(
     'synthetics_list',
     {
       description:
@@ -4561,7 +4568,7 @@ function mcpServer() {
     },
     async ({ site }) => toolText(await syntheticTestsList(site))
   );
-  s.registerTool(
+  registerTool(
     'synthetic_create',
     {
       description:
@@ -4596,7 +4603,7 @@ function mcpServer() {
         })
       )
   );
-  s.registerTool(
+  registerTool(
     'synthetic_update',
     {
       description: 'Update a synthetic journey. Omitted secrets stay unchanged; clear_secrets removes them.',
@@ -4636,7 +4643,7 @@ function mcpServer() {
       );
     }
   );
-  s.registerTool(
+  registerTool(
     'synthetic_run',
     {
       description:
@@ -4646,7 +4653,7 @@ function mcpServer() {
     async ({ test_id, save_baseline }) =>
       toolText(await runSyntheticTest(test_id, { saveBaseline: save_baseline, actor: 'mcp' }))
   );
-  s.registerTool(
+  registerTool(
     'synthetic_run_get',
     {
       description: 'Get one synthetic run result without screenshot bytes.',
@@ -4654,7 +4661,7 @@ function mcpServer() {
     },
     async ({ run_id }) => toolText(await syntheticRunGet(run_id))
   );
-  s.registerTool(
+  registerTool(
     'fix_prompt',
     {
       description:
@@ -4668,17 +4675,17 @@ function mcpServer() {
     },
     async ({ kind, site, id, issue_code }) => toolText(await buildFixPrompt({ kind, site, id, issueCode: issue_code }))
   );
-  s.registerTool(
+  registerTool(
     'settings_get',
     { description: 'Get redacted global SiteOps settings. Secrets are never returned.', inputSchema: z.object({}) },
     async () => toolText(publicSettings())
   );
-  s.registerTool(
+  registerTool(
     'allinkl_accounts',
     { description: 'List configured ALL-INKL KAS accounts without revealing passwords.', inputSchema: z.object({}) },
     async () => toolText(await allInklService.list())
   );
-  s.registerTool(
+  registerTool(
     'allinkl_domains',
     {
       description: 'List domains managed in the selected ALL-INKL account.',
@@ -4686,7 +4693,7 @@ function mcpServer() {
     },
     async ({ accountId }) => toolText(await allInklService.domains(accountId))
   );
-  s.registerTool(
+  registerTool(
     'allinkl_diagnostics',
     {
       description:
@@ -4695,7 +4702,7 @@ function mcpServer() {
     },
     async ({ accountId, zone }) => toolText(await allInklService.diagnostics(accountId, zone))
   );
-  s.registerTool(
+  registerTool(
     'allinkl_dns_list',
     {
       description: 'Read DNS records for an ALL-INKL zone. Never changes records.',
@@ -4703,7 +4710,7 @@ function mcpServer() {
     },
     async ({ accountId, zone }) => toolText(await allInklService.records(accountId, zone))
   );
-  s.registerTool(
+  registerTool(
     'allinkl_dns_add',
     {
       description:
@@ -4712,7 +4719,7 @@ function mcpServer() {
     },
     async ({ accountId, ...record }) => toolText(await allInklService.addRecord(accountId, record))
   );
-  s.registerTool(
+  registerTool(
     'allinkl_dns_update',
     {
       description: 'Explicitly modify an existing A/AAAA/CNAME/TXT record by ID; mail and NS records are protected.',
@@ -4721,7 +4728,7 @@ function mcpServer() {
     async ({ accountId, recordId, ...record }) =>
       toolText(await allInklService.updateRecord(accountId, recordId, record))
   );
-  s.registerTool(
+  registerTool(
     'allinkl_provision',
     {
       description:
@@ -4730,7 +4737,7 @@ function mcpServer() {
     },
     async input => toolText(await allInklService.provision(input))
   );
-  s.registerTool(
+  registerTool(
     'allinkl_ssl_list',
     {
       description:
@@ -4739,7 +4746,7 @@ function mcpServer() {
     },
     async () => toolText(await sslService.list())
   );
-  s.registerTool(
+  registerTool(
     'allinkl_ssl_diagnostics',
     {
       description:
@@ -4748,7 +4755,7 @@ function mcpServer() {
     },
     async ({ accountId, hostname }) => toolText(await sslService.diagnose(accountId, hostname))
   );
-  s.registerTool(
+  registerTool(
     'allinkl_ssl_status',
     {
       description:
@@ -4757,7 +4764,7 @@ function mcpServer() {
     },
     async ({ hostname }) => toolText(await sslService.status(hostname))
   );
-  s.registerTool(
+  registerTool(
     'allinkl_ssl_enable',
     {
       description:
@@ -4766,7 +4773,7 @@ function mcpServer() {
     },
     async input => toolText(await sslService.enqueue(input))
   );
-  s.registerTool(
+  registerTool(
     'coolify_connections',
     {
       description:
@@ -4775,7 +4782,7 @@ function mcpServer() {
     },
     async () => toolText(await coolifyService.listConnections())
   );
-  s.registerTool(
+  registerTool(
     'coolify_connection_info',
     {
       description:
@@ -4784,7 +4791,7 @@ function mcpServer() {
     },
     async ({ connectionId }) => toolText(await coolifyService.connectionInfo(connectionId))
   );
-  s.registerTool(
+  registerTool(
     'coolify_services_list',
     {
       description:
@@ -4793,7 +4800,7 @@ function mcpServer() {
     },
     async ({ connectionId }) => toolText(await coolifyService.remoteServices(connectionId))
   );
-  s.registerTool(
+  registerTool(
     'coolify_service_info',
     {
       description:
@@ -4802,7 +4809,7 @@ function mcpServer() {
     },
     async ({ connectionId, serviceUuid }) => toolText(await coolifyService.remoteServiceInfo(connectionId, serviceUuid))
   );
-  s.registerTool(
+  registerTool(
     'coolify_projects_list',
     {
       description: 'List existing projects in one connected Coolify account. Read-only, no secrets.',
@@ -4810,7 +4817,7 @@ function mcpServer() {
     },
     async ({ connectionId }) => toolText(await coolifyService.projects(connectionId))
   );
-  s.registerTool(
+  registerTool(
     'coolify_project_create',
     {
       description:
@@ -4819,7 +4826,7 @@ function mcpServer() {
     },
     async input => toolText(await coolifyService.createProject(input))
   );
-  s.registerTool(
+  registerTool(
     'coolify_sources_list',
     {
       description:
@@ -4828,7 +4835,7 @@ function mcpServer() {
     },
     async ({ connectionId }) => toolText(await coolifyService.sources(connectionId))
   );
-  s.registerTool(
+  registerTool(
     'coolify_apps_list',
     {
       description:
@@ -4837,7 +4844,7 @@ function mcpServer() {
     },
     async ({ connectionId }) => toolText(await coolifyService.applications(connectionId))
   );
-  s.registerTool(
+  registerTool(
     'coolify_app_info',
     {
       description: 'Read one Coolify application by UUID. Only safe application metadata is returned.',
@@ -4846,7 +4853,7 @@ function mcpServer() {
     async ({ connectionId, applicationUuid }) =>
       toolText(await coolifyService.applicationInfo(connectionId, applicationUuid))
   );
-  s.registerTool(
+  registerTool(
     'coolify_app_create',
     {
       description:
@@ -4855,7 +4862,7 @@ function mcpServer() {
     },
     async input => toolText(await coolifyService.createApplication(input))
   );
-  s.registerTool(
+  registerTool(
     'coolify_command_list',
     {
       description:
@@ -4864,7 +4871,7 @@ function mcpServer() {
     },
     async input => toolText(await coolifyService.listCommands(input))
   );
-  s.registerTool(
+  registerTool(
     'coolify_command_run',
     {
       description:
@@ -4873,7 +4880,7 @@ function mcpServer() {
     },
     async input => toolText(await coolifyService.runCommand(input))
   );
-  s.registerTool(
+  registerTool(
     'coolify_app_logs',
     {
       description:
@@ -4889,7 +4896,7 @@ function mcpServer() {
         )
       )
   );
-  s.registerTool(
+  registerTool(
     'coolify_app_restart',
     {
       description:
@@ -4898,7 +4905,7 @@ function mcpServer() {
     },
     async input => toolText(await coolifyService.restart(input))
   );
-  s.registerTool(
+  registerTool(
     'coolify_app_deploy',
     {
       description:
@@ -4910,7 +4917,7 @@ function mcpServer() {
     },
     async input => toolText(await coolifyService.deployApplication(input))
   );
-  s.registerTool(
+  registerTool(
     'coolify_supabase_list',
     {
       description:
@@ -4919,7 +4926,7 @@ function mcpServer() {
     },
     async () => toolText(await coolifyService.instances())
   );
-  s.registerTool(
+  registerTool(
     'coolify_supabase_create',
     {
       description:
@@ -4928,7 +4935,7 @@ function mcpServer() {
     },
     async input => toolText(await coolifyService.enqueue(input))
   );
-  s.registerTool(
+  registerTool(
     'coolify_supabase_status',
     {
       description:
@@ -4937,7 +4944,7 @@ function mcpServer() {
     },
     async ({ id }) => toolText(await coolifyService.status(id))
   );
-  s.registerTool(
+  registerTool(
     'coolify_supabase_retry',
     {
       description:
@@ -4946,7 +4953,7 @@ function mcpServer() {
     },
     async ({ id }) => toolText(await coolifyService.retry(id))
   );
-  s.registerTool(
+  registerTool(
     'website_create_plan',
     {
       description:
@@ -4955,7 +4962,7 @@ function mcpServer() {
     },
     async input => toolText(await websiteFactory.plan(input))
   );
-  s.registerTool(
+  registerTool(
     'website_create',
     {
       description:
@@ -4964,7 +4971,7 @@ function mcpServer() {
     },
     async input => toolText(await websiteFactory.create(input))
   );
-  s.registerTool(
+  registerTool(
     'website_create_status',
     {
       description:
@@ -4973,7 +4980,7 @@ function mcpServer() {
     },
     async ({ installationId }) => toolText(await websiteFactory.status(installationId))
   );
-  s.registerTool(
+  registerTool(
     'cms_overview',
     {
       description: 'LorzCMS releases, connected installations and persisted update jobs. Never returns credentials.',
@@ -4981,7 +4988,7 @@ function mcpServer() {
     },
     async () => toolText(await cmsController.overview())
   );
-  s.registerTool(
+  registerTool(
     'cms_release_bundled',
     {
       description: 'Publish the bundled LorzCMS core as an immutable release. Does not deploy websites.',
@@ -4989,7 +4996,7 @@ function mcpServer() {
     },
     async () => toolText(await cmsController.publishBundled())
   );
-  s.registerTool(
+  registerTool(
     'cms_install',
     {
       description:
@@ -4998,7 +5005,7 @@ function mcpServer() {
     },
     async input => toolText(await cmsController.create(input))
   );
-  s.registerTool(
+  registerTool(
     'cms_install_allinkl',
     {
       description:
@@ -5029,7 +5036,7 @@ function mcpServer() {
     },
     async input => toolText(await cmsController.create({ ...input, publicRootReady: true }))
   );
-  s.registerTool(
+  registerTool(
     'cms_attach',
     {
       description:
@@ -5038,7 +5045,7 @@ function mcpServer() {
     },
     async input => toolText(await cmsController.attach(input))
   );
-  s.registerTool(
+  registerTool(
     'cms_update_schedule',
     {
       description: 'Queue a selected release for selected CMS installations, now or at an explicit ISO timestamp.',
@@ -5046,7 +5053,7 @@ function mcpServer() {
     },
     async input => toolText(await cmsController.schedule(input))
   );
-  s.registerTool(
+  registerTool(
     'cms_rollback',
     {
       description: 'Queue code rollback of a completed CMS update. Does not restore or overwrite editorial data.',
@@ -5054,7 +5061,7 @@ function mcpServer() {
     },
     async ({ jobId, runAt }) => toolText(await cmsController.rollback(jobId, runAt))
   );
-  s.registerTool(
+  registerTool(
     'cms_job_cancel',
     {
       description: 'Cancel a queued CMS job and erase its installation secrets.',
@@ -5062,7 +5069,7 @@ function mcpServer() {
     },
     async ({ jobId }) => toolText(await cmsController.cancel(jobId))
   );
-  s.registerTool(
+  registerTool(
     'cms_job_retry',
     {
       description: 'Retry an interrupted CMS job with its original idempotency key.',
@@ -5070,7 +5077,7 @@ function mcpServer() {
     },
     async ({ jobId }) => toolText(await cmsController.retry(jobId))
   );
-  s.registerTool(
+  registerTool(
     'cms_inspect',
     {
       description:
@@ -5079,7 +5086,7 @@ function mcpServer() {
     },
     async ({ installationId }) => toolText(await cmsController.inspect(installationId))
   );
-  s.registerTool(
+  registerTool(
     'cms_theme_apply',
     {
       description:
@@ -5088,7 +5095,7 @@ function mcpServer() {
     },
     async ({ installationId, theme }) => toolText(await cmsController.applyTheme(installationId, theme))
   );
-  s.registerTool(
+  registerTool(
     'cms_admin_recovery',
     {
       description:
@@ -5097,8 +5104,8 @@ function mcpServer() {
     },
     async ({ installationId }) => toolText(await cmsController.resetAdminPassword(installationId))
   );
-  registerVideoStudioTools(s, () => videoStudioService, toolText);
-  registerYouTubeTools(s, youtubeService, toolText);
+  registerVideoStudioTools(filteredServer, () => videoStudioService, toolText);
+  registerYouTubeTools(filteredServer, youtubeService, toolText);
   return s;
 }
 
@@ -5689,7 +5696,16 @@ async function mcpAuth(req, reply) {
       )
     ).rows[0];
     if (row && row.resource === oauthResource() && oauthScopeHas(row.scope, OAUTH_ACCESS_SCOPE)) {
-      req.siteopsAuth = { type: 'oauth', subject: row.subject, clientId: row.client_id, scope: row.scope };
+      const client = row.client_id.startsWith('https://')
+        ? { clientId: row.client_id }
+        : await oauthRegisteredClient(row.client_id);
+      req.siteopsAuth = {
+        type: 'oauth',
+        subject: row.subject,
+        clientId: row.client_id,
+        scope: row.scope,
+        profile: process.env.MCP_CHATGPT_COMPACT !== 'false' && isChatGptMcpClient(client) ? 'chatgpt' : 'full'
+      };
       return true;
     }
   }
@@ -7413,9 +7429,11 @@ async function start() {
   app.post('/oauth/authorize', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, oauthAuthorizeSubmit);
   app.post('/oauth/token', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, oauthToken);
   app.post('/oauth/revoke', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, oauthRevoke);
-  const handler = createMcpHandler(() => mcpServer()),
-    nodeHandler = toNodeHandler(handler);
-  app.all('/mcp', async (req, reply) => nodeHandler(req.raw, reply.raw, req.body));
+  const nodeHandler = toNodeHandler(createMcpHandler(() => mcpServer())),
+    chatgptNodeHandler = toNodeHandler(createMcpHandler(() => mcpServer('chatgpt')));
+  app.all('/mcp', async (req, reply) =>
+    (req.siteopsAuth?.profile === 'chatgpt' ? chatgptNodeHandler : nodeHandler)(req.raw, reply.raw, req.body)
+  );
   app.get('/', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/websites', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   async function cmsWorkspacePage(reply, view = 'sites', installationId = null) {

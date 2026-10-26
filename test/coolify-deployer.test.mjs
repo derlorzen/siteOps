@@ -524,7 +524,7 @@ test('MCP tools serialize schemas and enforce server-side explicit approval', as
   assert.equal(registered.get('coolify_install_execute').definition.annotations.readOnlyHint, false);
   await assert.rejects(registered.get('coolify_install_execute').run({ id: 'bad', approve: false }));
   const source = await readFile(new URL('../app.mjs', import.meta.url), 'utf8');
-  assert.ok(source.includes('registerCoolifyDeploymentTools(s, coolifyDeployer, toolText)'));
+  assert.ok(source.includes('registerCoolifyDeploymentTools(filteredServer, coolifyDeployer, toolText)'));
   assert.ok(source.includes('async function mcpAuth(req, reply)'));
 });
 
