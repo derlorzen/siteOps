@@ -6,7 +6,7 @@
   const typeLabel = { customer: 'Kunde', project: 'Projekt', task: 'Task', site: 'Website', invoice: 'Rechnung' };
   const typeIcon = { customer: '◎', project: '▤', task: '☑', site: '◈', invoice: '▧' };
 
-  const header = document.querySelector('.crm-topbar') || document.querySelector('.ops-workspace-bar');
+  const header = document.querySelector('.siteops-topbar') || document.querySelector('.crm-topbar') || document.querySelector('.ops-workspace-bar');
   if (!header) return;
   const trigger = document.createElement('button');
   trigger.type = 'button';

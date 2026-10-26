@@ -30,15 +30,13 @@ test(
     );
     await page.goto('https://siteops.test/video-studio');
     await page.addScriptTag({ content: script });
-    const link = page
-      .getByRole('navigation', { name: 'SiteOps-Navigation' })
-      .getByRole('link', { name: 'YouTube', exact: true });
+    const link = page.getByRole('navigation', { name: 'SiteOps-Navigation' }).locator('a[href="/youtube"]');
     assert.equal(await link.getAttribute('href'), '/youtube');
     assert.equal(await link.getAttribute('aria-current'), null);
     await link.click();
     await page.addScriptTag({ content: script });
     assert.equal(await link.getAttribute('aria-current'), 'page');
-    assert.equal(await page.locator('.ops-workspace-bar strong').textContent(), 'YouTube');
+    assert.equal(await page.locator('.ops-workspace-bar strong').textContent(), 'Video Suite / YouTube & Kanäle');
     assert.equal(await page.locator('.ops-side-links [aria-current="page"]').count(), 1);
   }
 );
@@ -69,7 +67,7 @@ test(
         return route.fulfill({
           contentType: 'text/html; charset=utf-8',
           body:
-            '<meta charset="utf-8"><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/ops-workspace.css"><link rel="stylesheet" href="/assets/siteops-theme.css"><body class="ops-mode"><main class="ops-main">' +
+            '<meta charset="utf-8"><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/ops-workspace.css"><link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-shell.css"><body class="ops-mode"><main class="ops-main">' +
             renderYouTube() +
             '</main></body>'
         });
@@ -83,7 +81,14 @@ test(
           contentType: 'text/css',
           body: await fs.readFile(new URL('../public/youtube.css', import.meta.url), 'utf8')
         });
-      if (['/assets/app.css', '/assets/ops-workspace.css', '/assets/siteops-theme.css'].includes(url.pathname))
+      if (
+        [
+          '/assets/app.css',
+          '/assets/ops-workspace.css',
+          '/assets/siteops-theme.css',
+          '/assets/workspace-shell.css'
+        ].includes(url.pathname)
+      )
         return route.fulfill({
           contentType: 'text/css',
           body: await fs.readFile(new URL('../public/' + url.pathname.split('/').pop(), import.meta.url), 'utf8')

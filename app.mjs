@@ -5698,7 +5698,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/coolify">Coolify</a><a href="/video-suite">Video Suite</a><a href="/settings">Einstellungen</a><a href="/logout">Abmelden</a></div></div></nav><main>${body}</main><script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css"><link rel="stylesheet" href="/assets/ops-workspace.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css"><link rel="stylesheet" href="/assets/workspace-shell.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode' : 'ops-mode'}"><nav class="topnav"><div class="navinner"><a class="brand" href="/">SiteOps</a><div class="navlinks"><a href="/">Übersicht</a><a href="/lorzcms">LorzCMS</a><a href="/billing">Kunden & Zeiten</a><a href="/setup">Website hinzufügen</a><a href="/mcp-info">MCP</a><a href="/coolify">Coolify</a><a href="/video-suite">Video Suite</a><a href="/settings">Einstellungen</a><a href="/logout">Abmelden</a></div></div></nav><main>${body}</main><script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -5744,7 +5744,7 @@ function siteOpsTableView(cfg){
   controls.forEach(el=>el.addEventListener(el.tagName==='INPUT'?'input':'change',()=>{page=1;render();}));
   render();
 }
-</script>${title === 'Kunden & Abrechnung' ? '' : '<script defer src="/assets/ops-workspace.js"></script>'}<script defer src="/assets/siteops-theme.js"></script><script defer src="/assets/workspace-search.js"></script><script defer src="/assets/build-footer.js"></script></body></html>`;
+</script><script defer src="/assets/ops-workspace.js"></script><script defer src="/assets/siteops-theme.js"></script><script defer src="/assets/workspace-search.js"></script><script defer src="/assets/build-footer.js"></script></body></html>`;
 }
 
 function mcpInfoPage() {
@@ -7347,7 +7347,7 @@ async function start() {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/lorzcms.js', import.meta.url), 'utf8'))
   );
-  for (const asset of ['video-suite.css', 'video-suite.js'])
+  for (const asset of ['video-suite.css', 'video-suite.js', 'workspace-shell.css'])
     app.get('/assets/' + asset, async (_req, reply) =>
       reply
         .type(asset.endsWith('.css') ? 'text/css' : 'text/javascript')

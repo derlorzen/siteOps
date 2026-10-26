@@ -1,6 +1,6 @@
 # Video Suite
 
-Video Suite combines the production workspace and YouTube channel management. Open `/video-suite`; existing `/video-studio` links continue to work. YouTube remains at `/youtube` and uses the same suite navigation.
+Video Suite combines the production workspace and YouTube channel management. Open `/video-suite`; existing `/video-studio` links continue to work. YouTube remains at `/youtube`. The Video Suite steps are nested in the shared SiteOps navigation on every page.
 
 1. Create/select a project under Settings and choose narration language and voice.
 2. Configure OpenAI under Video Suite → Settings. The key is encrypted using SiteOps' existing master key. Alternatively set `OPENAI_API_KEY` on the SiteOps application server. The runner's optional speech API key remains separate.

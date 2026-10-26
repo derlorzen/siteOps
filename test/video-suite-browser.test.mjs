@@ -70,7 +70,7 @@ test(
         return route.fulfill({
           contentType: 'text/html',
           body:
-            '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/ops-workspace.css"><body class="ops-mode"><main>' +
+            '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/ops-workspace.css"><link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-shell.css"><body class="ops-mode"><main>' +
             (url.pathname === '/youtube' ? renderYouTube() : renderVideoStudio()) +
             '</main><script src="/assets/ops-workspace.js"></script></body>'
         });

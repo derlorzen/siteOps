@@ -2,10 +2,10 @@
 (() => {
   'use strict';
 
-  const DEFAULT = '#6856DA';
+  const DEFAULT = '#2465E8';
   const STORAGE_KEY = 'siteops-ui-accent-v1';
   const presets = [
-    ['Ozean', '#1D4ED8'],
+    ['Studio', '#2465E8'],
     ['Petrol', '#0F766E'],
     ['Grün', '#15803D'],
     ['Orange', '#B45309'],

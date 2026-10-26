@@ -203,6 +203,7 @@
     window.scrollTo(0,0);
   }
   function render() {
+    document.dispatchEvent(new Event('siteops:navigation'));
     const route=currentRoute();
     root.querySelector('.crm-nav').innerHTML=navigation();
     $('crmTopActions').innerHTML=route.section==='project'

@@ -134,5 +134,5 @@ test('Video Studio registers dashboard, JSON API and guarded media download rout
     'GET /api/video-studio/jobs/:id/file'
   ])
     assert.ok(paths.includes(p), p);
-  assert.match(renderVideoStudio(), /Video Suite/);
+  assert.match(renderVideoStudio(), /data-suite-page="overview"/);
 });

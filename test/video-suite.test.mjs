@@ -172,7 +172,8 @@ test('suite preserves all existing control bindings and moves advanced controls 
   assert.equal($('#vs-form').closest('[data-suite-pane]').attr('data-suite-pane'), 'script');
   const js = await readFile(new URL('../public/video-studio.js', import.meta.url), 'utf8');
   for (const match of js.matchAll(/\$\('#([^']+)'\)/g)) assert.equal($('#' + match[1]).length, 1, match[1]);
-  assert.match(renderYouTube(), /aria-label="Video Suite"/);
+  assert.match(renderYouTube(), /data-suite-page="youtube"/);
+  assert.doesNotMatch(renderYouTube(), /class="suite-rail"/);
 });
 
 test('protected production preview streams runner ranges without buffering', async () => {

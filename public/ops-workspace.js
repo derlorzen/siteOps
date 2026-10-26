@@ -2,46 +2,112 @@
 // Existing monitoring, backup, deployment, SEO, CMS and settings forms remain untouched.
 (() => {
   'use strict';
-  if (!document.body.classList.contains('ops-mode')) return;
+  if (!document.body.classList.contains('ops-mode') && !document.body.classList.contains('crm-mode')) return;
   const $ = selector => document.querySelector(selector);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const pages=[
-    ['/','Übersicht','▦'],['/websites','Websites','◎'],['/tools','Tools','⌘'],['/billing','Projekte','▤'],['/billing/activity','Aktivitäten','◷'],
-    ['/lorzcms','LorzCMS','◈'],['/video-suite','Video Suite','▶'],['/setup','Website hinzufügen','+'],
-    ['/settings','Einstellungen','⚙'],['/mcp-info','Integrationen','⇄'],
-    ['/hosting','Hosting & DNS','◎','Integrationen']
+    ['/','Übersicht','▦'],['/websites','Websites','◎'],['/tools','Tools','⌘'],
+    ['/billing','Kunden & Projekte','▤'],
+    ['/billing','Projekte','▤','Kunden & Projekte'],['/billing/customers','Kunden','◎','Kunden & Projekte'],
+    ['/billing/time','Zeiterfassung','◷','Kunden & Projekte'],['/billing/invoices','Rechnungen','▧','Kunden & Projekte'],
+    ['/billing/activity','Aktivitäten','◷','Kunden & Projekte'],['/billing/settings','Abrechnung','⚙','Kunden & Projekte'],
+    ['/lorzcms','LorzCMS','◈'],['/video-suite','Video Suite','▶'],
+    ['/video-suite#overview','Übersicht','01','Video Suite'],['/video-suite#agent','Creative Agent','02','Video Suite'],
+    ['/video-suite#script','Skript & Szenen','03','Video Suite'],['/video-suite#production','Produktionen','04','Video Suite'],
+    ['/video-suite#assets','SEO & Titelbild','05','Video Suite'],['/youtube','YouTube & Kanäle','06','Video Suite'],
+    ['/video-suite#settings','Suite-Einstellungen','07','Video Suite'],
+    ['/mcp-info','Integrationen','⇄'],
+    ['/hosting','Hosting & DNS','◎','Integrationen'],['/coolify','Coolify','◈','Integrationen'],
+    ['/mcp-info','MCP & Verbindungen','⇄','Integrationen'],['/settings','Einstellungen','⚙']
   ];
   const path=location.pathname;
-  const active=path.startsWith('/sites/')||path==='/websites'?'Websites':
-    path.startsWith('/tools')?'Tools':['/video-studio','/video-suite','/youtube'].includes(path)?'Video Suite':path.startsWith('/lorzcms')?'LorzCMS':path.startsWith('/billing')?'Projekte':
-    path==='/setup'?'Website hinzufügen':path==='/settings'?'Einstellungen':
-    path.startsWith('/hosting')?'Hosting & DNS':path.startsWith('/mcp-info')?'Integrationen':'Übersicht';
-  const currentPage=pages.find(([,title])=>title===active);
-  const menu=pages.map(([href,label,icon,parent])=>
-    '<a href="'+href+'" class="ops-nav-item'+(parent?' ops-nav-subitem':'')+
-    (label===active?' is-active':parent===active?' is-section-active':'')+
-    (!parent && label==='Integrationen' && active==='Hosting & DNS'?' is-section-active':'')+
-    '"'+(label===active?' aria-current="page"':'')+
-    (parent?' data-nav-parent="'+esc(parent)+'"':'')+
-    '><span aria-hidden="true" class="ops-nav-icon">'+icon+
-    '</span><span>'+label+'</span></a>').join('');
-  const layout=document.createElement('div');
-  layout.className='ops-workspace';
-  layout.innerHTML='<aside class="ops-sidebar"><div class="ops-identity"><span class="ops-mark">S</span>'+
-    '<div><strong>SiteOps</strong><small>Workspace</small></div></div>'+
-    '<nav class="ops-side-links" aria-label="SiteOps-Navigation">'+menu+'</nav>'+
-    '<div class="ops-side-footer"><a href="/logout" class="ops-nav-item" style="margin-bottom:10px">Abmelden</a><span>Monitoring · Deployments · Kundenprojekte</span></div></aside>'+
-    '<div class="ops-content"><div class="ops-workspace-bar"><div><span class="ops-mobile-mark">S</span>'+
-    '<span>SiteOps</span><span class="ops-chevron">›</span><strong>'+esc(active)+'</strong></div>'+
-    '<div class="ops-top-actions"><a href="/setup" class="ops-top-new">+ Website</a></div></div></div>';
-  const oldNav=$('.topnav');
+  const suiteRoute = href => href.startsWith('/video-suite#') ? href.split('#')[1] : '';
+  const link = ([href,label,icon,parent]) => '<a href="'+href+'" class="ops-nav-item'+(parent?' ops-nav-subitem':'')+'" data-workspace-href="'+href+'"'+
+    (parent?' data-nav-parent="'+esc(parent)+'"':'')+(suiteRoute(href)?' data-suite-nav="'+suiteRoute(href)+'"':'')+
+    '><span aria-hidden="true" class="ops-nav-icon">'+icon+'</span><span>'+esc(label)+'</span></a>';
+  const menu=pages.filter(item=>!item[3]).map(item=>{
+    const children=pages.filter(child=>child[3]===item[1]);
+    if(!children.length)return link(item);
+    return '<details class="siteops-nav-group" data-nav-group="'+esc(item[1])+'"><summary><span class="ops-nav-icon" aria-hidden="true">'+item[2]+'</span><span>'+esc(item[1])+'</span><span class="siteops-nav-chevron" aria-hidden="true">⌄</span></summary><div class="siteops-nav-children">'+children.map(link).join('')+'</div></details>';
+  }).join('');
   const main=$('body > main');
-  if(!main)return;
-  document.body.insertBefore(layout,oldNav||main);
-  oldNav?.remove();
-  main.classList.add('ops-main');
-  $('.ops-content').appendChild(main);
+  if(!main || $('.siteops-shell'))return;
+  document.body.classList.add('siteops-workspace');
+  const layout=document.createElement('div');
+  layout.className='siteops-shell ops-workspace';
+  layout.innerHTML='<a class="siteops-skip" href="#siteopsMain">Zum Inhalt springen</a>'+
+    '<header class="siteops-topbar ops-workspace-bar"><button type="button" class="siteops-menu-toggle" aria-controls="siteopsSidebar" aria-expanded="false" aria-label="Hauptmenü öffnen"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>'+
+    '<a class="siteops-brand" href="/"><span class="siteops-brand-mark">S</span><span>SiteOps<small>YOUR DIGITAL WORKSPACE</small></span></a>'+
+    '<div class="siteops-breadcrumb"><span>Workspace</span><span aria-hidden="true">/</span><strong id="siteopsCurrentPage">Übersicht</strong></div>'+
+    '<div class="ops-top-actions"><a href="/setup" class="ops-top-new">+ Website</a></div></header>'+
+    '<aside class="siteops-sidebar ops-sidebar" id="siteopsSidebar"><span class="siteops-menu-label">WORKSPACE</span><nav class="ops-side-links" aria-label="SiteOps-Navigation">'+menu+'</nav>'+
+    '<div class="ops-side-footer"><a href="/logout" class="siteops-logout">Abmelden ↗</a></div></aside>'+
+    '<button type="button" class="siteops-nav-backdrop" aria-label="Hauptmenü schließen" hidden></button>'+
+    '<div class="siteops-content ops-content"></div>';
+  const oldNav=$('.topnav');
+  document.body.insertBefore(layout,oldNav||main);oldNav?.remove();
+  main.classList.add('ops-main');main.id='siteopsMain';main.tabIndex=-1;
+  $('.siteops-content').appendChild(main);
+  const sidebar=$('#siteopsSidebar'),toggle=$('.siteops-menu-toggle'),backdrop=$('.siteops-nav-backdrop');
+  const mobile=window.matchMedia('(max-width: 900px)');
+  function closeMenu(restore=false){
+    document.body.classList.remove('siteops-nav-open');toggle.setAttribute('aria-expanded','false');
+    toggle.setAttribute('aria-label','Hauptmenü öffnen');backdrop.hidden=true;
+    sidebar.inert=mobile.matches;$('.siteops-content').inert=false;sidebar.removeAttribute('role');sidebar.removeAttribute('aria-modal');
+    if(restore)toggle.focus();
+  }
+  function openMenu(){
+    document.body.classList.add('siteops-nav-open');toggle.setAttribute('aria-expanded','true');
+    toggle.setAttribute('aria-label','Hauptmenü schließen');backdrop.hidden=false;sidebar.inert=false;$('.siteops-content').inert=true;
+    sidebar.setAttribute('role','dialog');sidebar.setAttribute('aria-modal','true');sidebar.setAttribute('aria-label','Hauptnavigation');
+    sidebar.querySelector('[aria-current="page"],a,summary')?.focus();
+  }
+  toggle.addEventListener('click',()=>document.body.classList.contains('siteops-nav-open')?closeMenu(true):openMenu());
+  backdrop.addEventListener('click',()=>closeMenu(true));
+  mobile.addEventListener('change',()=>closeMenu());closeMenu();
+  document.addEventListener('keydown',event=>{
+    if(!document.body.classList.contains('siteops-nav-open'))return;
+    if(event.key==='Escape'){event.preventDefault();closeMenu(true);}
+    if(event.key==='Tab'){
+      const nodes=[...sidebar.querySelectorAll('a,summary,button')].filter(el=>el.getClientRects().length);
+      const first=nodes[0],last=nodes.at(-1);
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+    }
+  });
+  function currentHref(){
+    const current=location.pathname;
+    if(['/video-suite','/video-studio'].includes(current))return '/video-suite#'+(['overview','agent','script','production','assets','settings'].includes(location.hash.slice(1))?location.hash.slice(1):'overview');
+    if(current==='/youtube')return '/youtube';
+    if(current.startsWith('/billing/projects'))return '/billing';
+    if(current.startsWith('/sites/'))return '/websites';
+    if(current.startsWith('/lorzcms'))return '/lorzcms';
+    if(current.startsWith('/hosting'))return '/hosting';
+    if(current==='/setup')return '/websites';
+    return current;
+  }
+  function syncNavigation(){
+    const href=currentHref();
+    let selected;
+    document.querySelectorAll('[data-workspace-href]').forEach(a=>{
+      const active=a.dataset.workspaceHref===href;
+      a.classList.toggle('is-active',active);
+      if(active){a.setAttribute('aria-current','page');selected=a;}else a.removeAttribute('aria-current');
+    });
+    document.querySelectorAll('[data-nav-group]').forEach(group=>{
+      const active=Boolean(group.querySelector('[aria-current="page"]'));
+      group.classList.toggle('is-section-active',active);if(active)group.open=true;
+    });
+    const label=selected?.querySelector('span:last-child')?.textContent || 'Workspace';
+    const parent=selected?.dataset.navParent;
+    $('#siteopsCurrentPage').textContent=parent?parent+' / '+label:label;
+    const video=href.startsWith('/video-suite')||href==='/youtube';
+    const action=$('.ops-top-new');action.href=video?'/video-suite#agent':'/setup';action.textContent=video?'+ Neues Video':'+ Website';
+  }
+  sidebar.addEventListener('click',event=>{if(event.target.closest('a')&&mobile.matches){closeMenu();main.focus({preventScroll:true});}});
+  window.addEventListener('hashchange',syncNavigation);window.addEventListener('popstate',syncNavigation);
+  document.addEventListener('siteops:navigation',syncNavigation);syncNavigation();
 
   const notice=(msg,error=false)=>{
     let box=$('.ops-toast');

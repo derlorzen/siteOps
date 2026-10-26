@@ -12,7 +12,8 @@ test('ALL-INKL hosting is visible directly under Integrationen in the shared sid
     /\['\/mcp-info','Integrationen','⇄'\],\s*\['\/hosting','Hosting & DNS','[^']+','Integrationen'\]/
   );
   assert.match(source, /parent\?' ops-nav-subitem'/);
-  assert.match(source, /path\.startsWith\('\/hosting'\)\?'Hosting & DNS'/);
+  assert.match(source, /current\.startsWith\('\/hosting'\)/);
+  assert.match(source, /data-nav-group/);
 });
 
 test('Integration landing page links to the existing authenticated hosting workspace', async () => {

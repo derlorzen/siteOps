@@ -1,6 +1,6 @@
 /* One accent setting shared between CRM, sites, monitoring, SEO, CMS and settings. */
 :root{
-  --siteops-accent:#6856DA;
+  --siteops-accent:#2465E8;
   --siteops-on-accent:#fff;
   --siteops-accent-accent:var(--siteops-accent);
   --siteops-accent-hover:color-mix(in srgb,var(--siteops-accent) 82%,#000);
