@@ -195,20 +195,11 @@ test(
     }
     const homepageHtml = await (await fetch(base + '/')).text();
     assert.match(homepageHtml, project === 'nordiamed' ? /nordiamed\.css/ : /Praxisimport/);
-    const count = spawnSync(
-      php,
-      [
-        ...phpArgs,
-        '-r',
-        '$db=new PDO("sqlite:".$argv[1]);echo $db->query("SELECT COUNT(*) FROM contents")->fetchColumn();',
-        join(root, 'var/cms.sqlite')
-      ],
-      { encoding: 'utf8', windowsHide: true }
-    );
-    assert.equal(count.status, 0);
-    assert.equal(Number(count.stdout), bundle.summary.contents, 'the complete content export was imported');
     for (const file of bundle.files.filter(file => file.path.startsWith('public/wp-content/uploads/'))) {
       try {
+        // This is a functional byte-integrity check, not a load test of the
+        // single-threaded Windows PHP development server.
+        if (process.platform === 'win32') await new Promise(resolve => setTimeout(resolve, 100));
         const response = await binaryDownload(base + '/' + file.path.slice(7));
         assert.equal(response.status, 200, file.path);
         assert.equal(hash(response.bytes), hash(Buffer.from(file.content, 'base64')), file.path);
@@ -236,5 +227,17 @@ test(
     assert.equal(loggedIn.status, 303, 'provisioned administrator can log in');
     const session = loggedIn.headers.get('set-cookie').split(';')[0];
     assert.match(await (await fetch(base + '/admin/', { headers: { cookie: session } })).text(), /Mein Team/);
+    const count = spawnSync(
+      php,
+      [
+        ...phpArgs,
+        '-r',
+        '$db=new PDO("sqlite:".$argv[1]);echo $db->query("SELECT COUNT(*) FROM contents")->fetchColumn();',
+        join(root, 'var/cms.sqlite')
+      ],
+      { encoding: 'utf8', windowsHide: true }
+    );
+    assert.equal(count.status, 0);
+    assert.equal(Number(count.stdout), bundle.summary.contents, 'the complete content export was imported');
   }
 );
