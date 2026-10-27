@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {outroSettings,validateOutroScenes,outroPage,outroDuration} from './video-outro.mjs';
 import { promises as fs, createReadStream } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -71,8 +72,9 @@ function validate(payload){
     if(narration.length<5||narration.length>1400||headline.length>160)throw new Error('Invalid scene '+(i+1));
     const demoUrl=safeDemoUrl(s.demoUrl,policy.hosts);
     if(s.login_profile_id && (!uuid(s.login_profile_id) || !demoUrl || s.test_data_only!==true))throw Error('Authenticated demos require a valid profile and confirmed test data.');
-    return {narration,headline,demoUrl,capture_mode:s.capture_mode,test_data_only:s.test_data_only,login_profile_id:s.login_profile_id,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,policy.hosts)};
+    return {narration,headline,outro:outroSettings(s.outro),demoUrl,capture_mode:s.capture_mode,test_data_only:s.test_data_only,login_profile_id:s.login_profile_id,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,policy.hosts)};
   });
+  validateOutroScenes(scenes);
   requireCapturePlan(scenes);
   if(payload.demoLogins!==undefined && (!Array.isArray(payload.demoLogins)||payload.demoLogins.length>10))throw Error('Invalid demo login profiles.');
   const logins=(payload.demoLogins||[]).map(profile=>validateDemoLogin(profile,policy.hosts));
@@ -129,7 +131,7 @@ export async function captureSceneScreenshot(browser,scene,job,i,dir,proxyFactor
     validatedDemoUrl(page.url(),job.demoPolicy.hosts);
     if(await page.locator('input[type="password"]').first().isVisible())throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
     await page.waitForTimeout(1200);
-  }else await page.setContent(scenePage(scene,job.title,i,job.scenes.length,job.format),{waitUntil:'load'});
+  }else await page.setContent(scene.outro?outroPage(scene,job.format):scenePage(scene,job.title,i,job.scenes.length,job.format),{waitUntil:'load'});
   await page.screenshot({path:target,type:'png',animations:'disabled'});
   return target;
   } finally { await guarded.close(); }
@@ -232,7 +234,7 @@ async function render(job){
       const png=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
       const wav=await voice(scene,job,i,dir);
-      const len=await duration(wav),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
+      const audioLen=await duration(wav),len=outroDuration(scene,audioLen),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
       if (recording) {
         await exec('ffmpeg',['-y','-i',webm,'-i',wav,
           '-vf','scale='+width+':'+height+',setsar=1,fps=25,tpad=stop_mode=clone:stop_duration=125',
@@ -242,10 +244,11 @@ async function render(job){
       } else {
         await exec('ffmpeg',['-y','-loop','1','-framerate','25','-i',png,'-i',wav,
           '-c:v','libx264','-preset','veryfast','-tune','stillimage','-pix_fmt','yuv420p',
-          '-r','25','-c:a','aac','-b:a','128k','-shortest','-movflags','+faststart',out]);
+          '-r','25','-c:a','aac','-b:a','128k',...(scene.outro?['-af','apad','-t',String(len)]:[]),'-shortest','-movflags','+faststart',out]);
       }
       parts.push(out);
-      subtitles.push(String(i+1)+'\n'+srtTime(current)+' --> '+srtTime(current+len)+'\n'+scene.narration+'\n');
+      subtitles.push(String(i+1)+'\n'+srtTime(current)+' --> '+srtTime(current+audioLen)+'\n'+scene.narration+'\n');
+      if(scene.outro)job.outro={start_seconds:current,duration_seconds:len,channel:scene.outro.channel,website:scene.outro.website};
       current+=len;
     }
     await browser.close();browser=null;
@@ -293,7 +296,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     let demoEnvironmentPolicy=null,demoEnvironmentError=null;
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
-      capturePreflightVersion:1,openaiKeyForwardingVersion:1,
+      outroVersion:1,capturePreflightVersion:1,openaiKeyForwardingVersion:1,
       demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
@@ -372,7 +375,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!uuid(req.params.id))return reply.code(400).send({error:'Invalid job ID'});
     const job=await load(req.params.id);
     if(!job)return reply.code(404).send({error:'Job not found'});
-    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || []};
+    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],outro:job.outro || null};
   });
   app.get('/video/jobs/:id/file',async(req,reply)=>{
     if(!auth(req,reply))return;

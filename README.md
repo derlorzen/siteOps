@@ -1299,3 +1299,18 @@ login/access and verifies real Full-HD video dimensions, then deletes temporary 
 Tests are a point-in-time check, not a guarantee that a changing website stays valid.
 The renderer captures every scene before generating any narration and never replaces
 a failed required recording with a slide. Existing text-only scenes remain supported.
+
+### Outro and YouTube end-screen space (1.8.0)
+
+Add an outro in the scene editor with a thank-you/closing narration, channel name,
+optional HTTPS link and a 10/15/20-second duration. It remains the last scene and is
+included in the production snapshot, Full-HD render and complete review. New long-form
+agent proposals include a short closing by default. The renderer reserves two empty
+video areas and a subscribe area (one video area in portrait), pads the remaining
+outro time with silence, and refuses to cut a narration that exceeds the selected
+duration. Subtitle timing stops when the narration stops. An optional website is
+added to the initial YouTube description. The clickable YouTube end-screen overlays
+are configured separately in YouTube Studio after upload; the suite provides the
+editor link. The rendered shapes themselves are not clickable.
+Runner **1.3.0** advertises `outroVersion: 1`; older runners are stopped before an
+outro job is submitted, so the layout/duration cannot silently fall back to a slide.

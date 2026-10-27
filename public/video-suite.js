@@ -55,7 +55,11 @@
   $('vs-script').addEventListener('input', () => {
     // Keep text-only scenes and manual narration in agreement. Preserve verified demo actions by index.
     const blocks = $('vs-script').value.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
-    scenes = blocks.map((narration, i) => ({ ...(scenes[i] || {}), headline: scenes[i]?.headline || 'Szene ' + (i + 1), narration }));
+    const ending=scenes.find(s=>s.outro),regular=scenes.filter(s=>!s.outro);
+    const narrationBlocks=ending?blocks.slice(0,-1):blocks;
+    if(ending && blocks.length)ending.narration=blocks.at(-1);
+    scenes = narrationBlocks.map((narration, i) => ({ ...(regular[i] || {}), headline: regular[i]?.headline || 'Szene ' + (i + 1), narration }));
+    if(ending)scenes.push(ending);
     $('vs-scene-json').value = JSON.stringify(scenes, null, 2); drawScenes();
   });
   $('vs-scene-json').addEventListener('change', () => { syncScenes(); if (scenes.length) $('vs-script').value = scenes.map(s => s.narration).join('\n\n'); changed(); });
@@ -71,7 +75,7 @@
   let availableTemplates=[];
   const captureTests=new WeakMap();
   const captureMode=scene=>scene.capture_mode || (scene.demoUrl ? (scene.demoSteps?.length ? 'recording' : 'screenshot') : scene.template_id ? 'recording' : 'text');
-  const captureLabel=scene=>({text:'Texttafel',screenshot:'Browser-Standbild',recording:'Bildschirmaufnahme'})[captureMode(scene)] || 'Unbekannte Aufnahmeart';
+  const captureLabel=scene=>scene.outro?'Outro & Abschied':({text:'Texttafel',screenshot:'Browser-Standbild',recording:'Bildschirmaufnahme'})[captureMode(scene)] || 'Unbekannte Aufnahmeart';
   const captureSignature=scene=>JSON.stringify({scene,template:availableTemplates.find(t=>t.id===scene.template_id)?.scene,project:projectId,format:$('vs-format').value,language:$('vs-language').value});
   document.addEventListener('suite-templates-loaded',event=>{availableTemplates=event.detail || [];drawScenes();});
   function drawScenes() {
@@ -83,11 +87,11 @@
       const card = document.createElement('div'); card.className = 'suite-scene-card';
       const head = document.createElement('div'); head.className = 'suite-scene-head';
       const stamp=n=>Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
-      const start=elapsed;elapsed+=Math.max(4,Math.ceil((scene.narration || '').split(/\s+/).length/2.5));
+      const start=elapsed;elapsed+=(scene.outro?.duration_seconds || Math.max(4,Math.ceil((scene.narration || '').split(/\s+/).length/2.5)));
       const title = document.createElement('strong'); title.textContent = 'Szene ' + (i + 1) + ' · '+stamp(start)+'–'+stamp(elapsed)+' (ca.) · '+captureLabel(scene); head.append(title);
       for (const [text, label, action] of [
-        ['↑', 'Szene nach oben', () => { if (i) [scenes[i-1], scenes[i]] = [scenes[i], scenes[i-1]]; }],
-        ['↓', 'Szene nach unten', () => { if (i < scenes.length-1) [scenes[i+1], scenes[i]] = [scenes[i], scenes[i+1]]; }],
+        ['↑', 'Szene nach oben', () => { if (i && !scene.outro) [scenes[i-1], scenes[i]] = [scenes[i], scenes[i-1]]; }],
+        ['↓', 'Szene nach unten', () => { if (i < scenes.length-1 && !scenes[i+1].outro) [scenes[i+1], scenes[i]] = [scenes[i], scenes[i+1]]; }],
         ['Entfernen', 'Szene entfernen', () => scenes.splice(i, 1)]
       ]) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'ghost'; b.textContent = text; b.setAttribute('aria-label', label);
@@ -104,7 +108,14 @@
       for(const [value,label] of [['text','Texttafel'],['screenshot','Browser-Standbild'],['recording','Bildschirmaufnahme erforderlich']])modeSelect.append(new Option(label,value));
       modeSelect.value=captureMode(scene);
       modeSelect.addEventListener('change',()=>{scene.capture_mode=modeSelect.value;if(modeSelect.value==='screenshot' && !scene.template_id)delete scene.demoSteps;if(modeSelect.value==='text')for(const key of ['template_id','demoUrl','demoSteps','login_profile_id','test_data_only'])delete scene[key];commitScenes();drawScenes();});
-      modeLabel.append(modeSelect);card.append(modeLabel);
+      modeLabel.append(modeSelect);modeLabel.hidden=Boolean(scene.outro);card.append(modeLabel);
+      if(scene.outro){
+        const note=document.createElement('p');note.className='vs-note';note.textContent='Abschluss mit Dankeschön, zwei freien Videoflächen (eine im Hochformat) und Abo-Bereich. Klickbare Elemente nach dem Upload in YouTube Studio verknüpfen.';card.append(note);
+        for(const [key,label,type,max] of [['channel','Kanalname im Outro','text',80],['website','Link im Outro und in der Beschreibung (optional)','url',200]]){
+          const l=document.createElement('label'),field=document.createElement('input');l.textContent=label;field.type=type;field.maxLength=max;field.value=scene.outro[key] || '';field.addEventListener('input',()=>{scene.outro[key]=field.value.trim();commitScenes();});l.append(field);card.append(l);
+        }
+        const l=document.createElement('label'),duration=document.createElement('select');l.textContent='Outro-Dauer';duration.setAttribute('aria-label','Outro-Dauer');for(const seconds of [10,15,20])duration.append(new Option(seconds+' Sekunden',seconds));duration.value=scene.outro.duration_seconds;duration.addEventListener('change',()=>{scene.outro.duration_seconds=Number(duration.value);commitScenes();drawScenes();});l.append(duration);card.append(l);
+      }
       const demoLabel=document.createElement('label'); demoLabel.textContent='Ausführbarer Browser-Ablauf';
       const demoSelect=document.createElement('select'); demoSelect.append(new Option('Noch kein Ablauf zugeordnet',''));
       for(const template of availableTemplates.filter(t=>t.language===$('vs-language').value)) demoSelect.append(new Option(template.name+(template.scene.login_profile_id?' · angemeldete Demo':''),template.id));
@@ -162,9 +173,16 @@
       container.append(card);
     });
   }
-  $('suite-add-scene').addEventListener('click', () => { if (scenes.length >= 24) return; scenes.push({ headline: 'Neue Szene', narration: '' }); commitScenes(); drawScenes(); });
+  $('suite-add-scene').addEventListener('click', () => { if (scenes.length >= 24) return; scenes.splice(scenes.at(-1)?.outro?scenes.length-1:scenes.length,0,{ headline: 'Neue Szene', narration: '' }); commitScenes(); drawScenes(); });
+  $('suite-add-outro').addEventListener('click',()=>{
+    const existing=scenes.findIndex(s=>s.outro);if(existing>=0){$('suite-scene-list').children[existing]?.scrollIntoView({behavior:'smooth',block:'center'});return;}
+    if(scenes.length>=24){$('vs-message').textContent='Für das Outro bitte eine Szene entfernen (maximal 24 Szenen).';return;}
+    const de=$('vs-language').value==='de';
+    scenes.push({headline:de?'Danke fürs Zuschauen.':'Thanks for watching.',narration:de?'Danke fürs Zuschauen! Wenn dir das Video geholfen hat, abonniere den Kanal für weitere praktische Tutorials. Schau dir als Nächstes ein weiteres Video an. Die passenden Links findest du in der Beschreibung. Bis zum nächsten Mal!':'Thanks for watching! If this helped, subscribe for more practical tutorials. Watch another video to keep learning. You can find the relevant links in the description. See you next time!',capture_mode:'text',outro:{duration_seconds:20,channel:$('vs-channel').value || '',website:''}});
+    commitScenes();drawScenes();$('suite-scene-list').lastElementChild?.scrollIntoView({behavior:'smooth',block:'center'});
+  });
   // Existing demo-template insertion updates the JSON editor; reflect it in the visual scene editor.
-  $('vs-template-use').addEventListener('click', () => { syncScenes(); if (scenes.length) commitScenes(); location.hash = 'script'; });
+  $('vs-template-use').addEventListener('click', () => { syncScenes();scenes=[...scenes.filter(s=>!s.outro),...scenes.filter(s=>s.outro)]; if (scenes.length) commitScenes(); location.hash = 'script'; });
   async function selectProject() {
     const next = $('vs-project').value;
     if (!next || next === projectId || loading || sending || uploadingImages) return;
@@ -526,6 +544,8 @@
     $('suite-review-keywords').textContent=(p.youtube?.keywords || []).join(', ') || 'Keine Keywords hinterlegt';
     $('suite-review-format').textContent=(job.render_settings?.language==='de'?'Deutsch':'Englisch')+' · '+(job.format==='portrait'?'9:16 Hochformat':'16:9 YouTube');
     $('suite-review-script').textContent=job.script || '';
+    const ending=job.scenes?.at(-1)?.outro;
+    $('suite-review-outro').textContent=ending?'Outro: '+ending.duration_seconds+' Sekunden · '+(ending.channel || 'Kanal')+(ending.website?' · '+ending.website:'')+(p.outro?' · Ab '+Math.floor(p.outro.start_seconds/60)+':'+String(Math.floor(p.outro.start_seconds%60)).padStart(2,'0'):'')+'. Nach dem Upload Video- und Abo-Elemente in YouTube Studio verknüpfen.':'Kein Outro in dieser Produktion.';
     $('suite-review-sources').replaceChildren();for(const s of p.youtube?.sources || []){const line=document.createElement('p');line.textContent=s.url+' — '+s.note;$('suite-review-sources').append(line);}
     const hd=p.resolution && Math.min(p.resolution.width,p.resolution.height)>=1080;
     $('suite-review-resolution').textContent=p.resolution?p.resolution.width+' × '+p.resolution.height+(hd?' · Full HD':' · Auflösung prüfen'):'Auflösung nicht bestätigt';
@@ -577,7 +597,7 @@
     const relevant=rows.filter(r=>r.video_job_id===job?.id && r.kind==='video');
     if(!relevant.length)$('suite-upload-list').textContent='Für diese Produktion wurde noch kein Upload gestartet.';
     const labels={queued:'Upload wartet',uploading:'Video wird übertragen',retry:'Übertragung wird fortgesetzt',done:'Upload abgeschlossen',failed:'Übertragung benötigt deine Aufmerksamkeit'};
-    for(const row of relevant){const p=document.createElement('p');p.textContent=(labels[row.status] || row.status)+(row.total_bytes?' · '+Math.round(Number(row.uploaded_bytes)/Number(row.total_bytes)*100)+' %':'')+(row.error?' · '+row.error:'');$('suite-upload-list').append(p);if(row.remote_video_id){const a=document.createElement('a');a.textContent='Privates Video auf YouTube prüfen →';a.href='https://www.youtube.com/watch?v='+encodeURIComponent(row.remote_video_id);a.target='_blank';a.rel='noopener noreferrer';$('suite-upload-list').append(a);}if(row.status==='done'){const a=document.createElement('a');a.href='#repurpose';a.dataset.suiteGo='repurpose';a.textContent='Weiter: Shorts & Social Media →';$('suite-upload-list').append(a);}}
+    for(const row of relevant){const p=document.createElement('p');p.textContent=(labels[row.status] || row.status)+(row.total_bytes?' · '+Math.round(Number(row.uploaded_bytes)/Number(row.total_bytes)*100)+' %':'')+(row.error?' · '+row.error:'');$('suite-upload-list').append(p);if(row.remote_video_id){const a=document.createElement('a');a.textContent='Privates Video auf YouTube prüfen →';a.href='https://www.youtube.com/watch?v='+encodeURIComponent(row.remote_video_id);a.target='_blank';a.rel='noopener noreferrer';$('suite-upload-list').append(a);if(job?.scenes?.some(s=>s.outro)){const studio=document.createElement('a');studio.href='https://studio.youtube.com/video/'+encodeURIComponent(row.remote_video_id)+'/editor';studio.target='_blank';studio.rel='noopener noreferrer';studio.textContent='In YouTube Studio den klickbaren Abspann ergänzen →';$('suite-upload-list').append(studio);}}if(row.status==='done'){const a=document.createElement('a');a.href='#repurpose';a.dataset.suiteGo='repurpose';a.textContent='Weiter: Shorts & Social Media →';$('suite-upload-list').append(a);}}
     return relevant;
   }
   ['suite-upload-account','suite-upload-kids','suite-upload-synthetic'].forEach(id=>$(id).addEventListener('change',()=>{pending=null;$('suite-upload-confirm').hidden=true;}));

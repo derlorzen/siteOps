@@ -212,6 +212,22 @@ test(
       () => document.querySelector('#suite-draft-state').textContent === 'Entwurf online geladen'
     );
     if ((await page.locator('#suite-scene-list .suite-scene-card').count()) !== 2) throw Error('Draft reload failed');
+    await page.getByRole('button', { name: '+ Outro & Abschied', exact: true }).click();
+    await page.getByRole('button', { name: '+ Outro & Abschied', exact: true }).click();
+    if ((await page.locator('#suite-scene-list .suite-scene-card').count()) !== 3)
+      throw Error('Outro was added twice.');
+    await page.getByLabel('Kanalname im Outro', { exact: true }).fill('Lorzen');
+    await page
+      .getByLabel('Link im Outro und in der Beschreibung (optional)', { exact: true })
+      .fill('https://example.com/tutorials');
+    await page.getByLabel('Outro-Dauer', { exact: true }).selectOption('15');
+    await page.locator('#suite-add-scene').click();
+    const plan = JSON.parse(await page.locator('#vs-scene-json').inputValue());
+    if (!plan.at(-1).outro || plan.at(-1).outro.duration_seconds !== 15 || plan.filter(s => s.outro).length !== 1)
+      throw Error('Outro must stay last and preserve settings.');
+    await page.waitForFunction(
+      () => document.querySelector('#suite-draft-state').textContent === 'Entwurf online gespeichert'
+    );
     await page.goto('https://suite.test/video-suite#production');
     await page.getByRole('button', { name: 'Produktion löschen', exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('[data-trash]'));

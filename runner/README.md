@@ -198,3 +198,15 @@ that a test executes the configured browser actions. Recording failures, HTTP er
 pages and visible login screens abort; they cannot silently become title cards.
 Production records all visuals before narration and reports each captured scene.
 Preserve existing token, demo profiles and persistent volumes when updating.
+
+### Outro support (Runner 1.3.0)
+
+`outroVersion: 1` supports a final text scene carrying an `outro` object with
+`duration_seconds` (10, 15 or 20), `channel` (up to 80 characters) and `website`
+(empty or an HTTPS URL without credentials, up to 200 characters). Only one outro,
+in the final scene, is allowed. Browser actions/login/template references are rejected
+on it. The end-card layout is rendered at the job's Full-HD resolution. Narration
+longer than the chosen duration fails instead of being cut; remaining time is padded
+with silence, while captions stop at the actual narration endpoint. The status
+contains `outro.start_seconds` and `outro.duration_seconds` for the complete review.
+YouTube's interactive video/subscribe/link overlays are a separate Studio step.
