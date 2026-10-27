@@ -81,6 +81,30 @@ This change is intentionally isolated to ChatGPT's discovered tool catalog;
 it is not proof that the original error was caused by manifest size. The
 live authenticated `tools/list` response and ChatGPT UI must still be tested.
 
+### Confirmed schema validation failure after PR #80
+
+On 2026-10-27, ChatGPT's `refresh_actions` response identified the failing
+tool: `Invalid MCP tool schema for tool 'video_studio_create_job'`
+(`mcp_validation`, HTTP 400). OAuth, MCP `initialize` and authenticated
+`tools/list` succeeded. The ChatGPT catalog contained 38 tools (about 34 KB);
+Claude received all 125 tools. The deployed source fingerprint matched main.
+
+The YouTube hashtag schema exported `^#[\p{L}\p{N}_]+$`. Unicode property
+escapes require JavaScript's Unicode flag, which JSON Schema cannot carry;
+Python's JSON Schema validator rejects this pattern with `bad escape \p`.
+The schema now publishes the portable coarse pattern `^#[^\s#]+$` while
+retaining the exact Unicode letter/number/underscore check in a server-side
+Zod refinement. This preserves accepted inputs and validation for Claude,
+ChatGPT and the dashboard. No OAuth, transport or catalog changes are needed.
+
+`test/mcp-schema-compatibility.test.mjs` requests the real Video Studio
+`tools/list`, compiles its published patterns with Python's regex validator,
+and verifies both Unicode acceptance and rejection of invalid hashtags.
+It requires `python3` on Linux or `python` on Windows (standard library only).
+When diagnosing future failures, inspect the response body of ChatGPT's
+`refresh_actions` request; a server-side HTTP 200 does not establish that
+ChatGPT accepted the tool schemas.
+
 ## Claude
 
 1. Open Claude → Settings → Connectors.

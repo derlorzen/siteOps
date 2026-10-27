@@ -156,6 +156,11 @@ test(
           contentType: 'text/javascript',
           body: await fs.readFile(new URL('../public/video-studio.js', import.meta.url), 'utf8')
         });
+      if (url.pathname === '/assets/video-suite.js')
+        return route.fulfill({
+          contentType: 'text/javascript',
+          body: await fs.readFile(new URL('../public/video-suite.js', import.meta.url), 'utf8')
+        });
       let body = {};
       if (url.pathname.endsWith('/demo-policy')) {
         if (request.method() === 'POST') saved = request.postDataJSON().policy;
@@ -173,7 +178,7 @@ test(
         });
       return route.fulfill({ json: body });
     });
-    await ui.goto('https://siteops.test/');
+    await ui.goto('https://siteops.test/#settings');
     await ui.locator('#vs-policy-suggest').click();
     assert.equal(saved, null, 'suggestion is not an implicit grant');
     await ui.locator('#vs-policy-save').click();
@@ -194,6 +199,7 @@ test(
       document.querySelector('#vs-policy-status').textContent.includes('VIDEO_ALLOWED_HOSTS')
     );
     assert.equal(saved, null);
+    await ui.locator('[data-journey="production"]').click();
     await ui.locator('[data-render]').click();
     await ui.waitForFunction(() => document.querySelector('#vs-message').textContent.includes('Demo-Domains prüfen'));
     assert.match(await ui.locator('#vs-message').innerText(), /Renderauftrag abgelehnt \(422\)/);
