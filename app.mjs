@@ -14,7 +14,6 @@ import { Readable, Writable } from 'node:stream';
 import nodemailer from 'nodemailer';
 import PHPParser from 'php-parser';
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
-import { shouldRegisterMcpTool, isChatGptMcpClient } from './lib/mcp-profile.mjs';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
@@ -4164,14 +4163,10 @@ const youtubeService = createYouTubeService({
   studio: () => videoStudioService
 });
 const youtubeWorker = createYouTubeUploadWorker(youtubeService);
-function mcpServer(profile = 'full') {
+function mcpServer() {
   const s = new McpServer({ name: 'lorzen-siteops', version: buildInfo.version });
-  const registerTool = (name, ...args) => {
-    if (!shouldRegisterMcpTool(profile, name)) return undefined;
-    return s.registerTool(name, ...args);
-  };
-  const filteredServer = { registerTool };
-  registerCoolifyDeploymentTools(filteredServer, coolifyDeployer, toolText);
+  const registerTool = s.registerTool.bind(s);
+  registerCoolifyDeploymentTools(s, coolifyDeployer, toolText);
   registerTool(
     'sites_list',
     {
@@ -5106,8 +5101,8 @@ function mcpServer(profile = 'full') {
     },
     async ({ installationId }) => toolText(await cmsController.resetAdminPassword(installationId))
   );
-  registerVideoStudioTools(filteredServer, () => videoStudioService, toolText);
-  registerYouTubeTools(filteredServer, youtubeService, toolText);
+  registerVideoStudioTools(s, () => videoStudioService, toolText);
+  registerYouTubeTools(s, youtubeService, toolText);
   return s;
 }
 
@@ -5698,15 +5693,11 @@ async function mcpAuth(req, reply) {
       )
     ).rows[0];
     if (row && row.resource === oauthResource() && oauthScopeHas(row.scope, OAUTH_ACCESS_SCOPE)) {
-      const client = row.client_id.startsWith('https://')
-        ? { clientId: row.client_id }
-        : await oauthRegisteredClient(row.client_id);
       req.siteopsAuth = {
         type: 'oauth',
         subject: row.subject,
         clientId: row.client_id,
-        scope: row.scope,
-        profile: process.env.MCP_CHATGPT_COMPACT !== 'false' && isChatGptMcpClient(client) ? 'chatgpt' : 'full'
+        scope: row.scope
       };
       return true;
     }
@@ -7431,11 +7422,8 @@ async function start() {
   app.post('/oauth/authorize', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, oauthAuthorizeSubmit);
   app.post('/oauth/token', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, oauthToken);
   app.post('/oauth/revoke', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, oauthRevoke);
-  const nodeHandler = toNodeHandler(createMcpHandler(() => mcpServer())),
-    chatgptNodeHandler = toNodeHandler(createMcpHandler(() => mcpServer('chatgpt')));
-  app.all('/mcp', async (req, reply) =>
-    (req.siteopsAuth?.profile === 'chatgpt' ? chatgptNodeHandler : nodeHandler)(req.raw, reply.raw, req.body)
-  );
+  const nodeHandler = toNodeHandler(createMcpHandler(() => mcpServer()));
+  app.all('/mcp', async (req, reply) => nodeHandler(req.raw, reply.raw, req.body));
   app.get('/', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   app.get('/websites', async (_r, reply) => reply.type('text/html').send(await dashboard()));
   async function cmsWorkspacePage(reply, view = 'sites', installationId = null) {
@@ -8009,6 +7997,7 @@ async function start() {
 export {
   registerCoolifyWebsite,
   mcpAuth,
+  mcpServer,
   migrate,
   q,
   db,
