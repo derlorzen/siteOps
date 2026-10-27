@@ -355,6 +355,7 @@
     try {
       const job = await api('/api/video-studio/jobs', 'POST', {
         project_id,
+        ...($('#suite-intro-select').value?{intro_id:$('#suite-intro-select').value}:{}),
         title,
         topic: $('#vs-topic').value.trim(),
         script,

@@ -210,3 +210,18 @@ longer than the chosen duration fails instead of being cut; remaining time is pa
 with silence, while captions stop at the actual narration endpoint. The status
 contains `outro.start_seconds` and `outro.duration_seconds` for the complete review.
 YouTube's interactive video/subscribe/link overlays are a separate Studio step.
+
+### Private intro library (Runner 1.4.0)
+
+`introVersion: 1` advertises authenticated `/video/intros/:id/chunks`, `/complete`,
+`/cancel` and byte-range `/file` endpoints. UUID-only paths, 1 MiB blocks, an overall
+50 MiB limit, ordered blocks and hash-equal retries bound uploads. Completion probes
+only local MOV/MP4 or Matroska/WebM containers, accepts 0.5–60 seconds and 720p–4K,
+and writes an immutable readiness manifest. Invalid sources are discarded. Cancellation
+never removes a completed asset; preserve the existing video data volume on updates.
+
+A job may reference `introId`; the renderer looks it up locally and normalizes it to
+the job's Full-HD resolution without cropping. Audio is retained or filled with silence,
+and all segments use 48 kHz stereo AAC. Subtitle and outro timestamps include the
+actual intro duration. Status reports an `intro` object with ID, duration and output
+resolution. No source bytes or filesystem paths are exposed to the producer agent.

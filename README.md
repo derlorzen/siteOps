@@ -1314,3 +1314,21 @@ are configured separately in YouTube Studio after upload; the suite provides the
 editor link. The rendered shapes themselves are not clickable.
 Runner **1.3.0** advertises `outroVersion: 1`; older runners are stopped before an
 outro job is submitted, so the layout/duration cannot silently fall back to a slide.
+
+### Uploaded intro clips (1.9.0)
+
+The scene editor has an intro library per project. Upload MP4, MOV or WebM clips
+(up to 50 MiB/60 seconds, at least 720p, at most 4K) in bounded 1 MiB blocks,
+preview them and select one for a video, or choose no intro. Upload retries are
+idempotent; the Runner validates the actual container, duration and dimensions
+before marking the source ready. Files stay on its private persistent video volume,
+while SiteOps stores only project metadata and immutable job references. Low disk
+space blocks further chunks. Invalid/abandoned uploads can be cancelled without
+removing completed sources used by existing jobs.
+
+Rendering requires Runner **1.4.0** (`introVersion: 1`). It normalizes the intro to
+Full-HD landscape/portrait with letterboxing, keeps original audio or adds a silent
+track, and prepends it to the existing production. Every segment uses 48 kHz stereo
+AAC for reliable concatenation. Narration and subtitles begin after the actual
+normalized intro duration; outro timing also includes it. The complete preview
+shows the intro. Review chapter times with the intro included before uploading.

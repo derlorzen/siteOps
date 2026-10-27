@@ -26,12 +26,14 @@
   window.addEventListener('hashchange', () => view(location.hash.slice(1)));
   view(location.hash.slice(1));
   let projectId = '', conversationId, latest, scenes = [], saveTimer, dirty = false, loading = false, sending = false, uploadingImages = false, chatAttachments = [];
-  const draftFields = ['vs-title', 'vs-topic', 'vs-script', 'vs-scene-json', 'vs-youtube-json', 'vs-format'];
-  const snapshot = () => ({ title: $('vs-title').value, topic: $('vs-topic').value, script: $('vs-script').value, scene_json: $('vs-scene-json').value, youtube_json: $('vs-youtube-json').value, format: $('vs-format').value });
+  const draftFields = ['vs-title', 'vs-topic', 'vs-script', 'vs-scene-json', 'vs-youtube-json', 'vs-format','suite-intro-select'];
+  const snapshot = () => ({ title: $('vs-title').value, topic: $('vs-topic').value, script: $('vs-script').value, scene_json: $('vs-scene-json').value, youtube_json: $('vs-youtube-json').value, format: $('vs-format').value,...(($('suite-intro-select').value || $('suite-intro-select').dataset.pendingIntro)?{intro_id:$('suite-intro-select').value || $('suite-intro-select').dataset.pendingIntro}:{}) });
   function fillDraft(draft) {
     $('vs-title').value = draft?.title || ''; $('vs-topic').value = draft?.topic || '';
     $('vs-script').value = draft?.script || ''; $('vs-scene-json').value = draft?.scene_json || '';
     $('vs-youtube-json').value = draft?.youtube_json || ''; $('vs-format').value = draft?.format || 'landscape';
+    $('suite-intro-select').dataset.pendingIntro=draft?.intro_id || '';$('suite-intro-select').value=draft?.intro_id || '';
+    document.dispatchEvent(new CustomEvent('suite-intro-draft-loaded',{detail:draft?.intro_id || ''}));
     syncScenes(); loadSeo();
   }
   let saveChain = Promise.resolve();
@@ -474,7 +476,7 @@
     if (dirty && !window.confirm('Den aktuellen Arbeitsentwurf durch diese Produktion ersetzen?')) return;
     if (job.project_id !== projectId) { $('vs-project').value = job.project_id; await selectProject(); if (job.project_id !== projectId) return; }
     document.dispatchEvent(new CustomEvent('suite-production-selected',{detail:job}));
-    fillDraft({ title:job.title, topic:job.topic, script:job.script, scene_json:JSON.stringify(job.scenes || []), youtube_json:JSON.stringify(job.youtube || {}), format:job.format }); changed(); location.hash=event.detail.workflowTarget || 'script';
+    fillDraft({ title:job.title, topic:job.topic, script:job.script, scene_json:JSON.stringify(job.scenes || []), youtube_json:JSON.stringify(job.youtube || {}), format:job.format,intro_id:job.render_settings?.intro?.id }); changed(); location.hash=event.detail.workflowTarget || 'script';
   });
   metrics(); $('vs-refresh').addEventListener('click', metrics);
   // A successful production save switches directly to the production queue.
@@ -544,6 +546,7 @@
     $('suite-review-keywords').textContent=(p.youtube?.keywords || []).join(', ') || 'Keine Keywords hinterlegt';
     $('suite-review-format').textContent=(job.render_settings?.language==='de'?'Deutsch':'Englisch')+' · '+(job.format==='portrait'?'9:16 Hochformat':'16:9 YouTube');
     $('suite-review-script').textContent=job.script || '';
+    $('suite-review-intro').textContent=p.intro?'Vorangestelltes Intro: '+(job.render_settings?.intro?.name || 'Intro-Clip')+' · '+Number(p.intro.duration || 0).toFixed(1)+' Sekunden mit Originalton. Kapitelzeiten einschließlich Intro prüfen.':'Kein Intro in dieser Produktion.';
     const ending=job.scenes?.at(-1)?.outro;
     $('suite-review-outro').textContent=ending?'Outro: '+ending.duration_seconds+' Sekunden · '+(ending.channel || 'Kanal')+(ending.website?' · '+ending.website:'')+(p.outro?' · Ab '+Math.floor(p.outro.start_seconds/60)+':'+String(Math.floor(p.outro.start_seconds%60)).padStart(2,'0'):'')+'. Nach dem Upload Video- und Abo-Elemente in YouTube Studio verknüpfen.':'Kein Outro in dieser Produktion.';
     $('suite-review-sources').replaceChildren();for(const s of p.youtube?.sources || []){const line=document.createElement('p');line.textContent=s.url+' — '+s.note;$('suite-review-sources').append(line);}
@@ -625,4 +628,36 @@
   window.addEventListener('hashchange',navigate);
   $('vs-project').addEventListener('change',()=>{if(project!==$('vs-project').value){project=$('vs-project').value;++requestNo;job=null;publication=null;thumbnail=null;packageDirty=false;invalidate();$('suite-production-id').value='';navigate();}});
   navigate();
+})();
+
+// Private, chunked intro uploads keep large clips off the application database.
+(() => {
+  'use strict';
+  const $=id=>document.getElementById(id),select=$('suite-intro-select');
+  let assets=[],uploading=false,request=0;
+  const api=async(path,data)=>{const response=await fetch('/api/video-studio/intro-assets'+path,{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:data===undefined?{}:{'content-type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.message || result.error || 'Intro-Anfrage fehlgeschlagen.');return result;};
+  const show=()=>{const id=select.value,asset=assets.find(a=>a.id===id),video=$('suite-intro-preview');video.pause();video.hidden=!asset;if(asset){video.src='/api/video-studio/intro-assets/'+encodeURIComponent(id)+'/file';$('suite-intro-status').textContent=asset.name+' · '+Number(asset.metadata.duration).toFixed(1)+' Sekunden · '+asset.metadata.width+' × '+asset.metadata.height+' · wird vor das Video gesetzt.';}else{video.removeAttribute('src');$('suite-intro-status').textContent='Dieses Video beginnt direkt mit der ersten Szene.';}};
+  async function load(preferred){const project=$('vs-project').value;if(!project)return;const ticket=++request,items=await api('?project_id='+encodeURIComponent(project));if(ticket!==request || project!==$('vs-project').value)return;assets=items;const selected=preferred ?? select.dataset.pendingIntro ?? select.value;select.replaceChildren(new Option('Ohne Intro',''));for(const asset of assets)select.append(new Option(asset.name+' · '+Number(asset.metadata.duration).toFixed(1)+' s',asset.id));select.value=assets.some(a=>a.id===selected)?selected:'';select.dataset.pendingIntro='';show();}
+  select.addEventListener('change',()=>{select.dataset.pendingIntro='';show();});
+  $('vs-project').addEventListener('change',()=>{if(!uploading)load('').catch(e=>$('suite-intro-status').textContent=e.message);});
+  document.addEventListener('suite-intro-draft-loaded',event=>load(event.detail).catch(e=>$('suite-intro-status').textContent=e.message));
+  $('suite-intro-file').addEventListener('change',async event=>{
+    const file=event.target.files[0],project=$('vs-project').value;if(!file || uploading)return;
+    if(!project){$('suite-intro-status').textContent='Bitte zuerst ein Projekt auswählen.';return;}
+    if(file.size===0 || file.size>50*1024*1024 || !/\.(mp4|mov|webm)$/i.test(file.name)){$('suite-intro-status').textContent='Bitte MP4, MOV oder WebM bis 50 MB auswählen.';event.target.value='';return;}
+    uploading=true;event.target.disabled=true;select.disabled=true;$('vs-project').disabled=true;$('vs-create').disabled=true;
+    let upload;
+    try{
+      $('suite-intro-status').textContent='Intro-Upload vorbereiten …';upload=await api('',{project_id:project,name:file.name.slice(0,160)});
+      const size=1024*1024;
+      for(let offset=0,index=0;offset<file.size;offset+=size,index++){
+        const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('Dateiblock konnte nicht gelesen werden.'));reader.readAsDataURL(file.slice(offset,offset+size));});
+        try{await api('/'+upload.id+'/chunks',{index,data});}catch{await api('/'+upload.id+'/chunks',{index,data});}$('suite-intro-status').textContent='Intro hochladen: '+Math.min(99,Math.round((offset+size)/file.size*100))+' %';
+      }
+      $('suite-intro-status').textContent='Intro auf Format, Auflösung und Länge prüfen …';try{await api('/'+upload.id+'/complete',{});}catch{await api('/'+upload.id+'/complete',{});}await load(upload.id);select.dispatchEvent(new Event('input',{bubbles:true}));
+    }catch(error){$('suite-intro-status').textContent=error.message;if(upload)api('/'+upload.id+'/cancel',{}).catch(()=>{});}
+    finally{uploading=false;event.target.value='';event.target.disabled=false;select.disabled=false;$('vs-project').disabled=false;$('vs-create').disabled=false;}
+  });
+  window.addEventListener('beforeunload',event=>{if(uploading){event.preventDefault();event.returnValue='';}});
+  if($('vs-project').value)load().catch(e=>$('suite-intro-status').textContent=e.message);
 })();

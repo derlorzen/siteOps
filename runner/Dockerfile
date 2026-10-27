@@ -45,7 +45,7 @@ RUN apt-get update \
        fi \
     && rm -rf /var/lib/apt/lists/*
 
-COPY server.mjs version.mjs video-studio.mjs video-demo.mjs video-capture.mjs video-outro.mjs video-login.mjs video-policy.mjs video-network.mjs video-file-range.mjs openai-audio.mjs kokoro-voice.py piper-voice.py ensure-voice-models.py ./
+COPY server.mjs version.mjs video-studio.mjs video-demo.mjs video-capture.mjs video-outro.mjs video-intros.mjs video-login.mjs video-policy.mjs video-network.mjs video-file-range.mjs openai-audio.mjs kokoro-voice.py piper-voice.py ensure-voice-models.py ./
 ENV VIDEO_PYTHON=/opt/video-venv/bin/python3
 ENV VIDEO_OUTPUT_DIR=/data/video-studio
 ENV VIDEO_MODEL_DIR=/data/video-studio/models

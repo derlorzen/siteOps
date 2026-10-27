@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {introAsset,registerIntroRunner} from './video-intros.mjs';
 import {outroSettings,validateOutroScenes,outroPage,outroDuration} from './video-outro.mjs';
 import { promises as fs, createReadStream } from 'node:fs';
 import os from 'node:os';
@@ -54,6 +55,7 @@ function safeDemoUrl(value, hosts){
 }
 function validate(payload){
   const policy=Object.hasOwn(payload || {},'demoPolicy') ? demoPolicy(payload.demoPolicy) : environmentDemoPolicy();
+  if(payload?.introId!==undefined && !uuid(payload.introId))throw Error('Ungültiges Intro.');
   if(!uuid(payload?.id))throw new Error('Valid UUID required.');
   if(!Array.isArray(payload.scenes)||!payload.scenes.length||payload.scenes.length>24)
     throw new Error('1–24 scenes required.');
@@ -82,7 +84,7 @@ function validate(payload){
     const login=logins.find(x=>x.id===scene.login_profile_id);
     if(!login || new URL(login.login_url).origin!==new URL(scene.demoUrl).origin)throw Error('Matching demo login profile required.');
   }
-  return {id:payload.id,title:String(payload.title||'').slice(0,200),voice:payload.voice,
+  return {id:payload.id,introId:payload.introId,title:String(payload.title||'').slice(0,200),voice:payload.voice,
     voiceProvider,language:payload.language,format:payload.format,scenes,demoPolicy:policy};
 }
 async function persist(job){
@@ -226,6 +228,12 @@ async function render(job){
       job.captures.push({scene:i+1,mode:captureMode(scene),status:'captured',resolution:{width,height}});
       }catch(error){throw Error('Szene '+(i+1)+' – Aufnahme fehlgeschlagen: '+error.message);}
     }
+    if(job.introId){
+      const intro=await introAsset(job.introId),out=path.join(dir,'intro.mp4');
+      await exec('ffmpeg',['-y','-protocol_whitelist','file','-format_whitelist','mov,matroska,webm','-i',intro.filename,...(intro.has_audio?[]:['-f','lavfi','-i','anullsrc=r=48000:cl=stereo']),'-map','0:v:0','-map',intro.has_audio?'0:a:0':'1:a:0','-vf','scale='+width+':'+height+':force_original_aspect_ratio=decrease,pad='+width+':'+height+':(ow-iw)/2:(oh-ih)/2:color=0x091a30,setsar=1,fps=25','-af','apad','-t',String(intro.duration),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-r','25','-c:a','aac','-ar','48000','-ac','2','-b:a','128k','-movflags','+faststart',out]);
+      await verifyVideoDimensions(out,width,height);
+      current=await duration(out);parts.push(out);job.intro={id:job.introId,duration:current,width,height};
+    }
     await persist(job);
     for(let i=0;i<job.scenes.length;i++){
       const scene={...job.scenes[i],language:job.language};
@@ -239,12 +247,12 @@ async function render(job){
         await exec('ffmpeg',['-y','-i',webm,'-i',wav,
           '-vf','scale='+width+':'+height+',setsar=1,fps=25,tpad=stop_mode=clone:stop_duration=125',
           '-t',String(len),'-c:v','libx264','-preset','veryfast',
-          '-pix_fmt','yuv420p','-r','25','-c:a','aac','-b:a','128k',
+          '-pix_fmt','yuv420p','-r','25','-c:a','aac','-ar','48000','-ac','2','-b:a','128k',
           '-movflags','+faststart',out]);
       } else {
         await exec('ffmpeg',['-y','-loop','1','-framerate','25','-i',png,'-i',wav,
           '-c:v','libx264','-preset','veryfast','-tune','stillimage','-pix_fmt','yuv420p',
-          '-r','25','-c:a','aac','-b:a','128k',...(scene.outro?['-af','apad','-t',String(len)]:[]),'-shortest','-movflags','+faststart',out]);
+          '-r','25','-c:a','aac','-ar','48000','-ac','2','-b:a','128k',...(scene.outro?['-af','apad','-t',String(len)]:[]),'-shortest','-movflags','+faststart',out]);
       }
       parts.push(out);
       subtitles.push(String(i+1)+'\n'+srtTime(current)+' --> '+srtTime(current+audioLen)+'\n'+scene.narration+'\n');
@@ -288,6 +296,7 @@ function dispatch(){
   }
 }
 export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatchJobs=dispatch}={}){
+  registerIntroRunner(app,auth);
   app.get('/video/capabilities',async(req,reply)=>{
     if(!auth(req,reply))return;
     const exists=async file=>fs.access(file).then(()=>true).catch(()=>false);
@@ -296,7 +305,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     let demoEnvironmentPolicy=null,demoEnvironmentError=null;
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
-      outroVersion:1,capturePreflightVersion:1,openaiKeyForwardingVersion:1,
+      introVersion:1,outroVersion:1,capturePreflightVersion:1,openaiKeyForwardingVersion:1,
       demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
@@ -358,6 +367,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     let parsed;
     try{parsed=validate(req.body);}
     catch(error){return reply.code(422).send({error:String(error.message||error)});}
+    if(parsed.introId){try{await introAsset(parsed.introId);}catch(error){return reply.code(422).send({error:error.message});}}
     const old=await load(parsed.id);
     if(old) return reply.code(409).send({error:'Job already exists.'});
     if(queue.length+active>=MAX_JOBS)return reply.code(429).send({error:'Video queue full.'});
@@ -375,7 +385,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!uuid(req.params.id))return reply.code(400).send({error:'Invalid job ID'});
     const job=await load(req.params.id);
     if(!job)return reply.code(404).send({error:'Job not found'});
-    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],outro:job.outro || null};
+    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],outro:job.outro || null,intro:job.intro || null};
   });
   app.get('/video/jobs/:id/file',async(req,reply)=>{
     if(!auth(req,reply))return;

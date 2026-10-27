@@ -31,7 +31,10 @@ test(
       conversations = [];
     let trashed = false,
       knowledge = { plugins: [] };
-    let chatRequest, captureRequest;
+    let chatRequest,
+      captureRequest,
+      introReady = false;
+    const introBlocks = [];
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     const project = '11111111-1111-4111-8111-111111111111';
@@ -112,6 +115,25 @@ test(
       else if (url.pathname === '/api/video-studio/capture-test') {
         captureRequest = req.postDataJSON();
         body = { ok: true, message: 'Bildschirmaufnahme in Full HD geprüft.' };
+      } else if (url.pathname === '/api/video-studio/intro-assets')
+        body =
+          req.method() === 'POST'
+            ? { id: project }
+            : introReady
+              ? [
+                  {
+                    id: project,
+                    name: 'brand-intro.mp4',
+                    metadata: { duration: 2, width: 1280, height: 720, has_audio: true }
+                  }
+                ]
+              : [];
+      else if (url.pathname.endsWith('/chunks')) {
+        introBlocks.push(req.postDataJSON());
+        body = { ok: true };
+      } else if (url.pathname === '/api/video-studio/intro-assets/' + project + '/complete') {
+        introReady = true;
+        body = { id: project, duration: 2 };
       } else if (url.pathname.endsWith('/demo-policy'))
         body = { supported: true, source: 'environment', environmentPolicy: { hosts: [] } };
       else if (url.pathname.endsWith('/capabilities')) body = { offlineModels: { kokoro: true, piper: true } };
@@ -227,6 +249,26 @@ test(
       throw Error('Outro must stay last and preserve settings.');
     await page.waitForFunction(
       () => document.querySelector('#suite-draft-state').textContent === 'Entwurf online gespeichert'
+    );
+    await page
+      .getByLabel('Neues Intro hochladen', { exact: true })
+      .setInputFiles({ name: 'brand-intro.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(1024 * 1024 + 15) });
+    await page.waitForFunction(
+      () => document.querySelector('#suite-intro-select').value === '11111111-1111-4111-8111-111111111111'
+    );
+    await page.waitForFunction(
+      () => document.querySelector('#suite-draft-state').textContent === 'Entwurf online gespeichert'
+    );
+    if (
+      introBlocks.length !== 2 ||
+      introBlocks[0].index !== 0 ||
+      introBlocks[1].index !== 1 ||
+      draft.intro_id !== project
+    )
+      throw Error('Intro upload/selection was not persisted.');
+    await page.reload();
+    await page.waitForFunction(
+      () => document.querySelector('#suite-intro-select').value === '11111111-1111-4111-8111-111111111111'
     );
     await page.goto('https://suite.test/video-suite#production');
     await page.getByRole('button', { name: 'Produktion löschen', exact: true }).click();
