@@ -159,6 +159,52 @@ test('login rejects invalid credentials and CSRF without creating a session', as
   assert.equal(invalidCsrf.status, 403);
 });
 
+test('background favicon login redirect does not expire the visible login form', async () => {
+  const { service, store } = setup();
+  const next = '/oauth/authorize?client_id=test&state=original';
+  const visibleForm = fakeReply();
+  await service.loginPage({ headers: {}, query: { next } }, visibleForm);
+  const original = parseLogin(visibleForm);
+
+  // Browsers request the implicit favicon after receiving the login page. The
+  // protected resource redirects to a second login page in the background.
+  const faviconRedirect = fakeReply();
+  assert.equal(
+    await service.guard({ headers: { cookie: original.nonce }, url: '/favicon.ico', method: 'GET' }, faviconRedirect),
+    false
+  );
+  assert.equal(faviconRedirect.redirectTo, '/login?next=%2Ffavicon.ico');
+  const backgroundForm = fakeReply();
+  await service.loginPage({ headers: { cookie: original.nonce }, query: { next: '/favicon.ico' } }, backgroundForm);
+  const background = parseLogin(backgroundForm);
+
+  const submitted = fakeReply();
+  await service.loginSubmit(
+    {
+      headers: { cookie: background.nonce },
+      body: { next, csrf: original.csrf, username: 'siteops-admin', password: 'correct-long-password' }
+    },
+    submitted
+  );
+  assert.equal(submitted.status, 303, 'background login must not cause Anmeldung abgelaufen');
+  assert.equal(submitted.redirectTo, next);
+  assert.equal(store.sessions.size, 1);
+  assert.equal(background.nonce, original.nonce);
+  assert.notEqual(background.csrf, original.csrf, 'CSRF stays bound to the form return path');
+});
+
+test('login page replaces malformed nonce cookies instead of trusting them', async () => {
+  const { service } = setup();
+  for (const value of ['', 'short', 'a'.repeat(42), 'a'.repeat(44), '!'.repeat(43)]) {
+    const reply = fakeReply();
+    await service.loginPage({ headers: { cookie: '__Host-siteops_login=' + value }, query: {} }, reply);
+    const { nonce } = parseLogin(reply);
+    const token = nonce.split('=')[1];
+    assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+    assert.notEqual(token, value);
+  }
+});
+
 test('protected API returns JSON 401 without WWW-Authenticate and page redirects to login', async () => {
   const { service } = setup();
   const api = fakeReply();
