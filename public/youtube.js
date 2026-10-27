@@ -683,6 +683,7 @@
     choices('yt-upload-job', jobs, x => x.title);
     const requestedJob = new URLSearchParams(location.hash.split('?')[1] || '').get('job');
     if (jobs.some(j => j.id === requestedJob)) $('yt-upload-job').value = requestedJob;
+    if(new URLSearchParams(location.hash.split('?')[1] || '').get('kind')==='short')$('yt-upload-kind').value='short';
     if (!jobs.length) $('yt-upload-job').append(new Option('Keine abgeschlossenen Aufträge vorhanden', ''));
   }
   click('yt-upload-preview', async () => {

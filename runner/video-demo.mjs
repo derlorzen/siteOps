@@ -106,7 +106,10 @@ export function validatedDemoSteps(steps, baseUrl, hosts) {
 }
 
 export async function executeDemoStep(page, step) {
-  if (step.action === 'goto') await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+  if (step.action === 'goto') {
+    const response=await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    if(!response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
+  }
   else if (step.action === 'click') await page.locator(step.selector).first().click({ timeout: 12000 });
   else if (step.action === 'hover') await page.locator(step.selector).first().hover({ timeout: 12000 });
   else if (step.action === 'fill') {
@@ -152,13 +155,13 @@ export async function recordDemoScene(
     const page = await context.newPage();
     page.setDefaultTimeout(12000);
     const response=await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
-    if(storageState && !response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
-    if(storageState && await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
+    if(!response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
+    if(await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
     await page.waitForTimeout(700);
-    for (const step of steps) {
-      await executeDemoStep(page, step);
+    for (const [index,step] of steps.entries()) {
+      try { await executeDemoStep(page, step); } catch { throw Error('Demo-Aktion '+(index+1)+' ('+step.action+') fehlgeschlagen. Selektor oder Zielzustand prüfen.'); }
       validatedDemoUrl(page.url(), hosts);
-      if(storageState && await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung abgelaufen. Keine gültige Aufnahme.');
+      if(await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung abgelaufen. Keine gültige Aufnahme.');
       await page.waitForTimeout(500);
     }
     await page.waitForTimeout(700);

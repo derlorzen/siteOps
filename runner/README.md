@@ -185,3 +185,16 @@ Final MP4 and Short dimensions are checked by FFprobe before completion. Both ar
 The `/health` and `/auth-test` versions share the package version. `openaiKeyForwardingVersion: 1` advertises per-job credentials. Only authenticated OpenAI narration jobs accept `openaiApiKey`; it is removed from the request body and retained in memory, outside the persisted job object, until completion/failure. `OPENAI_API_KEY` remains a fallback. `/video/openai-audio-test` performs a small real generation with a transient key and removes the temporary WAV. Never log request bodies containing credentials.
 
 After updating the Runner, use **Video Suite → Einstellungen → Sprachausgabe testen**. A successful Responses API test alone does not establish audio-model access.
+
+### Explicit capture checks (Runner 1.2.0)
+
+`capturePreflightVersion: 1` advertises `/video/capture-test` (Bearer-protected and
+rate limited). Scene `capture_mode` is `text`, `screenshot` or `recording`; legacy
+scenes infer the former behavior from URL/actions. Explicit recordings require a
+URL, confirmed test data and actions. The test executes the real configured actions
+and optional login, records a temporary Full-HD clip, checks its dimensions and
+removes its files. It never generates narration. Use test accounts and remember
+that a test executes the configured browser actions. Recording failures, HTTP error
+pages and visible login screens abort; they cannot silently become title cards.
+Production records all visuals before narration and reports each captured scene.
+Preserve existing token, demo profiles and persistent volumes when updating.

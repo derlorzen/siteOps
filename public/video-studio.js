@@ -206,7 +206,7 @@
                     fileLink('short', 'Short 9:16') +
                     fileLink('subtitles', 'Untertitel') +
                     fileLink('thumbnail', 'Thumbnail') +
-                    fileLink('metadata', 'YouTube-Metadaten') + '<a href="/youtube#upload?job=' + encodeURIComponent(j.id) + '">An YouTube übergeben →</a>'
+                    fileLink('metadata', 'YouTube-Metadaten') + '<button type="button" data-package="'+escapeHtml(j.id)+'">SEO & Titelbild vorbereiten →</button>'
                   : '') +
                 '<button type="button" class="ghost" data-trash="' + escapeHtml(j.id) + '">Produktion löschen</button></div></article>'
               );
@@ -362,6 +362,7 @@
         youtube: $('#vs-youtube-json').value.trim() ? JSON.parse($('#vs-youtube-json').value) : undefined,
         format: $('#vs-format').value
       });
+      document.dispatchEvent(new CustomEvent('suite-production-selected',{detail:job}));
       msg('Videoentwurf gespeichert. Klicke auf „Video rendern“, um den Runner zu starten.');
       await reload();
       document.querySelector('[data-id="' + job.id + '"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -372,6 +373,8 @@
     }
   });
   $('#vs-jobs').addEventListener('click', async event => {
+    const packageButton=event.target.closest('[data-package]');
+    if(packageButton){packageButton.disabled=true;try{const job=await api('/api/video-studio/jobs/'+encodeURIComponent(packageButton.dataset.package));document.dispatchEvent(new CustomEvent('suite-open-production',{detail:{...job,workflowTarget:'assets'}}));}catch(e){msg(e.message,true);}finally{packageButton.disabled=false;}return;}
     const trash = event.target.closest('[data-trash]'), restore = event.target.closest('[data-restore]');
     if (trash || restore) {
       const button = trash || restore; button.disabled = true;

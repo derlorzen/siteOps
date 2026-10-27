@@ -13,10 +13,12 @@
     ['/billing/time','Zeiterfassung','◷','Kunden & Projekte'],['/billing/invoices','Rechnungen','▧','Kunden & Projekte'],
     ['/billing/activity','Aktivitäten','◷','Kunden & Projekte'],['/billing/settings','Abrechnung','⚙','Kunden & Projekte'],
     ['/lorzcms','LorzCMS','◈'],['/video-suite','Video Suite','▶'],
-    ['/video-suite#overview','Übersicht','01','Video Suite'],['/video-suite#agent','Creative Agent','02','Video Suite'],
-    ['/video-suite#script','Skript & Szenen','03','Video Suite'],['/video-suite#production','Produktionen','04','Video Suite'],
-    ['/video-suite#assets','SEO & Titelbild','05','Video Suite'],['/youtube','YouTube & Kanäle','06','Video Suite'],
-    ['/video-suite#settings','Suite-Einstellungen','07','Video Suite'],
+    ['/video-suite#overview','Übersicht','○','Video Suite'],['/video-suite#ideas','Strategie & Ideen','01','Video Suite'],
+    ['/video-suite#storyboard','Skript & Storyboard','02','Video Suite'],['/video-suite#editing','Schnitt & Dramaturgie','03','Video Suite'],
+    ['/video-suite#script','Skript & Szenen','04','Video Suite'],['/video-suite#production','Full-HD-Produktion','05','Video Suite'],
+    ['/video-suite#assets','SEO & Titelbild','06','Video Suite'],['/video-suite#review','Gesamtvorschau','07','Video Suite'],
+    ['/video-suite#publish','Hochladen','08','Video Suite'],['/video-suite#repurpose','Shorts & Social Media','09','Video Suite'],
+    ['/youtube','YouTube & Kanäle','↗','Video Suite'],['/video-suite#settings','Suite-Einstellungen','⚙','Video Suite'],
     ['/mcp-info','Integrationen','⇄'],
     ['/hosting','Hosting & DNS','◎','Integrationen'],['/coolify','Coolify','◈','Integrationen'],
     ['/mcp-info','MCP & Verbindungen','⇄','Integrationen'],['/settings','Einstellungen','⚙']
@@ -78,7 +80,7 @@
   });
   function currentHref(){
     const current=location.pathname;
-    if(['/video-suite','/video-studio'].includes(current))return '/video-suite#'+(['overview','agent','script','production','assets','settings'].includes(location.hash.slice(1))?location.hash.slice(1):'overview');
+    if(['/video-suite','/video-studio'].includes(current))return '/video-suite#'+(['overview','agent','ideas','storyboard','editing','script','production','assets','review','publish','repurpose','settings'].includes(location.hash.slice(1))?location.hash.slice(1):'overview');
     if(current==='/youtube')return '/youtube';
     if(current.startsWith('/billing/projects'))return '/billing';
     if(current.startsWith('/sites/'))return '/websites';
@@ -103,7 +105,7 @@
     const parent=selected?.dataset.navParent;
     $('#siteopsCurrentPage').textContent=parent?parent+' / '+label:label;
     const video=href.startsWith('/video-suite')||href==='/youtube';
-    const action=$('.ops-top-new');action.href=video?'/video-suite#agent':'/setup';action.textContent=video?'+ Neues Video':'+ Website';
+    const action=$('.ops-top-new');action.href=video?'/video-suite#ideas':'/setup';action.textContent=video?'+ Neues Video':'+ Website';
   }
   sidebar.addEventListener('click',event=>{if(event.target.closest('a')&&mobile.matches){closeMenu();main.focus({preventScroll:true});}});
   window.addEventListener('hashchange',syncNavigation);window.addEventListener('popstate',syncNavigation);

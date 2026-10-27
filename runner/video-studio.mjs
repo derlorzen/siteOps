@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
+import { captureMode, requireCapturePlan } from './video-capture.mjs';
 import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
 import { authenticateDemo, validateDemoLogin } from './video-login.mjs';
@@ -70,8 +71,9 @@ function validate(payload){
     if(narration.length<5||narration.length>1400||headline.length>160)throw new Error('Invalid scene '+(i+1));
     const demoUrl=safeDemoUrl(s.demoUrl,policy.hosts);
     if(s.login_profile_id && (!uuid(s.login_profile_id) || !demoUrl || s.test_data_only!==true))throw Error('Authenticated demos require a valid profile and confirmed test data.');
-    return {narration,headline,demoUrl,login_profile_id:s.login_profile_id,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,policy.hosts)};
+    return {narration,headline,demoUrl,capture_mode:s.capture_mode,test_data_only:s.test_data_only,login_profile_id:s.login_profile_id,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,policy.hosts)};
   });
+  requireCapturePlan(scenes);
   if(payload.demoLogins!==undefined && (!Array.isArray(payload.demoLogins)||payload.demoLogins.length>10))throw Error('Invalid demo login profiles.');
   const logins=(payload.demoLogins||[]).map(profile=>validateDemoLogin(profile,policy.hosts));
   for(const scene of scenes.filter(s=>s.login_profile_id)){
@@ -123,9 +125,9 @@ export async function captureSceneScreenshot(browser,scene,job,i,dir,proxyFactor
   const target=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
   if(scene.demoUrl){
     const response=await page.goto(scene.demoUrl,{waitUntil:'domcontentloaded',timeout:30000});
-    if(storageState && !response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
+    if(!response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
     validatedDemoUrl(page.url(),job.demoPolicy.hosts);
-    if(storageState && await page.locator('input[type="password"]').first().isVisible())throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
+    if(await page.locator('input[type="password"]').first().isVisible())throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
     await page.waitForTimeout(1200);
   }else await page.setContent(scenePage(scene,job.title,i,job.scenes.length,job.format),{waitUntil:'load'});
   await page.screenshot({path:target,type:'png',animations:'disabled'});
@@ -200,14 +202,17 @@ async function render(job){
   let current=0;
   try{
     browser=await chromium.launch({headless:true,args:demoBrowserArgs});
+    requireCapturePlan(job.scenes);
+    job.captures=[];
     for(let i=0;i<job.scenes.length;i++){
       const scene={...job.scenes[i],language:job.language};
-      job.progress=Math.round(i/job.scenes.length*85);
+      job.progress=Math.round(i/job.scenes.length*30);
       await persist(job);
+      try {
       const profile=(jobLogins.get(job.id)||[]).find(x=>x.id===scene.login_profile_id);
       if(scene.login_profile_id && !sessions.has(scene.login_profile_id)) sessions.set(scene.login_profile_id,await authenticateDemo(browser,profile,job.demoPolicy.hosts));
       const storageState=sessions.get(scene.login_profile_id);
-      const recording = Boolean(scene.demoUrl && scene.demoSteps?.length);
+      const recording = captureMode(scene)==='recording';
       const png = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
       if (recording) {
@@ -215,6 +220,17 @@ async function render(job){
       } else {
         await captureSceneScreenshot(browser,scene,job,i,dir,undefined,storageState);
       }
+      if(recording)await verifyVideoDimensions(webm,width,height);
+      job.captures.push({scene:i+1,mode:captureMode(scene),status:'captured',resolution:{width,height}});
+      }catch(error){throw Error('Szene '+(i+1)+' – Aufnahme fehlgeschlagen: '+error.message);}
+    }
+    await persist(job);
+    for(let i=0;i<job.scenes.length;i++){
+      const scene={...job.scenes[i],language:job.language};
+      job.progress=30+Math.round(i/job.scenes.length*55);await persist(job);
+      const recording=captureMode(scene)==='recording';
+      const png=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
+      const webm=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
       const wav=await voice(scene,job,i,dir);
       const len=await duration(wav),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
       if (recording) {
@@ -277,7 +293,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     let demoEnvironmentPolicy=null,demoEnvironmentError=null;
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
-      openaiKeyForwardingVersion:1,
+      capturePreflightVersion:1,openaiKeyForwardingVersion:1,
       demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
@@ -295,6 +311,35 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     try{await narrate('This is a short SiteOps audio connection test.',path.join(dir,'test.wav'),{apiKey,voice:'alloy',language:'en'});return {ok:true,model:'gpt-audio-1.5'};}
     catch(error){return reply.code(422).send({error:String(error.message||error).replaceAll(apiKey,'[REDACTED]').replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]').slice(0,1000)});}
     finally{await fs.rm(dir,{recursive:true,force:true});}
+  });
+  app.post('/video/capture-test',{config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if(!auth(req,reply))return;
+    let scene,policy,profile;
+    try{
+      policy=demoPolicy(req.body?.demoPolicy);scene=req.body?.scene;
+      requireCapturePlan([scene || {}]);
+      if(captureMode(scene)==='text')throw Error('Keine Browser-Aufnahme geplant.');
+      validatedDemoUrl(scene.demoUrl,policy.hosts);validatedDemoSteps(scene.demoSteps||[],scene.demoUrl,policy.hosts);
+      if(!['landscape','portrait'].includes(req.body?.format))throw Error('Ungültiges Videoformat.');
+      if(scene.login_profile_id){profile=validateDemoLogin(req.body.profile,policy.hosts);if(profile.id!==scene.login_profile_id || new URL(profile.login_url).origin!==new URL(scene.demoUrl).origin)throw Error('Passendes Loginprofil fehlt.');}
+    }catch(error){return reply.code(422).send({error:error.message});}
+    let browser,dir;
+    try{
+      browser=await chromium.launch({headless:true,args:demoBrowserArgs});
+      dir=await fs.mkdtemp(path.join(os.tmpdir(),'siteops-capture-test-'));
+      const storageState=profile?await authenticateDemo(browser,profile,policy.hosts):undefined;
+      const width=req.body.format==='portrait'?1080:1920,height=req.body.format==='portrait'?1920:1080;
+      const mode=captureMode(scene);
+      if(mode==='recording'){
+        const target=path.join(dir,'test.webm');
+        await recordDemoScene(browser,scene,target,{width,height},policy.hosts,path.join(dir,'test.png'),undefined,storageState);
+        await verifyVideoDimensions(target,width,height);
+      }else await captureSceneScreenshot(browser,scene,{demoPolicy:policy,format:req.body.format},0,dir,undefined,storageState);
+      return {ok:true,resolution:{width,height},actions_executed:scene.demoSteps?.length || 0,message:mode==='recording'?'Bildschirmaufnahme erfolgreich getestet: Zielseite, Anmeldung falls nötig, alle Aktionen und Full HD.':'Browser-Standbild erfolgreich getestet. Keine bewegte Bildschirmaufnahme.'};
+    }catch(error){
+      const detail=/^(Demo-|Only explicitly|Full-HD)/.test(error.message || '')?error.message:'Zielseite, Domainfreigabe, Demo-Login und Aktions-Selektoren prüfen.';
+      return reply.code(422).send({error:('Aufnahme fehlgeschlagen: '+detail+' Es wird keine Texttafel als Ersatz erstellt.').slice(0,900)});
+    }finally{await browser?.close().catch(()=>{});if(dir)await fs.rm(dir,{recursive:true,force:true});}
   });
   app.post('/video/demo-login/test',{config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async(req,reply)=>{
     if(!auth(req,reply))return;
@@ -327,7 +372,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!uuid(req.params.id))return reply.code(400).send({error:'Invalid job ID'});
     const job=await load(req.params.id);
     if(!job)return reply.code(404).send({error:'Job not found'});
-    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution};
+    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || []};
   });
   app.get('/video/jobs/:id/file',async(req,reply)=>{
     if(!auth(req,reply))return;

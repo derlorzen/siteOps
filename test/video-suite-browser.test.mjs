@@ -160,7 +160,7 @@ test(
     await page.goto('https://suite.test/video-suite');
     await page.waitForFunction(() => document.querySelector('#suite-draft-state').textContent === 'Neuer Entwurf');
 
-    await page.locator('[data-suite-nav=agent]').click();
+    await page.locator('[data-suite-nav=ideas]').click();
     await page.getByLabel('Screenshots oder Bilder anhängen', { exact: true }).setInputFiles({
       name: 'screenshot.png',
       mimeType: 'image/png',
@@ -181,7 +181,8 @@ test(
     await page.waitForTimeout(500);
     await page.getByText('Vorschlag ansehen & übernehmen').click();
     await page.getByText('In aktuellen Entwurf übernehmen', { exact: true }).click();
-    await page.waitForFunction(() => location.hash === '#script');
+    await page.waitForFunction(() => location.hash === '#storyboard');
+    await page.locator('[data-suite-nav=script]').click();
     if ((await page.locator('#suite-scene-list .suite-scene-card').count()) !== 1) throw Error('Scene adoption failed');
     await page.locator('#suite-add-scene').click();
     const last = page.locator('#suite-scene-list .suite-scene-card').last();

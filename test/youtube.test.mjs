@@ -538,3 +538,41 @@ test('YouTube settings/OAuth use dashboard sessions and reject unauthenticated, 
     302
   );
 });
+
+test('upload approval freezes the selected publication thumbnail with the reviewed title and description', async () => {
+  let image = Buffer.from([255, 216, 255, 1]);
+  const h = harness(
+    async () => Response.json({}),
+    () => ({
+      refreshJob: async () => ({
+        status: 'done',
+        result: { files: ['video'] },
+        youtube: {
+          title: 'Reviewed title',
+          description: 'Reviewed description',
+          keywords: [],
+          hashtags: [],
+          chapters: []
+        },
+        render_settings: { language: 'en' }
+      }),
+      capabilities: async () => ({ artifactRanges: true }),
+      publication: { read: async () => ({ has_thumbnail: true }), thumbnail: async () => image }
+    })
+  );
+  const preview = await h.service.previewUpload({
+    account_id: id,
+    job_id: id,
+    made_for_kids: false,
+    contains_synthetic_media: false
+  });
+  assert.equal(preview.body.has_thumbnail, true);
+  assert.equal(preview.body.thumbnail, undefined);
+  const expected = image.toString('base64');
+  image = Buffer.from([255, 216, 255, 2]);
+  await h.service.execute({ preview_token: preview.preview_token, approved: true });
+  const snapshot = JSON.parse(h.uploads[0][4]);
+  assert.equal(snapshot.thumbnail, expected);
+  assert.equal(snapshot.title, 'Reviewed title');
+  assert.equal(snapshot.description, 'Reviewed description');
+});

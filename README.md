@@ -1276,3 +1276,26 @@ This is a dual-licensing model:
 ## License history
 
 SiteOps 1.1.0 was previously published under **AGPL-3.0-only**. Rights already granted for that historical version remain governed by its license. The noncommercial terms apply to SiteOps 1.1.1 and subsequent versions released under the current [LICENSE](LICENSE).
+
+### Guided Video Suite workflow (1.7.0)
+
+The suite guides one production through strategy, storyboard, dramaturgy, scene setup,
+Full-HD rendering, SEO/thumbnail, complete review, private YouTube upload and repurposing.
+Completed production cards lead to packaging rather than straight to upload. SEO edits
+and a selected/generated/uploaded 16:9 thumbnail are saved against the completed job;
+no new render is needed. The review shows the video, actual resolution, capture report,
+thumbnail, full assembled description, keywords, language, narration and sources.
+Private uploads freeze the reviewed title/description/thumbnail together. Thumbnail
+retries reuse the already-created YouTube video ID, including after worker restarts.
+Public publication remains a separate explicit channel action. The current 9:16
+artifact is a padded adaptation of the opening (up to 59 seconds), not an editorially
+selected highlight; the UI says so and offers agent planning for a separate Short.
+
+Scenes explicitly distinguish text cards, static browser screenshots and required
+screen recordings. Recording intent without a configured URL/actions blocks rendering.
+Runner **1.2.0** advertises `capturePreflightVersion: 1` and supports an authenticated,
+rate-limited scene capture test. It executes the configured test-data actions, checks
+login/access and verifies real Full-HD video dimensions, then deletes temporary files.
+Tests are a point-in-time check, not a guarantee that a changing website stays valid.
+The renderer captures every scene before generating any narration and never replaces
+a failed required recording with a slide. Existing text-only scenes remain supported.
