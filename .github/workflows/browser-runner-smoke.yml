@@ -152,7 +152,7 @@ jobs:
           # Record a real browser scene with a safe, allowlisted HTTPS site.
           curl -fsS -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
-            --data '{"id":"33333333-3333-4333-8333-333333333333","title":"CI Browser Recording","voice":"am_michael","language":"en","format":"landscape","scenes":[{"headline":"Real browser recording","narration":"Watch a browser scroll on this public sample page.","demoUrl":"https://example.com/","demoSteps":[{"action":"scroll","pixels":250},{"action":"wait","ms":300}]}]}' \
+            --data '{"id":"33333333-3333-4333-8333-333333333333","title":"CI Browser Recording","voice":"am_michael","language":"en","format":"landscape","scenes":[{"headline":"Real browser recording","narration":"Watch a browser scroll on this public sample page.","demoUrl":"https://example.com/","test_data_only":true,"demoSteps":[{"action":"scroll","pixels":250},{"action":"wait","ms":300}]}]}' \
             http://127.0.0.1:3299/video/jobs > /tmp/siteops-video-demo-created.json
           for i in {1..90}; do
             curl -fsS -H 'Authorization: Bearer ci-runner-token' \
