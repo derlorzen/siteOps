@@ -31,7 +31,7 @@ test(
       conversations = [];
     let trashed = false,
       knowledge = { plugins: [] };
-    let chatRequest;
+    let chatRequest, captureRequest;
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     const project = '11111111-1111-4111-8111-111111111111';
@@ -109,7 +109,10 @@ test(
                   created_at: new Date().toISOString()
                 }
               ];
-      else if (url.pathname.endsWith('/demo-policy'))
+      else if (url.pathname === '/api/video-studio/capture-test') {
+        captureRequest = req.postDataJSON();
+        body = { ok: true, message: 'Bildschirmaufnahme in Full HD geprüft.' };
+      } else if (url.pathname.endsWith('/demo-policy'))
         body = { supported: true, source: 'environment', environmentPolicy: { hosts: [] } };
       else if (url.pathname.endsWith('/capabilities')) body = { offlineModels: { kokoro: true, piper: true } };
       else if (url.pathname === '/api/video-suite/knowledge') {
@@ -187,6 +190,20 @@ test(
     await page.locator('#suite-add-scene').click();
     const last = page.locator('#suite-scene-list .suite-scene-card').last();
     await last.locator('textarea').first().fill('A second narration scene for our tutorial.');
+    await last.getByLabel('Geplantes Bild', { exact: true }).selectOption('recording');
+    await last.getByLabel('Aufnahmeseite', { exact: true }).fill('https://demo.example.com/products');
+    await last.getByLabel('Bewegung während der Aufnahme', { exact: true }).selectOption('scroll');
+    await last.getByLabel('Diese Aufnahmeseite enthält ausschließlich Testdaten.', { exact: true }).check();
+    await last.getByRole('button', { name: 'Aufnahme dieser Szene testen', exact: true }).click();
+    await page.waitForFunction(() =>
+      document.querySelector('#suite-scene-list').textContent.includes('Aufnahme geprüft:')
+    );
+    if (
+      captureRequest?.scene.capture_mode !== 'recording' ||
+      captureRequest.scene.demoSteps?.[1]?.action !== 'scroll' ||
+      !captureRequest.scene.test_data_only
+    )
+      throw Error('Simple capture planning did not reach the Runner check.');
     await page.waitForFunction(
       () => document.querySelector('#suite-draft-state').textContent === 'Entwurf online gespeichert'
     );

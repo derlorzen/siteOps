@@ -100,10 +100,10 @@
         field.addEventListener('input', () => { scene[key] = field.value; commitScenes(); }); l.append(field); card.append(l);
       }
       const modeLabel=document.createElement('label');modeLabel.textContent='Geplantes Bild';
-      const modeSelect=document.createElement('select');
+      const modeSelect=document.createElement('select');modeSelect.setAttribute('aria-label','Geplantes Bild');
       for(const [value,label] of [['text','Texttafel'],['screenshot','Browser-Standbild'],['recording','Bildschirmaufnahme erforderlich']])modeSelect.append(new Option(label,value));
       modeSelect.value=captureMode(scene);
-      modeSelect.addEventListener('change',()=>{scene.capture_mode=modeSelect.value;if(modeSelect.value==='text')for(const key of ['template_id','demoUrl','demoSteps','login_profile_id','test_data_only'])delete scene[key];commitScenes();drawScenes();});
+      modeSelect.addEventListener('change',()=>{scene.capture_mode=modeSelect.value;if(modeSelect.value==='screenshot' && !scene.template_id)delete scene.demoSteps;if(modeSelect.value==='text')for(const key of ['template_id','demoUrl','demoSteps','login_profile_id','test_data_only'])delete scene[key];commitScenes();drawScenes();});
       modeLabel.append(modeSelect);card.append(modeLabel);
       const demoLabel=document.createElement('label'); demoLabel.textContent='Ausführbarer Browser-Ablauf';
       const demoSelect=document.createElement('select'); demoSelect.append(new Option('Noch kein Ablauf zugeordnet',''));
@@ -116,14 +116,35 @@
         if(template)Object.assign(scene,template.scene,{template_id:template.id,narration:scene.narration,headline:scene.headline,capture_mode:template.scene.capture_mode || (template.scene.demoSteps?.length ? 'recording' : 'screenshot')});
         commitScenes();drawScenes();
       });
-      if(captureMode(scene)!=='text'){demoLabel.append(demoSelect);card.append(demoLabel);}
+      if(captureMode(scene)!=='text'){
+        demoLabel.append(demoSelect);card.append(demoLabel);
+        if(!scene.template_id){
+          const urlLabel=document.createElement('label');urlLabel.textContent='Aufnahmeseite';
+          const url=document.createElement('input');url.type='url';url.placeholder='https://dein-demo-shop.de/admin/...';url.value=scene.demoUrl || '';url.maxLength=2048;
+          url.addEventListener('input',()=>{if(url.value.trim())scene.demoUrl=url.value.trim();else delete scene.demoUrl;commitScenes();});urlLabel.append(url);card.append(urlLabel);
+          const loginLabel=document.createElement('label');loginLabel.textContent='Demo-Konto für diese Aufnahme';const login=document.createElement('select');login.setAttribute('aria-label','Demo-Konto für diese Aufnahme');login.append(new Option('Öffentliche Seite / ohne Anmeldung',''));
+          for(const profile of demoLoginProfiles)login.append(new Option(profile.name,profile.id));login.value=scene.login_profile_id || '';
+          login.addEventListener('change',()=>{if(login.value)scene.login_profile_id=login.value;else delete scene.login_profile_id;commitScenes();});loginLabel.append(login);card.append(loginLabel);
+          if(captureMode(scene)==='recording'){
+            const motionLabel=document.createElement('label');motionLabel.textContent='Bewegung während der Aufnahme';const motion=document.createElement('select');motion.setAttribute('aria-label','Bewegung während der Aufnahme');
+            const presets={still:[{action:'wait',ms:3000}],scroll:[{action:'wait',ms:1500},{action:'scroll',pixels:650},{action:'wait',ms:1500}]};
+            motion.append(new Option('Aufnahme-Ablauf auswählen',''),new Option('Seite ruhig zeigen','still'),new Option('Seite zeigen und nach unten scrollen','scroll'));
+            const preset=Object.keys(presets).find(key=>JSON.stringify(presets[key])===JSON.stringify(scene.demoSteps));
+            if(scene.demoSteps?.length && !preset){motion.append(new Option('Individueller gespeicherter Ablauf','custom'));motion.value='custom';}else motion.value=preset || '';
+            motion.addEventListener('change',()=>{if(presets[motion.value])scene.demoSteps=presets[motion.value];else if(motion.value!=='custom')delete scene.demoSteps;commitScenes();});motionLabel.append(motion);card.append(motionLabel);
+          }
+          const consentLabel=document.createElement('label'),consent=document.createElement('input');consent.type='checkbox';consent.checked=scene.test_data_only===true;
+          consent.addEventListener('change',()=>{if(consent.checked)scene.test_data_only=true;else delete scene.test_data_only;commitScenes();});consentLabel.append(consent,document.createTextNode(' Diese Aufnahmeseite enthält ausschließlich Testdaten.'));card.append(consentLabel);
+          const help=document.createElement('small');help.textContent='Für einen angemeldeten Bereich ein gespeichertes Demo-Konto wählen. Weitere Klickfolgen lassen sich als wiederverwendbare Demoszene hinterlegen.';card.append(help);
+        }
+      }
       const hint=document.createElement('p');hint.className='vs-note';hint.setAttribute('role','status');
       const refreshStatus=()=>{
         const checked=captureTests.get(scene),current=checked?.signature===captureSignature(scene);
         const configured={...scene,...(availableTemplates.find(t=>t.id===scene.template_id)?.scene || {})};
-        hint.textContent=captureMode(scene)==='text'?'Diese Szene wird als Texttafel gerendert.':current?checked.message:!configured.demoUrl && !scene.template_id?'Aufnahme blockiert: Demoszene mit Zielseite und Ablauf auswählen.':captureMode(scene)==='recording'&&!configured.demoSteps?.length?'Aufnahme blockiert: Der Ablauf enthält keine Aktionen.':'Noch nicht getestet · '+(configured.demoUrl || 'Gespeicherte Demoszene')+' · '+(configured.login_profile_id?'Anmeldung vor der Aufnahme':'ohne gespeicherten Login')+' · '+(configured.demoSteps?.length || 0)+' Aktionen.';
+        hint.textContent=captureMode(scene)==='text'?'Diese Szene wird als Texttafel gerendert.':current?checked.message:!configured.demoUrl && !scene.template_id?'Aufnahme blockiert: Aufnahmeseite eingeben oder eine Demoszene auswählen.':captureMode(scene)==='recording'&&!configured.demoSteps?.length?'Aufnahme blockiert: Aufnahme-Ablauf auswählen.':configured.test_data_only!==true?'Aufnahme blockiert: Testdaten bestätigen.':'Noch nicht getestet · '+(configured.demoUrl || 'Gespeicherte Demoszene')+' · '+(configured.login_profile_id?'Anmeldung vor der Aufnahme':'ohne gespeicherten Login')+' · '+(configured.demoSteps?.length || 0)+' Aktionen.';
       };
-      card.addEventListener('input',refreshStatus);refreshStatus();card.append(hint);
+      card.addEventListener('input',refreshStatus);card.addEventListener('change',refreshStatus);refreshStatus();card.append(hint);
       if(captureMode(scene)!=='text'){
         const test=document.createElement('button');test.type='button';test.className='ghost';test.textContent='Aufnahme dieser Szene testen';
         const note=document.createElement('small');note.textContent='Führt den hinterlegten Ablauf mit Testdaten aus, einschließlich seiner Aktionen. Prüft echte Aufnahme und Full HD, ohne Sprachausgabe. Testergebnisse gelten nur für diese Konfiguration.';
@@ -313,7 +334,7 @@
     demoLoginProfiles=data;
     const select=$('suite-demo-login-id'); select.replaceChildren(new Option('Neues Demo-Konto',''));
     for(const profile of data) select.append(new Option(profile.name,profile.id));
-    select.value=selected;
+    select.value=selected;drawScenes();
   }
   $('suite-demo-login-id').addEventListener('change',()=>{
     const profile=demoLoginProfiles.find(x=>x.id===$('suite-demo-login-id').value);
@@ -412,9 +433,8 @@
     $('suite-thumbnail-gallery').replaceChildren();
     for (const item of items) {
       const box = document.createElement('div'); const img = document.createElement('img'); img.src = item.url; img.alt = 'Gespeichertes Titelbild'; img.loading = 'lazy';
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'ghost'; b.textContent = 'Vorschau'; b.addEventListener('click', () => previewAsset(item.url).catch(e => { $('suite-thumbnail-status').textContent=e.message; }));
       const link = document.createElement('button'); link.type='button';link.className='ghost';link.textContent='Als Titelbild auswählen';link.addEventListener('click',()=>previewAsset(item.url).catch(e=>{$('suite-thumbnail-status').textContent=e.message;}));
-      box.append(img,b,link); $('suite-thumbnail-gallery').append(box);
+      box.append(img,link); $('suite-thumbnail-gallery').append(box);
     }
   }
   $('suite-thumbnail-generate').addEventListener('click', async () => {
@@ -556,7 +576,7 @@
     const rows=await api('/api/youtube/uploads?account_id='+encodeURIComponent(account));$('suite-upload-list').replaceChildren();
     const relevant=rows.filter(r=>r.video_job_id===job?.id && r.kind==='video');
     if(!relevant.length)$('suite-upload-list').textContent='Für diese Produktion wurde noch kein Upload gestartet.';
-    const labels={queued:'Upload wartet',uploading:'Video wird übertragen',retry:'Übertragung wird fortgesetzt',done:'Video und Titelbild übertragen',failed:'Übertragung benötigt deine Aufmerksamkeit'};
+    const labels={queued:'Upload wartet',uploading:'Video wird übertragen',retry:'Übertragung wird fortgesetzt',done:'Upload abgeschlossen',failed:'Übertragung benötigt deine Aufmerksamkeit'};
     for(const row of relevant){const p=document.createElement('p');p.textContent=(labels[row.status] || row.status)+(row.total_bytes?' · '+Math.round(Number(row.uploaded_bytes)/Number(row.total_bytes)*100)+' %':'')+(row.error?' · '+row.error:'');$('suite-upload-list').append(p);if(row.remote_video_id){const a=document.createElement('a');a.textContent='Privates Video auf YouTube prüfen →';a.href='https://www.youtube.com/watch?v='+encodeURIComponent(row.remote_video_id);a.target='_blank';a.rel='noopener noreferrer';$('suite-upload-list').append(a);}if(row.status==='done'){const a=document.createElement('a');a.href='#repurpose';a.dataset.suiteGo='repurpose';a.textContent='Weiter: Shorts & Social Media →';$('suite-upload-list').append(a);}}
     return relevant;
   }
