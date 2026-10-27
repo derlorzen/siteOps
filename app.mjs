@@ -52,6 +52,7 @@ import { renderYouTube } from './lib/youtube-ui.mjs';
 import { createVideoSuiteAgent, registerVideoSuiteRoutes } from './lib/video-suite-agent.mjs';
 import { renderVideoStudio } from './lib/video-studio-ui.mjs';
 import { createDashboardSessions } from './lib/dashboard-session.mjs';
+import { cmsProjectBeginSchema, cmsProjectFileSchema, cmsProjectIdSchema } from './lib/cms-projects.mjs';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -4986,6 +4987,41 @@ function mcpServer() {
     async () => toolText(await cmsController.overview())
   );
   registerTool(
+    'cms_project_begin',
+    {
+      description:
+        'Stage an immutable existing LorzCMS project manifest before installation. No hosting writes. Include project PHP, public assets/media, the seed export and optionally audit/asset-verification.json; exclude core, credentials and local databases. Returns a packageId for per-file transfer.',
+      inputSchema: cmsProjectBeginSchema
+    },
+    async input => toolText(await cmsController.projects.begin(input))
+  );
+  registerTool(
+    'cms_project_file',
+    {
+      description:
+        'Transfer one declared project file as canonical base64, up to 5 MiB decoded. SHA-256 and size must match the immutable manifest. Idempotent; never writes to hosting or returns file contents.',
+      inputSchema: cmsProjectFileSchema
+    },
+    async input => toolText(await cmsController.projects.put(input))
+  );
+  registerTool(
+    'cms_project_status',
+    {
+      description: 'Show project upload progress and missing files without returning project code, media or secrets.',
+      inputSchema: cmsProjectIdSchema
+    },
+    async ({ packageId }) => toolText(await cmsController.projects.status(packageId))
+  );
+  registerTool(
+    'cms_project_finish',
+    {
+      description:
+        'Verify every staged project file and content seed. Returns preserved routes and record count. A ready package can be passed as projectPackageId to cms_install or cms_install_allinkl. Does not publish by itself.',
+      inputSchema: cmsProjectIdSchema
+    },
+    async ({ packageId }) => toolText(await cmsController.projects.finish(packageId))
+  );
+  registerTool(
     'cms_release_bundled',
     {
       description: 'Publish the bundled LorzCMS core as an immutable release. Does not deploy websites.',
@@ -4997,7 +5033,7 @@ function mcpServer() {
     'cms_install',
     {
       description:
-        'Create a managed website and queue CMS installation into an empty hosting directory. Requires the domain document root to be its public subdirectory.',
+        'Create a managed website and queue CMS installation into an empty hosting directory. Use projectPackageId from cms_project_finish to deploy an existing complete project including binary media and imported content. Requires the domain document root to be its public subdirectory.',
       inputSchema: cmsInstallRequestSchema
     },
     async input => toolText(await cmsController.create(input))
@@ -5018,6 +5054,7 @@ function mcpServer() {
         adminEmail: z.email(),
         adminPassword: z.string().min(12),
         projectId: z.uuid().optional(),
+        projectPackageId: z.uuid().optional(),
         database: z.discriminatedUnion('engine', [
           z.object({ engine: z.literal('sqlite') }),
           z.object({

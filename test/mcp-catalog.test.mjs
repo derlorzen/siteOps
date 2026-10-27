@@ -53,6 +53,10 @@ test('authenticated ChatGPT and Claude discover the same complete tool definitio
   assert.ok(catalogs[0].length >= 125);
   for (const name of [
     'cms_admin_recovery',
+    'cms_project_begin',
+    'cms_project_file',
+    'cms_project_status',
+    'cms_project_finish',
     'backup_restore_preview',
     'youtube_upload_preview',
     'video_studio_demo_templates'

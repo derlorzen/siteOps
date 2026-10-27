@@ -63,6 +63,52 @@ Anbieter noch nicht in jedem Tarif vollständig ohne Nacharbeit möglich.
 
 ## New website
 
+### Existing complete projects through MCP
+
+An existing project can be transferred and installed entirely through the MCP
+tools. A dashboard ZIP import is not required. The shared CMS core remains a
+separate immutable release; project rendering, original media URLs and content
+are installed alongside it.
+
+1. Prepare a transfer bundle locally with
+   `node scripts/build-cms-project.mjs SOURCE PROJECT OUTPUT.json "Website name"`.
+   This selects `projects/PROJECT/`, public project assets and original
+   `wp-content/uploads/` files, `migration/PROJECT-content.json` and the optional
+   photo inventory `audit/asset-verification.json`. It excludes the old core,
+   configuration, accounts, SQLite databases and local sessions.
+2. Call `cms_project_begin` with the bundle's `manifest`. Store its `packageId`.
+   Beginning the same immutable manifest again returns the same package.
+3. Call `cms_project_file` for each file with `packageId`, `path` and canonical
+   base64 `content`. Each file is limited to 5 MiB and the project to 64 MiB/1000
+   files. `cms_project_status` lists missing files for resumable transfers. Stay
+   below the existing endpoint rate limit when uploading many files.
+4. Call `cms_project_finish`. It rechecks every stored file, the export format,
+   project identity, duplicate content IDs and original routes. No hosting changes
+   have happened yet.
+5. Call `cms_install` or `cms_install_allinkl` with the ready `projectPackageId`
+   and the usual hosting, domain, database and first-admin parameters. Existing
+   saved server/KAS credentials are resolved only by SiteOps. The same persisted
+   installation worker prepares the isolated empty target, subdomain, HTTPS,
+   connector and released core. It uploads and reads back all project files,
+   verifies them again on PHP hosting, selects the project's own definition and
+   imports the export in the initial database transaction. It never writes an
+   existing populated database or silently replaces changed project files.
+6. `cms_overview` shows the job. It is ready only after the standard CMS and admin
+   checks plus all published imported routes have succeeded. The job result
+   includes package ID, file count, imported record count and checked routes.
+   The website is registered in SiteOps automatically. Indexing remains disabled
+   for the new staged copy until explicitly enabled.
+
+Imported project PHP is executable application code: publish only code belonging
+to the website the user explicitly asked to install. These tools do not fetch an
+arbitrary archive URL, run a remote shell or accept local server credentials in
+the package. Path traversal, duplicate case-folded paths, mismatched hashes,
+private configuration and entry-point overrides are rejected. Ready packages are
+retained for installation retries; automatic retention/pruning is not implemented.
+
+After deploying a SiteOps version with these tools, refresh the MCP client's tool
+catalog. The ChatGPT and Claude endpoints advertise the same complete tools.
+
 1. Deploy this SiteOps version; its database migrations run at startup.
 2. Open **LorzCMS** and publish the bundled core version.
 3. At the hosting provider, configure the HTTPS domain's document root as the chosen

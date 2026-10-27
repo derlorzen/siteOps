@@ -172,6 +172,13 @@ try {
     if (is_file($progressPath) && !hash_equals(cmsAgentJson($progressPath)['requestHash'],$requestHash)) { cmsAgentFail(409,'Auftrag wurde mit anderen Parametern wiederholt.'); }
     if (!is_file($progressPath)) { cmsAgentAtomic($progressPath,json_encode(['requestHash'=>$requestHash],JSON_THROW_ON_ERROR)); }
     if ($action === 'provision') {
+        $projectPackage=null;
+        if (isset($body['projectPackage'])) {
+            if (isset($body['websiteBlueprint'])) { cmsAgentFail(422,'Projekt und Website-Bauplan nicht kombinieren.'); }
+            require_once __DIR__.'/project.php';
+            $projectPackage=cmsAgentProject($root,$body['projectPackage']);
+        }
+        $projectKey=$projectPackage['project'] ?? 'base';
         $baseUrl = $body['baseUrl'] ?? '';
         if (!is_string($baseUrl) || !filter_var($baseUrl,FILTER_VALIDATE_URL) || parse_url($baseUrl,PHP_URL_SCHEME) !== 'https' || (parse_url($baseUrl,PHP_URL_PATH) ?: '/') !== '/' || parse_url($baseUrl,PHP_URL_USER) || parse_url($baseUrl,PHP_URL_QUERY) || parse_url($baseUrl,PHP_URL_FRAGMENT)) { cmsAgentFail(422,'HTTPS-Domain erforderlich.'); }
         $email = $body['adminEmail'] ?? ''; $name = $body['adminName'] ?? ''; $password = $body['adminPassword'] ?? '';
@@ -181,19 +188,23 @@ try {
         if (!is_file($root.'/config/local.php')) {
             if ($engine==='mysql' && (!preg_match('/^[a-zA-Z0-9_.-]+$/D',$database['host'] ?? '') || !preg_match('/^[a-zA-Z0-9_-]+$/D',$database['name'] ?? '') || empty($database['user']))) { cmsAgentFail(422,'Datenbank-Zugang prüfen.'); }
             $dsn = $engine==='sqlite' ? "'sqlite:'.dirname(__DIR__).'/var/cms.sqlite'" : var_export('mysql:host='.$database['host'].';dbname='.$database['name'].';charset=utf8mb4',true);
-            $config = "<?php\nreturn [\n'project'=>'base','dsn'=>".$dsn.",\n'db_user'=>".var_export($database['user'] ?? null,true).",'db_password'=>".var_export($database['password'] ?? null,true).",\n'storage'=>dirname(__DIR__).'/var','base_url'=>".var_export(rtrim($baseUrl,'/'),true).",'environment'=>'production'\n];\n";
+            $config = "<?php\nreturn [\n'project'=>".var_export($projectKey,true).",'dsn'=>".$dsn.",\n'db_user'=>".var_export($database['user'] ?? null,true).",'db_password'=>".var_export($database['password'] ?? null,true).",\n'storage'=>dirname(__DIR__).'/var','base_url'=>".var_export(rtrim($baseUrl,'/'),true).",'environment'=>'production'\n];\n";
             cmsAgentAtomic($root.'/config/local.php',$config);
         }
         define('LORZCMS_ROOT',$root); define('LORZCMS_CORE',$root.'/.lorzcms/releases/'.$version);
         require LORZCMS_CORE.'/runtime/bootstrap.php';
         [$configuration,$project,$store,$schema,$access,$content] = cms_boot();
+        if ($configuration['project']!==$projectKey) { cmsAgentFail(409,'Bestehende Konfiguration gehört zu einem anderen Projekt.'); }
         $store->install();
         $marker = $store->query("SELECT payload FROM site_state WHERE id='siteops:installation'")->fetchColumn();
         if ($marker && json_decode($marker,true,32,JSON_THROW_ON_ERROR)['jobId'] !== $job) { cmsAgentFail(409,'Datenbank gehört zu einem anderen Auftrag.'); }
         if (!$marker) {
-            $store->transaction(static function() use($store,$access,$content,$body,$email,$name,$password,$job,$agent): void {
+            $store->transaction(static function() use($root,$projectPackage,$store,$access,$content,$body,$email,$name,$password,$job,$agent): void {
                 if ((int)$store->query('SELECT COUNT(*) FROM users')->fetchColumn() !== 0 || (int)$store->query('SELECT COUNT(*) FROM contents')->fetchColumn() !== 0) { cmsAgentFail(409,'Diese Datenbank enthält bereits CMS-Daten.'); }
                 $id = $access->create($email,$name,$password,'admin'); $actor=$access->user($id);
+                if ($projectPackage!==null) {
+                    cmsAgentImportProject($root,$projectPackage,$content,$actor);
+                } else {
                 $blueprint = $body['websiteBlueprint'] ?? null;
                 if ($blueprint !== null) {
                     if (!is_array($blueprint) || ($blueprint['reviewRequired'] ?? false) !== true ||
@@ -251,6 +262,7 @@ try {
                     }
                 } else {
                     $content->create('page','Willkommen','/',['body'=>'<p>Deine Website ist eingerichtet. Bearbeite die Startseite in der Verwaltung.</p>'],[],'published',$actor);
+                }
                 }
                 $store->query('INSERT INTO site_state VALUES (?,?,?,?)',['siteops:installation',SiteCms\Store::json(['jobId'=>$job,'instanceId'=>$agent['instance_id']]),1,gmdate('c')]);
             });
