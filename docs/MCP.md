@@ -48,20 +48,16 @@ SiteOps advertises RFC 9207 issuer identification and returns `iss` on authoriza
 
 ### ChatGPT action-discovery compatibility
 
-SiteOps may expose more than 100 MCP tools, including complex Video Studio and
-deployment input schemas. Some ChatGPT clients have difficulty discovering very
-large manifests even when the OAuth authorization succeeded; this is a diagnostic
-hypothesis, not a documented fixed ChatGPT size limit.
+ChatGPT, Claude, other OAuth clients and legacy bearer users receive the same
+complete tool catalog (currently 125 tools) through one MCP handler. The former
+38-tool ChatGPT restriction has been removed after the actual discovery failure
+was traced to an incompatible hashtag schema. `MCP_CHATGPT_COMPACT` is no longer
+used; no environment change or OAuth reconnection is required. Refresh the tool
+metadata in ChatGPT after deployment to import the additional tools.
 
-To reduce the discovery payload **without changing Claude**, OAuth clients
-identified through ChatGPT CIMD or DCR metadata receive a deliberately smaller,
-fixed tool catalog. Claude, other MCP clients, and legacy bearer users continue
-to receive all tools. Tool execution still uses the same authorization and
-change-preview/approval controls.
-
-For diagnostic comparison, `MCP_CHATGPT_COMPACT=false` disables the ChatGPT
-catalog restriction after application restart (no OAuth tokens need to be
-revoked). Leave the setting unset for the smaller catalog.
+All clients use the same token resource/scope validation, tool input validation
+and change-preview/approval controls. Catalog parity does not bypass execution
+approval requirements.
 
 After deployment:
 
@@ -72,14 +68,14 @@ After deployment:
    public HTTPS routing and its OAuth callback. If discovery returns 401,
    inspect token resource/scope and the `WWW-Authenticate` challenge.
 3. If discovery reaches SiteOps with HTTP 200 but ChatGPT still refuses the
-   actions, compare the bounded ChatGPT catalog and full Claude catalog. Inspect
-   the actual response schema size and any invalid tool schemas.
+   actions, inspect ChatGPT's actual error response and validate the full tool
+   schemas. Compare the authenticated catalogs for ChatGPT and Claude.
 4. In ChatGPT Plugins, refresh the connection's tool metadata or reconnect,
    then start a new conversation to test the actions.
 
-This change is intentionally isolated to ChatGPT's discovered tool catalog;
-it is not proof that the original error was caused by manifest size. The
-live authenticated `tools/list` response and ChatGPT UI must still be tested.
+`test/mcp-catalog.test.mjs` checks authenticated ChatGPT/Claude catalog parity
+using the real MCP server and verifies that CMS, backups, Video Studio and
+YouTube tools are present for both clients.
 
 ### Confirmed schema validation failure after PR #80
 
