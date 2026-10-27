@@ -124,6 +124,11 @@ test(
           message: 'OpenAI HTTP 400 · unsupported_parameter',
           diagnostic: { http_status: 400, error_code: 'unsupported_parameter', parameter: 'text.format' }
         };
+      else if (url.pathname === '/api/video-studio/openai-audio-test')
+        body = {
+          ok: true,
+          message: 'OpenAI-Sprachausgabe über den Browser Runner erfolgreich geprüft (gpt-audio-1.5).'
+        };
       else if (url.pathname === '/api/video-suite/models') body = { models: ['gpt-4.1', 'gpt-6-luna'] };
       else if (url.pathname === '/api/video-suite/settings')
         body = { configured: true, model: 'gpt-4.1', image_model: 'gpt-image-1' };
@@ -201,6 +206,12 @@ test(
     await page.getByRole('button', { name: 'Verbindung testen', exact: true }).click();
     await page.waitForFunction(() =>
       document.querySelector('#suite-diagnostics').textContent.includes('unsupported_parameter')
+    );
+    await page.getByRole('button', { name: 'Sprachausgabe testen', exact: true }).click();
+    await page.waitForFunction(() =>
+      document
+        .querySelector('#suite-settings-status')
+        .textContent.includes('Sprachausgabe über den Browser Runner erfolgreich')
     );
     await page.getByRole('button', { name: 'Verfügbare Modelle laden', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('#suite-model-options option[value="gpt-6-luna"]'));

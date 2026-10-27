@@ -43,6 +43,7 @@ import { createProjectOverview, registerProjectOverviewRoutes } from './lib/proj
 import { createWorkspaceActivity, registerWorkspaceActivityRoutes } from './lib/workspace-activity.mjs';
 import { createBillingWorkflows, registerBillingWorkflowRoutes } from './lib/billing-workflows.mjs';
 import { resolveBuildInfo } from './lib/build-info.mjs';
+import { authenticatedRunnerStatus } from './lib/runner-status.mjs';
 import { createVideoStudio, registerVideoStudioRoutes } from './lib/video-studio.mjs';
 import { registerVideoStudioTools } from './lib/video-studio-mcp.mjs';
 import { createYouTubeService } from './lib/youtube.mjs';
@@ -2483,6 +2484,7 @@ async function browserRunnerRequest(path, { method = 'GET', body, token, url } =
   if (!base || !authToken) throw new Error('Browser Runner is not configured');
   const res = await fetch(base + path, {
     method,
+    redirect: 'error',
     headers: {
       authorization: 'Bearer ' + authToken,
       ...(body !== undefined ? { 'content-type': 'application/json' } : {})
@@ -2502,7 +2504,7 @@ async function browserRunnerRequest(path, { method = 'GET', body, token, url } =
   return data;
 }
 async function browserRunnerTest({ url, token } = {}) {
-  return browserRunnerRequest('/auth-test', { url, token });
+  return authenticatedRunnerStatus(path => browserRunnerRequest(path, { url, token }));
 }
 function publicSyntheticRun(r) {
   if (!r) return null;

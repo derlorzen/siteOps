@@ -28,6 +28,7 @@ fi
 install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0755 "${APP_DIR}"
 install -m 0644 "${SOURCE_DIR}/package.json" "${APP_DIR}/package.json"
 install -m 0644 "${SOURCE_DIR}/server.mjs" "${APP_DIR}/server.mjs"
+install -m 0644 "${SOURCE_DIR}/version.mjs" "${APP_DIR}/version.mjs"
 install -m 0644 "${SOURCE_DIR}/video-studio.mjs" "${APP_DIR}/video-studio.mjs"
 install -m 0644 "${SOURCE_DIR}/video-demo.mjs" "${APP_DIR}/video-demo.mjs"
 install -m 0644 "${SOURCE_DIR}/video-login.mjs" "${APP_DIR}/video-login.mjs"

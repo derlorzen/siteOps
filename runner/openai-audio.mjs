@@ -39,7 +39,12 @@ export async function narrateWithOpenAI(text, outputPath, {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(90000)
   });
-  if (!response.ok) throw new Error('OpenAI narration request failed (HTTP ' + response.status + '). Check API access, quota and voice settings.');
+  if (!response.ok) {
+    let detail='';
+    try { const error=(await response.json())?.error; detail=[error?.code,error?.message].filter(x=>typeof x==='string').join(' · '); } catch {}
+    detail=detail.replaceAll(apiKey,'[REDACTED]').replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]').slice(0,600);
+    throw new Error('OpenAI-Sprachausgabe HTTP '+response.status+' · Modell '+model+(detail?' · '+detail:'')+'. Der Textmodell-Test prüft keinen Audio-Zugriff.');
+  }
   const data = await response.json();
   const encoded = data?.choices?.[0]?.message?.audio?.data;
   if (typeof encoded !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(encoded))

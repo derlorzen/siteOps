@@ -323,6 +323,11 @@
       $('suite-ai-state').textContent = result.ok ? 'Verbindung geprüft · ' + result.model : 'OpenAI-Test fehlgeschlagen · ' + result.model;
     } catch(e) { $('suite-settings-status').textContent = e.message; } finally { button.disabled = false; }
   });
+  $('suite-test-audio').addEventListener('click',async event=>{
+    const button=event.currentTarget;button.disabled=true;$('suite-settings-status').textContent='Prüfe OpenAI-Sprachausgabe über den Browser Runner …';
+    try{const response=await fetch('/api/video-studio/openai-audio-test',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:'{}'}),result=await response.json();if(!response.ok)throw Error(result.message || result.error || 'Audio-Test fehlgeschlagen.');$('suite-settings-status').textContent=result.message;}
+    catch(e){$('suite-settings-status').textContent=e.message;}finally{button.disabled=false;}
+  });
   $('suite-load-models').addEventListener('click', async event => {
     const button = event.currentTarget; button.disabled = true;
     try {

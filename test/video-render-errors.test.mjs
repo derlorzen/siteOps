@@ -10,7 +10,7 @@ test('runner render HTTP 422 remains a readable validation error, never Bad Gate
     query: async sql => {
       if (sql.includes('video_studio_jobs') && sql.startsWith('SELECT'))
         return [[{ id, project_id: id, status: 'draft', scenes: [] }]];
-      if (sql.includes('video_studio_projects')) return [[{ voice: 'alloy', voice_provider: 'openai' }]];
+      if (sql.includes('video_studio_projects')) return [[{ voice: 'am_adam', voice_provider: 'kokoro' }]];
       if (sql.startsWith('UPDATE')) updates++;
       return [[]];
     }
@@ -70,7 +70,7 @@ test('render carries a validated policy snapshot only after protocol negotiation
       if (sql.includes('app_settings')) return [[{ setting_value: JSON.stringify(policy) }]];
       if (sql.includes('video_studio_jobs') && sql.startsWith('SELECT'))
         return [[{ id, project_id: id, status: queued ? 'queued' : 'draft', scenes: [] }]];
-      if (sql.includes('video_studio_projects')) return [[{ voice: 'alloy', voice_provider: 'openai' }]];
+      if (sql.includes('video_studio_projects')) return [[{ voice: 'am_adam', voice_provider: 'kokoro' }]];
       if (sql.startsWith('UPDATE')) queued = true;
       return [[]];
     }

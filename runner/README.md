@@ -179,3 +179,9 @@ Update this existing service from the current repository; preserve its token, ou
 SiteOps passes only the demo profiles referenced by a reviewed job. Login occurs without a recorder, using one allowlisted HTTPS origin, a checked form destination, and a successful protected landing-page check. Credentials and cookies stay in RAM on the Runner and are removed at job completion. Browser recordings receive the resulting same-origin session, never login actions or passwords. Password inputs remain forbidden in recorded steps. Failed/expired sessions fail production. Login test requests are rate-limited; no CAPTCHA or 2FA bypass is supported.
 
 Final MP4 and Short dimensions are checked by FFprobe before completion. Both are at least Full HD: 1920×1080 landscape and 1080×1920 portrait.
+
+### Shared Suite key and audio test (Runner 1.1.1)
+
+The `/health` and `/auth-test` versions share the package version. `openaiKeyForwardingVersion: 1` advertises per-job credentials. Only authenticated OpenAI narration jobs accept `openaiApiKey`; it is removed from the request body and retained in memory, outside the persisted job object, until completion/failure. `OPENAI_API_KEY` remains a fallback. `/video/openai-audio-test` performs a small real generation with a transient key and removes the temporary WAV. Never log request bodies containing credentials.
+
+After updating the Runner, use **Video Suite → Einstellungen → Sprachausgabe testen**. A successful Responses API test alone does not establish audio-model access.

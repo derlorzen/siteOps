@@ -33,6 +33,7 @@ const queue=[];
 const statuses=new Map();
 // Credentials and browser sessions are kept in RAM only, never in job status or files.
 const jobLogins=new Map();
+const jobOpenAIKeys=new Map();
 const esc=v=>String(v??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const uuid=x=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(x||''));
@@ -63,6 +64,7 @@ function validate(payload){
     throw new Error('Language does not match offline voice provider.');
   if(!['en','de'].includes(payload.language)||!['landscape','portrait'].includes(payload.format))
     throw new Error('Unsupported language or format.');
+  if(payload.openaiApiKey!==undefined && (voiceProvider!=='openai' || typeof payload.openaiApiKey!=='string' || !payload.openaiApiKey.trim() || payload.openaiApiKey.length>500))throw Error('Invalid per-job OpenAI credential.');
   const scenes=payload.scenes.map((s,i)=>{
     const narration=String(s.narration||'').trim(),headline=String(s.headline||'').trim();
     if(narration.length<5||narration.length>1400||headline.length>160)throw new Error('Invalid scene '+(i+1));
@@ -140,7 +142,7 @@ async function voice(scene,job,i,dir){
       String(Math.min(120,Math.max(4,scene.narration.split(/\s+/).length/2.3))),
       '-c:a','pcm_s16le',target],{timeoutMs:30000});
   }else if(voiceProvider==='openai'){
-    await narrateWithOpenAI(scene.narration,target,{voice:job.voice,language:job.language});
+    await narrateWithOpenAI(scene.narration,target,{voice:job.voice,language:job.language,apiKey:jobOpenAIKeys.get(job.id) || process.env.OPENAI_API_KEY});
   }else if(voiceProvider==='kokoro'){
     await ensureOfflineModels('kokoro');
     await exec(process.env.VIDEO_PYTHON||'python3',
@@ -247,7 +249,7 @@ async function render(job){
   }catch(error){
     job.status='failed';job.error=String(error.message||error).slice(0,1000);
   }finally{
-    jobLogins.delete(job.id); sessions.clear();
+    jobLogins.delete(job.id); jobOpenAIKeys.delete(job.id); sessions.clear();
     if(browser)await browser.close().catch(()=>{});
     await persist(job);
     active=Math.max(0,active-1);
@@ -260,13 +262,13 @@ function dispatch(){
     active++;
     job.status='running';job.progress=0;
     persist(job).then(()=>render(job)).catch(async error=>{
-      jobLogins.delete(job.id);
+      jobLogins.delete(job.id); jobOpenAIKeys.delete(job.id);
       job.status='failed';job.error=String(error.message||error);await persist(job);
       active=Math.max(0,active-1);dispatch();
     });
   }
 }
-export function registerVideoRunner(app,auth){
+export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatchJobs=dispatch}={}){
   app.get('/video/capabilities',async(req,reply)=>{
     if(!auth(req,reply))return;
     const exists=async file=>fs.access(file).then(()=>true).catch(()=>false);
@@ -275,6 +277,7 @@ export function registerVideoRunner(app,auth){
     let demoEnvironmentPolicy=null,demoEnvironmentError=null;
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
+      openaiKeyForwardingVersion:1,
       demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
@@ -282,6 +285,16 @@ export function registerVideoRunner(app,auth){
       modelAutoinstall:true, openaiConfigured:Boolean(process.env.OPENAI_API_KEY),
       ffmpegRequired:true,queued:queue.length,running:active
     };
+  });
+  app.post('/video/openai-audio-test',{config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if(!auth(req,reply))return;
+    const apiKey=req.body?.apiKey || process.env.OPENAI_API_KEY;
+    if(typeof apiKey!=='string' || !apiKey.trim() || apiKey.length>500)return reply.code(422).send({error:'OpenAI-Schlüssel für die Sprachausgabe fehlt.'});
+    if(req.body)delete req.body.apiKey;
+    const dir=await fs.mkdtemp(path.join(os.tmpdir(),'siteops-audio-test-'));
+    try{await narrate('This is a short SiteOps audio connection test.',path.join(dir,'test.wav'),{apiKey,voice:'alloy',language:'en'});return {ok:true,model:'gpt-audio-1.5'};}
+    catch(error){return reply.code(422).send({error:String(error.message||error).replaceAll(apiKey,'[REDACTED]').replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]').slice(0,1000)});}
+    finally{await fs.rm(dir,{recursive:true,force:true});}
   });
   app.post('/video/demo-login/test',{config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async(req,reply)=>{
     if(!auth(req,reply))return;
@@ -300,11 +313,13 @@ export function registerVideoRunner(app,auth){
     const old=await load(parsed.id);
     if(old) return reply.code(409).send({error:'Job already exists.'});
     if(queue.length+active>=MAX_JOBS)return reply.code(429).send({error:'Video queue full.'});
+    if(parsed.voiceProvider==='openai' && !req.body.openaiApiKey && !process.env.OPENAI_API_KEY)return reply.code(422).send({error:'Für OpenAI-Sprachausgabe fehlt der Schlüssel. In den Suite-Einstellungen speichern oder OPENAI_API_KEY auf dem Runner setzen.'});
     const job={...parsed,status:'queued',progress:0,files:[],error:null,createdAt:new Date().toISOString()};
     const profiles=(req.body.demoLogins||[]).map(x=>validateDemoLogin(x,parsed.demoPolicy.hosts));
     if(profiles.length)jobLogins.set(job.id,profiles);
-    try{await persist(job);}catch(error){jobLogins.delete(job.id);throw error;}
-    queue.push(job);dispatch();
+    if(req.body.openaiApiKey){jobOpenAIKeys.set(job.id,req.body.openaiApiKey);delete req.body.openaiApiKey;}
+    try{await persist(job);}catch(error){jobLogins.delete(job.id);jobOpenAIKeys.delete(job.id);throw error;}
+    queue.push(job);dispatchJobs();
     return reply.code(202).send({id:job.id,status:'queued'});
   });
   app.get('/video/jobs/:id',async(req,reply)=>{

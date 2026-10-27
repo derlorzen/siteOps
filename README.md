@@ -91,6 +91,13 @@ SiteOps is intended for people or agencies that manage multiple customer website
 
 ### Video Studio and YouTube
 
+Runner **1.1.1** uses the encrypted Video Suite OpenAI key for narration as well as the producer. SiteOps sends the key only for an OpenAI voice job, over the authenticated configured Runner connection, after checking `openaiKeyForwardingVersion: 1`. The Runner retains it only in job memory and removes it at completion/failure; no key is written to job files or returned by status routes. Existing Runner `OPENAI_API_KEY` remains a fallback. Incompatible runners fail before queuing and explain the required update.
+
+**Verbindung testen** checks the text model. **Sprachausgabe testen** separately exercises actual audio generation through the Runner using `gpt-audio-1.5`; audio permissions and quota may differ. Audio failures show the provider HTTP status and redacted cause. Retrying a failed production creates a fresh Runner job ID while preserving the SiteOps production.
+
+Both Runner health and authentication version endpoints now use `runner/package.json`. SiteOps also reads health after authenticating, correcting the stale `1.0.0` response from older `/auth-test` builds without requiring a Runner update just for the label.
+
+
 The Creative Agent supports **Ctrl+Enter** (Cmd+Enter on macOS) to send; Enter inserts a newline. Attach up to three PNG/JPG/WebP screenshots or paste an image into the composer. Images are resized to a maximum 2048-pixel edge and stored privately with project-bound IDs; the actual image data is included in Responses API input. The latest three earlier images remain available to follow-up questions. Uploads are limited to 10 MB before client preparation and 2 MB after preparation.
 
 For authenticated Bagisto screen recordings, update the **existing Browser Runner to 1.1.0**, allow the demo hostname under Suite settings, and save a dedicated test account under **Bagisto-Demo anmelden**. Supply its login URL and a protected landing page; the actual login selectors are editable. The login runs in a separate context without recording. Credentials remain encrypted in SiteOps and only travel to the authenticated Runner; the session lives in memory for the job and is never put in prompts, scene JSON, job status or cookie files. Failed authentication stops production. CAPTCHA/2FA are not bypassed.

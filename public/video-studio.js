@@ -420,7 +420,7 @@
         ' · Deutsch/Piper: ' +
         (data.offlineModels?.piper ? 'Modell bereit' : 'automatischer Download bei erster Nutzung') +
         ' · OpenAI: ' +
-        (data.openaiConfigured ? 'API konfiguriert' : 'API-Schlüssel fehlt') + ' · Full HD: ' + (data.outputResolution ? '1920 × 1080 / 1080 × 1920' : 'Runner-Auflösung noch nicht verifiziert') + ' · Demo-Login: ' + (data.demoLoginVersion === 1 ? 'bereit' : 'Runner aktualisieren');
+        (data.openaiNarration?.ready ? (data.openaiNarration.source==='suite' ? 'Suite-Schlüssel für Audio bereit' : 'Runner-Schlüssel für Audio bereit') : data.openaiNarration?.requiresRunnerUpdate ? 'Suite-Schlüssel vorhanden · Runner auf 1.1.1 aktualisieren' : data.openaiConfigured ? 'Runner-Schlüssel bereit' : 'Audio-Schlüssel fehlt') + ' · Full HD: ' + (data.outputResolution ? '1920 × 1080 / 1080 × 1920' : 'Runner-Auflösung noch nicht verifiziert') + ' · Demo-Login: ' + (data.demoLoginVersion === 1 ? 'bereit' : 'Runner aktualisieren');
     } catch (e) {
       $('#vs-capabilities').textContent = 'Runner noch nicht bereit: ' + e.message;
     }
