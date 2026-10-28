@@ -7,22 +7,35 @@ const accountId = '11111111-1111-4111-8111-111111111111';
 const root = '/siteops-websites/container-lorzen-de';
 const token = 'q123456789_abcdef012345';
 const authorization = token + '.abcdefghij_-ABCDEFGH0123456789';
-function fixture({ kasRoot = root + '/public', publicResponse = 'correct' } = {}) {
+function fixture({
+  kasRoot = root + '/public',
+  publicResponse = 'correct',
+  parentConnection = true,
+  parentPath = '/lorzen.de/'
+} = {}) {
   const files = new Map();
   const events = [];
   const site = {
     remote_root: root,
     domain: hostname,
-    deployment_mode: 'webspace'
+    deployment_mode: 'webspace',
+    host: 'ftp.example.com',
+    username: 'domain-jailed-user',
+    protocol: 'ftp'
   };
   const db = {
     async query(sql, params) {
       assert.match(sql, /FROM sites WHERE domain=/);
-      assert.equal(params[0], hostname);
-      return [[site]];
+      if (params[0] === hostname) return [[site]];
+      assert.deepEqual(params, ['lorzen.de', '/', site.host, site.username, site.protocol]);
+      return [parentConnection ? [{ id: 'parent-site' }] : []];
     }
   };
   const allInklService = {
+    async domains(id) {
+      assert.equal(id, accountId);
+      return [{ domain_name: 'lorzen.de', domain_path: parentPath }];
+    },
     async subdomains(id) {
       assert.equal(id, accountId);
       return [{ subdomain_name: hostname, subdomain_path: kasRoot + '/' }];
@@ -109,6 +122,27 @@ test('HTTP-01 refuses a subdomain whose KAS webroot differs from the registered 
   const f = fixture({ kasRoot: '/other-customer/public' });
   await assert.rejects(() => f.ssl.put(accountId, hostname, token, authorization), /ALL-INKL-Webroot weicht/);
   assert.equal(f.events.length, 0);
+});
+
+test('HTTP-01 recognizes KAS parent prefix only for the same verified domain-jailed FTP connection', async () => {
+  const f = fixture({ kasRoot: '/lorzen.de' + root + '/public' });
+  await f.ssl.put(accountId, hostname, token, authorization);
+  assert.equal(f.files.get(root + '/public/' + http01File(token, authorization)).toString(), authorization);
+  await f.ssl.verify(hostname, token, authorization);
+  await f.ssl.remove(accountId, hostname, token, authorization);
+  assert.equal(f.files.size, 0);
+});
+
+test('HTTP-01 refuses inferred jail prefixes without matching parent credentials or a safe exact KAS mapping', async () => {
+  for (const options of [
+    { kasRoot: '/lorzen.de' + root + '/public', parentConnection: false },
+    { kasRoot: '/foreign' + root + '/public' },
+    { kasRoot: '/lorzen.de' + root + '/public', parentPath: '/unsafe/../lorzen.de/' }
+  ]) {
+    const f = fixture(options);
+    await assert.rejects(f.ssl.put(accountId, hostname, token, authorization), /ALL-INKL-Webroot weicht/);
+    assert.equal(f.events.length, 0);
+  }
 });
 
 test('HTTP-01 rejects redirects and incorrect content instead of requesting a certificate', async () => {

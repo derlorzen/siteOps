@@ -29,6 +29,14 @@ Daraufhin legt SiteOps bei Bedarf Projektordner und `public/` per FTP/SFTP an, e
 
 ## ACME HTTP-01 für LorzCMS-Webspace (bevorzugt)
 
+Bei auf die Hauptdomain begrenzten FTP-Benutzern unterscheiden sich KAS- und
+FTP-Pfade um den Hauptdomain-Webroot (z. B. `/lorzen.de`). Die HTTP-01-Prüfung
+akzeptiert dieselbe exakte Übersetzung wie die Subdomain-Provisionierung nur,
+wenn die Hauptdomain mit `/` und identischem Host, Benutzer und Protokoll in
+SiteOps registriert ist und ihr Webroot vom zugehörigen KAS-Konto bestätigt wird.
+Eine beliebige Pfad-Endung genügt nicht. Die Challenge wird weiterhin nur in
+`<remoteRoot>/public/.well-known/acme-challenge/` geschrieben und öffentlich geprüft.
+
 Für bereits mit SiteOps registrierte ALL-INKL-Websites nutzt die Zertifikatsausstellung zuerst
 **ACME HTTP-01**. SiteOps prüft die exakt zugeordnete KAS-Subdomain und das registrierte
 `<site>/public`-Webverzeichnis, lädt die temporäre Datei nach
