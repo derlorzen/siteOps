@@ -28,6 +28,8 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
   await migrate();
   const appliedAgain = (await q('select id from schema_migrations')).rows.map(r => r.id).sort();
   assert.deepEqual(appliedAgain, applied);
+  const { checkSearchConsoleMysql } = await import('./search-console-mysql.mjs');
+  await checkSearchConsoleMysql(db, migrate);
 
   // Video additions must preserve existing rows and execute real MySQL queries.
   const { createVideoStudio } = await import('../lib/video-studio.mjs');
