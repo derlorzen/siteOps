@@ -59,6 +59,9 @@ test('authenticated ChatGPT and Claude discover the same complete tool definitio
     'cms_project_finish',
     'backup_restore_preview',
     'youtube_upload_preview',
+    'search_console_status',
+    'search_console_change_execute',
+    'search_console_performance',
     'video_studio_demo_templates'
   ]) {
     assert.ok(

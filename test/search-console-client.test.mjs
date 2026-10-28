@@ -8,7 +8,8 @@ const client = createSearchConsoleClient({
   fetcher: async (url, init) => {
     responses.push({ url, init });
     return new Response(JSON.stringify({ ok: true, token: 'google-site-verification=example' }), {
-      status: 200, headers: { 'Content-Type': 'application/json' }
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 });
@@ -22,7 +23,9 @@ test('Google OAuth scopes cover Search Console and domain ownership verification
 test('read property and performance without exposing access token in URL', async () => {
   await client.listProperties();
   await client.searchAnalytics('sc-domain:example.com', {
-    startDate: '2026-10-01', endDate: '2026-10-27', dimensions: ['query', 'page']
+    startDate: '2026-10-01',
+    endDate: '2026-10-27',
+    dimensions: ['query', 'page']
   });
   assert.equal(responses[0].url, 'https://www.googleapis.com/webmasters/v3/sites');
   assert.equal(responses[1].init.method, 'POST');
@@ -44,23 +47,57 @@ test('reject arbitrary domains, cross-property sitemaps and inspections', async 
   assert.throws(() => client.getProperty('sc-domain:example.com.evil/'), TypeError);
   assert.throws(() => client.submitSitemap('sc-domain:example.com', 'https://example.com.evil/sitemap.xml'), TypeError);
   assert.throws(() => client.inspectUrl('sc-domain:example.com', 'https://attacker.example.net/'), TypeError);
-  assert.throws(() => client.searchAnalytics('sc-domain:example.com', {
-    startDate: '2026-10-01', endDate: '2026-10-27', dimensions: ['unexpected']
-  }), TypeError);
+  assert.throws(
+    () =>
+      client.searchAnalytics('sc-domain:example.com', {
+        startDate: '2026-10-01',
+        endDate: '2026-10-27',
+        dimensions: ['unexpected']
+      }),
+    TypeError
+  );
 });
 
 test('does not report a failed Google write as successful', async () => {
   const failing = createSearchConsoleClient({
-    accessToken: 'test', fetcher: async () => new Response(JSON.stringify({
-      error: { status: 'PERMISSION_DENIED' }
-    }), { status: 403 })
+    accessToken: 'test',
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          error: { status: 'PERMISSION_DENIED' }
+        }),
+        { status: 403 }
+      )
   });
-  await assert.rejects(failing.addProperty('sc-domain:example.com'), err =>
-    err.statusCode === 403 && err.googleReason === 'PERMISSION_DENIED');
+  await assert.rejects(
+    failing.addProperty('sc-domain:example.com'),
+    err => err.statusCode === 403 && err.googleReason === 'PERMISSION_DENIED'
+  );
 });
 
 test('submit sitemap encodes its URL without contacting the sitemap host', async () => {
   await client.submitSitemap('sc-domain:example.com', 'https://www.example.com/sitemap.xml');
   assert.ok(responses.at(-1).url.includes(encodeURIComponent('https://www.example.com/sitemap.xml')));
   assert.equal(responses.at(-1).init.method, 'PUT');
+});
+
+test('Google transport rejects malformed, oversized and redirected responses without exposing secrets', async () => {
+  for (const response of [new Response('not JSON'), new Response('x'.repeat(4_000_001))]) {
+    const client = createSearchConsoleClient({ accessToken: 'secret-test', fetcher: async () => response });
+    await assert.rejects(
+      client.listProperties(),
+      error => error.statusCode === 502 && !error.message.includes('secret-test')
+    );
+  }
+  const client = createSearchConsoleClient({
+    accessToken: 'secret-test',
+    fetcher: async (_url, init) => {
+      assert.equal(init.redirect, 'error');
+      throw new Error('redirect blocked secret-test');
+    }
+  });
+  await assert.rejects(
+    client.listProperties(),
+    error => error.statusCode === 503 && !error.message.includes('secret-test')
+  );
 });

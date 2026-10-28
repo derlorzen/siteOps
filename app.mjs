@@ -46,6 +46,9 @@ import { authenticatedRunnerStatus } from './lib/runner-status.mjs';
 import { createVideoStudio, registerVideoStudioRoutes } from './lib/video-studio.mjs';
 import { registerVideoStudioTools } from './lib/video-studio-mcp.mjs';
 import { createYouTubeService } from './lib/youtube.mjs';
+import { createSearchConsoleService } from './lib/search-console.mjs';
+import { registerSearchConsoleRoutes, registerSearchConsoleTools } from './lib/search-console-api.mjs';
+import { renderSearchConsole } from './lib/search-console-ui.mjs';
 import { createYouTubeUploadWorker } from './lib/youtube-upload.mjs';
 import { registerYouTubeRoutes, registerYouTubeTools } from './lib/youtube-api.mjs';
 import { renderYouTube } from './lib/youtube-ui.mjs';
@@ -3919,14 +3922,20 @@ async function seoLatest(siteId) {
   const site = await getSite(siteId),
     run =
       (await q('select * from seo_runs where site_id=? order by started_at desc limit 1', [site.id])).rows[0] || null;
-  if (!run) return { site: site.slug, run: null, pages: [] };
+  let searchConsole;
+  try {
+    searchConsole = await searchConsoleService.performance(site.id, { limit: 20 });
+  } catch {
+    searchConsole = { available: false, reason: 'Google-Verbindung im Search-Console-Bereich prüfen.' };
+  }
+  if (!run) return { site: site.slug, run: null, pages: [], search_console: searchConsole };
   const pages = (
     await q(
       'select id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop,final_url,redirect_count,lang,hreflang,social,security,accessibility,content_hash,indexable from seo_pages where run_id=? order by pagerank desc',
       [run.id]
     )
   ).rows;
-  return { site: site.slug, run, pages };
+  return { site: site.slug, run, pages, search_console: searchConsole };
 }
 async function seoPageGet(pageId) {
   const page = (await q('select * from seo_pages where id=?', [pageId])).rows[0];
@@ -4164,6 +4173,15 @@ const youtubeService = createYouTubeService({
   studio: () => videoStudioService
 });
 const youtubeWorker = createYouTubeUploadWorker(youtubeService);
+const searchConsoleService = createSearchConsoleService({
+  db,
+  encrypt,
+  decrypt,
+  getSite,
+  allInklService,
+  owner: () => cfg.dashboardUser,
+  publicBaseUrl: () => cfg.publicBaseUrl
+});
 function mcpServer() {
   const s = new McpServer({ name: 'lorzen-siteops', version: buildInfo.version });
   const registerTool = s.registerTool.bind(s);
@@ -5140,6 +5158,7 @@ function mcpServer() {
   );
   registerVideoStudioTools(s, () => videoStudioService, toolText);
   registerYouTubeTools(s, youtubeService, toolText);
+  registerSearchConsoleTools(s, searchConsoleService, toolText);
   return s;
 }
 
@@ -6721,6 +6740,27 @@ async function seoDashboardPage(slug) {
     '/seo-runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(data)}),x=await r.json();seoState.textContent=r.ok?"✓ Crawl gestartet":"✗ "+(x.message||x.error||JSON.stringify(x));if(r.ok)setTimeout(()=>location.reload(),800);});window.addEventListener("DOMContentLoaded",()=>siteOpsTableView({tableId:"seoPagesTable",searchId:"seoPageSearch",pageSizeId:"seoPageSize",pagerId:"seoPagesPager",defaultSize:25,filters:[{id:"seoHttpFilter",data:"http"},{id:"seoIssueFilter",data:"issues"}]}));' +
     (run?.status === 'running' ? 'setTimeout(()=>location.reload(),4000);' : '') +
     '</script>';
+  html +=
+    '<section><h2>Google Search Console</h2><p>Suchleistung, Property-Verknüpfung und freigegebene Anmeldung für dieses Projekt.</p><a class="button" href="/sites/' +
+    encodeURIComponent(site.slug) +
+    '/search-console">Search Console öffnen</a></section>';
+  if (latest.search_console?.available) {
+    const gsc = latest.search_console;
+    html +=
+      '<section><h2>Suchleistung bei Google</h2><p>' +
+      esc(gsc.range.startDate + ' – ' + gsc.range.endDate) +
+      ' · Google-Daten ergänzen die technische SEO-Analyse.</p><div class="metrics"><span>' +
+      esc(gsc.totals.clicks) +
+      '<em>Klicks</em></span><span>' +
+      esc(gsc.totals.impressions) +
+      '<em>Impressionen</em></span><span>' +
+      (gsc.totals.ctr * 100).toFixed(2) +
+      ' %<em>CTR</em></span><span>' +
+      gsc.totals.position.toFixed(2) +
+      '<em>Position</em></span></div><ul>' +
+      gsc.opportunities.map(x => '<li>' + esc(x.value + ': ' + x.suggestion) + '</li>').join('') +
+      '</ul></section>';
+  }
   return page('SEO · ' + site.name, html);
 }
 async function seoPageDetailPage(id) {
@@ -7403,6 +7443,12 @@ async function start() {
   app.get('/assets/youtube.js', async (_req, reply) =>
     reply.type('text/javascript').send(await readFile(new URL('./public/youtube.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/search-console.js', async (_req, reply) =>
+    reply.type('text/javascript').send(await readFile(new URL('./public/search-console.js', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/search-console.css', async (_req, reply) =>
+    reply.type('text/css').send(await readFile(new URL('./public/search-console.css', import.meta.url), 'utf8'))
+  );
   app.get('/assets/youtube.css', async (_req, reply) =>
     reply.type('text/css').send(await readFile(new URL('./public/youtube.css', import.meta.url), 'utf8'))
   );
@@ -7546,6 +7592,16 @@ async function start() {
     worker: youtubeWorker
   });
   if (databaseReady) youtubeWorker.start();
+  registerSearchConsoleRoutes(app, searchConsoleService, {
+    page,
+    render: renderSearchConsole,
+    getSite,
+    origin: () => new URL(cfg.publicBaseUrl).origin
+  });
+  if (databaseReady) {
+    const stopSearchConsole = searchConsoleService.start();
+    app.addHook('onClose', async () => stopSearchConsole());
+  }
   registerCoolifyDeploymentRoutes(app, coolifyDeployer);
   registerToolsRoutes(app, { db, page, publicBaseUrl: () => cfg.publicBaseUrl });
   app.addHook('preHandler', async (req, reply) => {

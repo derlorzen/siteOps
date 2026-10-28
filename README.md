@@ -2,6 +2,8 @@
 
 Self-hosted website operations for monitoring, backups, SEO/quality analysis, safe remote changes, MCP automation and real-browser synthetic tests.
 
+Google Search Console is available from each site's SEO view and through dedicated MCP tools. See [setup, live approvals, DNS verification and performance sync](docs/SEARCH-CONSOLE-IMPLEMENTATION.md). Properties and DNS are changed only through reviewed, project-specific live release steps.
+
 SiteOps is intended for people or agencies that manage multiple customer websites across classic SFTP/FTPS hosting and Git-based deployments. It provides one operational dashboard while keeping the live website or deployment repository as the source of truth.
 
 > **Current version:** see `package.json`; live releases automatically append a source-derived `+build.<hash>` stamp.

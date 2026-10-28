@@ -57,6 +57,13 @@ jobs:
       - name: Browser runner import check
         working-directory: runner
         run: node -e "Promise.all([import('fastify'),import('pixelmatch'),import('pngjs'),import('playwright')]).then(()=>console.log('Runner imports OK'))"
+      - name: Install Chromium for Search Console UI tests
+        working-directory: runner
+        run: npx playwright install --with-deps chromium
+      - name: Search Console real browser workflow
+        env:
+          RUN_GSC_BROWSER_TESTS: '1'
+        run: node --test test/search-console-browser.test.mjs
       - name: Runtime import check
         env:
           SITEOPS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

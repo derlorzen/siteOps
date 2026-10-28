@@ -1,0 +1,18 @@
+#gsc { display: grid; gap: 20px; min-width: 0; }
+#gsc section { min-width: 0; }
+#gsc form { padding: 0; margin: 20px 0; max-width: 760px; }
+#gsc .actions { margin: 20px 0; }
+#gsc label { display: block; margin: 12px 0; }
+#gsc input[type="checkbox"] { width: auto; margin-right: 8px; }
+#gsc-states { display: grid; grid-template-columns: minmax(160px, 1fr) 2fr; gap: 8px 20px; }
+#gsc-states dt { color: #71808a; }
+#gsc-states dd { margin: 0; overflow-wrap: anywhere; }
+#gsc pre, #gsc code { overflow-wrap: anywhere; white-space: pre-wrap; }
+#gsc .metrics { flex-wrap: wrap; margin-bottom: 24px; }
+#gsc-rows td:first-child { max-width: 520px; overflow-wrap: anywhere; }
+#gsc-preview { padding: 18px; border: 1px solid #1489a8; border-radius: 9px; margin: 20px 0; }
+@media (max-width: 600px) {
+  #gsc-states { grid-template-columns: 1fr; }
+  #gsc-states dd { margin-bottom: 12px; }
+  #gsc section { padding: 16px; }
+}
