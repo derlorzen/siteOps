@@ -40,11 +40,11 @@ test('domain ownership uses Google DNS_TXT verification method', async () => {
 });
 
 test('reject arbitrary domains, cross-property sitemaps and inspections', async () => {
-  await assert.rejects(client.getDnsToken('http://example.com/'), TypeError);
-  await assert.rejects(client.getProperty('sc-domain:example.com.evil/'), TypeError);
-  await assert.rejects(client.submitSitemap('sc-domain:example.com', 'https://example.com.evil/sitemap.xml'), TypeError);
-  await assert.rejects(client.inspectUrl('sc-domain:example.com', 'https://attacker.example.net/'), TypeError);
-  await assert.rejects(client.searchAnalytics('sc-domain:example.com', {
+  assert.throws(() => client.getDnsToken('http://example.com/'), TypeError);
+  assert.throws(() => client.getProperty('sc-domain:example.com.evil/'), TypeError);
+  assert.throws(() => client.submitSitemap('sc-domain:example.com', 'https://example.com.evil/sitemap.xml'), TypeError);
+  assert.throws(() => client.inspectUrl('sc-domain:example.com', 'https://attacker.example.net/'), TypeError);
+  assert.throws(() => client.searchAnalytics('sc-domain:example.com', {
     startDate: '2026-10-01', endDate: '2026-10-27', dimensions: ['unexpected']
   }), TypeError);
 });
