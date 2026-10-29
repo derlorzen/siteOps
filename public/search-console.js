@@ -20,6 +20,54 @@
     propertyInput.required = mode === 'custom';
   }
   choice.addEventListener('change', setPropertyMode);
+  const stages = [
+    ['account', 'Google-Konto verbinden', 'Verbinde dein Google-Konto mit SiteOps.'],
+    ['link', 'Website auswählen', 'Ordne diese Website einer Google-Property zu.'],
+    ['live', 'Website freigeben', 'Bestätige den Livegang dieser Website.'],
+    ['dns', 'DNS-Eintrag vorbereiten', 'Lege den Google-Bestätigungseintrag beim DNS-Anbieter an.'],
+    ['verify', 'Inhaberschaft bestätigen', 'Prüfe, ob Google den DNS-Eintrag erkannt hat.'],
+    ['property', 'Website bei Google anmelden', 'Melde die bestätigte Website bei Google an.'],
+    ['sitemap', 'Sitemap einreichen', 'Sende die Sitemap an Google.'],
+    ['sync', 'Suchdaten abrufen', 'Rufe die ersten Leistungsdaten ab.']
+  ];
+  function renderProgress(status) {
+    const link = status.linkage?.invalidated ? null : status.linkage;
+    const accountReady = (status.accounts || []).length > 0;
+    const linked = Boolean(link?.property);
+    const live = Boolean(link?.live_approved_at);
+    const verified = Boolean(link?.verified_at);
+    const registered = Boolean(link?.permission_level && link.permission_level !== 'Keine');
+    const sitemap = Boolean(link?.sitemap_status && !/^(nicht|pending|failed|error)/i.test(link.sitemap_status));
+    const synced = Boolean(link?.last_sync_at);
+    // DNS has no separately persisted success state: do not claim it is complete.
+    const completed = [accountReady, linked, live, verified, verified, registered, sitemap, synced];
+    const current = completed.findIndex(done => !done);
+    const active = current < 0 ? stages.length : current + 1;
+    $('progress-title').textContent = current < 0
+      ? 'Einrichtung abgeschlossen'
+      : 'Aktueller Schritt ' + active + ' von ' + stages.length + ': ' + stages[current][1];
+    $('progress-help').textContent = current < 0
+      ? 'Alle erfassten Einrichtungsschritte sind abgeschlossen.'
+      : stages[current][2] + (link?.reason ? ' Hinweis: ' + link.reason : '');
+    $('progress-list').replaceChildren(...stages.map(([key, label], index) => {
+      const item = document.createElement('li');
+      item.textContent = (completed[index] ? '✓ ' : index === current ? '→ ' : '○ ') + label;
+      item.className = completed[index] ? 'is-done' : index === current ? 'is-current' : 'is-upcoming';
+      if (index === current) item.setAttribute('aria-current', 'step');
+      return item;
+    }));
+    root.querySelectorAll('[data-preview]').forEach(button => {
+      const step = stages.findIndex(row => row[0] === button.dataset.preview);
+      const done = completed[step];
+      button.classList.toggle('is-next', step === current);
+      button.classList.toggle('is-done', done);
+      button.disabled = !linked || (step > current && !done);
+      button.title = done ? 'Bereits erledigt – bei Bedarf erneut prüfen' :
+        button.disabled ? 'Bitte zuerst die vorherigen Schritte abschließen' : 'Nächster Schritt';
+    });
+    $('sync').disabled = !registered;
+    $('connect').hidden = accountReady;
+  }
   const message = value => { $('message').textContent = value; };
   async function api(path, body) {
     const response = await fetch('/api/search-console/' + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -40,6 +88,7 @@
     $('account').replaceChildren(...s.accounts.map(a => option(a.id, a.email)));
     if (selected && s.accounts.some(a => a.id === selected)) $('account').value = selected;
     const l = s.linkage;
+    renderProgress(s);
     const states = { Property: l?.property || 'Nicht verknüpft', Livegang: l?.live_approved_at || 'Nicht freigegeben', 'Google-Eigentum': l?.verified_at || 'Nicht bestätigt', 'Google-Berechtigung': l?.permission_level || 'Keine', Sitemap: l?.sitemap_status || 'Nicht eingereicht', 'Letzter Sync': l?.last_sync_at || 'Noch nicht', 'Letzter vollständiger Datentag': l?.last_complete_date || 'Keine Daten', Fehler: l?.reason || l?.sync_error || 'Keine' };
     $('states').replaceChildren(...Object.entries(states).flatMap(([key, value]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = key; dd.textContent = value; return [dt, dd]; }));
     if (l?.property) { choice.value = 'custom'; propertyInput.value = l.property; }
