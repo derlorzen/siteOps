@@ -5,14 +5,12 @@ import { readFile } from 'node:fs/promises';
 const workspaceSource = () => readFile(new URL('../public/ops-workspace.js', import.meta.url), 'utf8');
 const appSource = () => readFile(new URL('../app.mjs', import.meta.url), 'utf8');
 
-test('Integrations group contains connected hosting, deployment, Google/YouTube and MCP', async () => {
+test('Integrations group contains hosting, deployment, Google/YouTube and MCP', async () => {
   const source = await workspaceSource();
-  for (const entry of [
-    "['/mcp-info','Übersicht & MCP','⇄','Integrationen']",
-    "['/hosting','Hosting & DNS','◎','Integrationen']",
-    "['/coolify','Coolify & Supabase','◈','Integrationen']",
-    "['/youtube','Google / YouTube','▶','Integrationen']"
-  ]) assert.ok(source.includes(entry), entry);
+  assert.match(source, /\['\/mcp-info','Übersicht & MCP','⇄','Integrationen'\]/);
+  assert.match(source, /\['\/hosting','Hosting & DNS','◎','Integrationen'\]/);
+  assert.match(source, /\['\/coolify','Coolify & Supabase','◈','Integrationen'\]/);
+  assert.match(source, /\['\/youtube','Google \/ YouTube','▶','Integrationen'\]/);
   assert.doesNotMatch(source, /\['\/youtube','YouTube & Kanäle','↗','Video Suite'\]/);
   assert.match(source, /parent\?' ops-nav-subitem'/);
   assert.match(source, /current\.startsWith\('\/hosting'\)/);
@@ -21,10 +19,12 @@ test('Integrations group contains connected hosting, deployment, Google/YouTube 
 
 test('Settings links expose existing sections instead of cloned forms', async () => {
   const source = await workspaceSource();
-  for (const anchor of ['system','backups','defaults','alerts','seo'])
+  for (const anchor of ['system', 'backups', 'defaults', 'alerts', 'seo']) {
     assert.ok(source.includes("'/settings#" + anchor + "'"));
-  for (const heading of ['Design & Farben','GitHub','Standardwerte','Benachrichtigungen','SEO-Audits'])
+  }
+  for (const heading of ['Design & Farben', 'GitHub', 'Standardwerte', 'Benachrichtigungen', 'SEO-Audits']) {
     assert.ok(source.includes("['" + heading + "'"));
+  }
   assert.match(source, /window\.addEventListener\('hashchange',scrollToSetting\)/);
 });
 
