@@ -3,6 +3,23 @@
   if (!root) return;
   const site = root.dataset.site, $ = id => document.getElementById('gsc-' + id);
   let preview = null, offset = 0, next = null;
+  const domain = root.dataset.domain;
+  const propertyInput = $('link').elements.property;
+  const choice = $('choice');
+  function setPropertyMode() {
+    const mode = choice.value;
+    $('existing-area').hidden = mode !== 'existing';
+    $('manual-area').hidden = mode !== 'custom';
+    $('proposed').hidden = !['domain', 'prefix'].includes(mode);
+    if (mode === 'domain') propertyInput.value = 'sc-domain:' + domain;
+    if (mode === 'prefix') propertyInput.value = 'https://' + domain + '/';
+    if (mode === 'existing') propertyInput.value = $('existing').value;
+    $('proposed').textContent = mode === 'domain'
+      ? 'Gesamte Domain (einschließlich Subdomains): sc-domain:' + domain
+      : 'Nur diese HTTPS-Website: https://' + domain + '/';
+    propertyInput.required = mode === 'custom';
+  }
+  choice.addEventListener('change', setPropertyMode);
   const message = value => { $('message').textContent = value; };
   async function api(path, body) {
     const response = await fetch('/api/search-console/' + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -25,7 +42,8 @@
     const l = s.linkage;
     const states = { Property: l?.property || 'Nicht verknüpft', Livegang: l?.live_approved_at || 'Nicht freigegeben', 'Google-Eigentum': l?.verified_at || 'Nicht bestätigt', 'Google-Berechtigung': l?.permission_level || 'Keine', Sitemap: l?.sitemap_status || 'Nicht eingereicht', 'Letzter Sync': l?.last_sync_at || 'Noch nicht', 'Letzter vollständiger Datentag': l?.last_complete_date || 'Keine Daten', Fehler: l?.reason || l?.sync_error || 'Keine' };
     $('states').replaceChildren(...Object.entries(states).flatMap(([key, value]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = key; dd.textContent = value; return [dt, dd]; }));
-    if (l?.property) $('link').elements.property.value = l.property;
+    if (l?.property) { choice.value = 'custom'; propertyInput.value = l.property; }
+    setPropertyMode();
     message('Verbindung geladen.');
     if (l?.property && !l.invalidated) await performance();
     else { $('range').textContent = 'Projekt zuerst lokal verknüpfen.'; $('rows').replaceChildren(); $('metrics').replaceChildren(); $('opportunities').replaceChildren(); }
@@ -48,14 +66,23 @@
   }
   form($('config'), async data => { await api('configure', data); $('config').elements.client_secret.value = ''; $('config').elements.hostinger_token.value = ''; await load(); });
   action($('connect'), async () => { location.assign((await api('oauth/start', {})).url); });
-  action($('properties'), async () => { const rows = await api('properties?site=' + encodeURIComponent(site) + '&account_id=' + encodeURIComponent($('account').value)); $('existing').replaceChildren(option('', 'Property auswählen'), ...rows.map(p => option(p.siteUrl, p.siteUrl + ' (' + p.permissionLevel + ')'))); });
-  $('existing').addEventListener('change', () => { $('link').elements.property.value = $('existing').value; });
-  form($('link'), async data => { await api('link', { site, ...data }); preview = null; $('preview').hidden = true; await load(); });
+  async function loadProperties() {
+    if (!$('account').value) {
+      $('existing').replaceChildren(option('', 'Zuerst Google-Konto verbinden'));
+      return;
+    }
+    const rows = await api('properties?site=' + encodeURIComponent(site) + '&account_id=' + encodeURIComponent($('account').value));
+    $('existing').replaceChildren(option('', rows.length ? 'Website auswählen' : 'Keine passende Website gefunden'), ...rows.map(p => option(p.siteUrl, p.siteUrl + ' (' + p.permissionLevel + ')')));
+  }
+  action($('properties'), loadProperties);
+  $('account').addEventListener('change', () => loadProperties().catch(e => message(e.message)));
+  $('existing').addEventListener('change', setPropertyMode);
+  form($('link'), async data => { setPropertyMode(); if (!propertyInput.value) throw new Error('Bitte eine Website auswählen.'); data.property = propertyInput.value; await api('link', { site, ...data }); preview = null; $('preview').hidden = true; await load(); });
   root.querySelectorAll('[data-preview]').forEach(el => action(el, async () => {
     const data = { site, action: el.dataset.preview };
     if (['dns', 'verify'].includes(data.action) && $('allinkl').value) data.allinkl_account_id = $('allinkl').value;
     if (data.action === 'sitemap') data.sitemap_url = $('sitemap').value;
-    preview = await api('previews', data); $('preview-text').textContent = JSON.stringify(preview, null, 2); $('confirmation').value = ''; $('approved').checked = false; $('preview').hidden = false;
+    preview = await api('previews', data); $('preview-summary').textContent = el.textContent.trim() + ' für ' + domain + '. Details prüfen und danach ausdrücklich freigeben.'; $('preview-text').textContent = JSON.stringify(preview, null, 2); $('confirmation').value = ''; $('approved').checked = false; $('preview').hidden = false;
   }));
   action($('execute'), async () => {
     if (!preview || !$('approved').checked) throw new Error('Konkrete Vorschau prüfen und die Freigabe bestätigen.');
@@ -72,5 +99,6 @@
   action($('previous'), async () => { offset = Math.max(0, offset - 100); await performance(); });
   action($('next'), async () => { if (next !== null) offset = next; await performance(); });
   fetch('/api/hosting/allinkl/accounts').then(r => r.ok ? r.json() : []).then(rows => { for (const a of rows) $('allinkl').append(option(a.id, a.name)); }).catch(() => {});
-  load().catch(e => message(e.message));
+  setPropertyMode();
+  load().then(loadProperties).catch(e => message(e.message));
 })();
