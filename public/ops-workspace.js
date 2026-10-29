@@ -155,12 +155,15 @@
     if(!res.ok)throw Error(data.message||data.error||'HTTP '+res.status);
     return data;
   };
-  let projects=[],links=[],sites=[];
+  let projects=[],links=[],sites=[],searchConsoleStatuses=[];
+  const searchConsoleStatus=site=>searchConsoleStatuses.find(item=>item.site_id===site.id);
   const assignment=site=>links.find(link=>link.site_id===site.id);
   async function fetchRelations(){
     [projects,links,sites]=await Promise.all([
       fetchJSON('/api/billing/projects'),fetchJSON('/api/site-projects'),fetchJSON('/api/sites')
     ]);
+    try { searchConsoleStatuses=await fetchJSON('/api/search-console/overview'); }
+    catch (error) { searchConsoleStatuses=[]; console.warn('Search Console status unavailable',error); }
   }
   function assignmentDialog(site){
     const linked=assignment(site);
@@ -207,6 +210,12 @@
     if(label==='ONLINE')return ['Online','positive'];
     if(label==='ALARM')return ['Alarm','danger'];
     return [site.monitor_enabled?'Monitoring aktiv':'Monitoring aus','neutral'];
+  }
+  function gscBadge(site){
+    const state=searchConsoleStatus(site);
+    const name=state?.invalidated?'GSC · Zuordnung prüfen':state?.sitemap_submitted?'GSC · Sitemap eingereicht':state?.verified?'GSC · bestätigt':state?.connected?'GSC · verknüpft':'GSC · nicht verbunden';
+    const tone=state?.invalidated?'danger':state?.verified?'positive':'neutral';
+    return '<a class="ops-site-badge '+tone+'" href="/sites/'+encodeURIComponent(site.slug)+'/search-console" title="Google Search Console für diese Website verwalten">'+esc(name)+'</a>';
   }
   function portfolioCard(site){
     const link=assignment(site),status=websiteStatus(site);
