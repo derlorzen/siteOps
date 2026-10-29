@@ -36,11 +36,11 @@
     const linked = Boolean(link?.property);
     const live = Boolean(link?.live_approved_at);
     const verified = Boolean(link?.verified_at);
-    const registered = Boolean(link?.permission_level && link.permission_level !== 'Keine');
-    const sitemap = Boolean(link?.sitemap_status && !/^(nicht|pending|failed|error)/i.test(link.sitemap_status));
+    const registered = Boolean(link?.permission_level && !['Keine', 'siteUnverifiedUser'].includes(link.permission_level));
+    const sitemap = link?.sitemap_status === 'submitted';
     const synced = Boolean(link?.last_sync_at);
     // DNS has no separately persisted success state: do not claim it is complete.
-    const completed = [accountReady, linked, live, verified, verified, registered, sitemap, synced];
+    const completed = [accountReady, linked, live, Boolean(link?.dns_applied) || verified, verified, registered, sitemap, synced];
     const current = completed.findIndex(done => !done);
     const active = current < 0 ? stages.length : current + 1;
     $('progress-title').textContent = current < 0
