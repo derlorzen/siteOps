@@ -141,6 +141,13 @@
     feedback.textContent = text;
     feedback.setAttribute('role', kind === 'error' ? 'alert' : 'status');
   }
+  function previewControls(active) {
+    $('execute').hidden = !active;
+    $('change-status').hidden = !active;
+    $('confirmation').disabled = !active;
+    $('approved').disabled = !active;
+  }
+  previewControls(false);
   function describeResult(result) {
     if (result?.live_approved) return 'Die Website ist für die nächsten Schritte freigegeben.';
     if (result?.google_verified) return 'Google hat bestätigt, dass du die Domain verwalten darfst.';
@@ -153,23 +160,33 @@
     const data = { site, action: el.dataset.preview };
     if (['dns', 'verify'].includes(data.action) && $('allinkl').value) data.allinkl_account_id = $('allinkl').value;
     if (data.action === 'sitemap') data.sitemap_url = $('sitemap').value;
+    preview = null;
+    previewControls(false);
+    $('confirmation').value = '';
+    $('approved').checked = false;
+    $('expected-confirmation').textContent = '';
+    $('preview-text').textContent = '';
     feedback.hidden = true;
     try {
-      preview = await api('previews', data);
+      const prepared = await api('previews', data);
+      preview = prepared;
+      previewControls(true);
       $('preview-summary').textContent = el.textContent.trim() + ' für ' + domain + '. Bitte Angaben prüfen und bestätigen.';
       $('expected-confirmation').textContent = preview.confirmation;
       $('confirmation').value = '';
       $('approved').checked = false;
-      $('preview-text').textContent = JSON.stringify(preview, null, 2);
+      $('preview-text').textContent = JSON.stringify(prepared, null, 2);
       $('preview').hidden = false;
       showFeedback('Vorbereitung erfolgreich. Zum Ausführen bitte den angezeigten Bestätigungstext eingeben und die Freigabe aktivieren.');
       $('preview').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (error) {
       preview = null;
       $('preview').hidden = false;
-      $('expected-confirmation').textContent = '';
       $('preview-summary').textContent = 'Dieser Schritt konnte nicht vorbereitet werden.';
-      showFeedback(error.message, 'error');
+      const providerHint = /ALL-INKL-Konto auswählen/i.test(error.message)
+        ? ' Bitte oberhalb der Schaltflächen das passende ALL-INKL-Konto auswählen. Falls die Domain bei Hostinger liegt, muss dort der API-Zugang eingerichtet sein.'
+        : '';
+      showFeedback(error.message + providerHint, 'error');
     }
   }));
   action($('execute'), async () => {
@@ -187,8 +204,11 @@
         confirmation: $('confirmation').value
       });
       $('preview-text').textContent = JSON.stringify(result, null, 2);
+      const actionName = preview.action;
+      preview = null;
+      previewControls(false);
       await load();
-      showFeedback((labels[preview.action] || 'Aktion abgeschlossen') + '. ' + describeResult(result), 'success');
+      showFeedback((labels[actionName] || 'Aktion abgeschlossen') + '. ' + describeResult(result), 'success');
     } catch (error) {
       showFeedback('Aktion nicht abgeschlossen: ' + error.message + ' Bitte vor einem erneuten Versuch „Ergebnis prüfen“ verwenden.', 'error');
     }
