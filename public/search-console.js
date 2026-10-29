@@ -16,6 +16,7 @@
   async function load() {
     const s = await api('status?site=' + encodeURIComponent(site));
     $('redirect').textContent = s.redirect_uri;
+    $('oauth-source').textContent = s.oauth_source === 'youtube' ? 'YouTube OAuth-Client wird wiederverwendet. Redirect-URI in Google Cloud ergänzen.' : '';
     $('config').elements.client_id.value = s.client_id;
     $('hostinger').textContent = s.hostinger_configured ? 'Hostinger API-Token gespeichert.' : 'Kein Hostinger API-Token gespeichert.';
     const selected = $('account').value;
