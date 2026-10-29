@@ -209,6 +209,49 @@
       container.append(b);
     }
   }
+  async function loadAnalytics() {
+    const status = $('yt-analytics-status');
+    status.textContent = 'Analyse wird geladen …';
+    for (const id of ['yt-analytics-metrics', 'yt-analytics-rows', 'yt-analytics-days-rows']) $(id).replaceChildren();
+    try {
+      const days = Number($('yt-analytics-days').value);
+      const report = dimension => api('analytics', { account_id: account(), days, dimension });
+      const [summary, videos, daily] = await Promise.all([report('summary'), report('video'), report('day')]);
+      const number = value => Number(value || 0).toLocaleString('de-DE', { maximumFractionDigits: 1 });
+      const total = summary.rows[0] || {};
+      for (const [key, label] of [['views', 'Aufrufe'], ['estimatedMinutesWatched', 'Wiedergabeminuten'], ['averageViewDuration', 'Ø Dauer (Sek.)']]) {
+        const item = document.createElement('span');
+        const caption = document.createElement('em');
+        item.textContent = number(total[key]);
+        caption.textContent = label;
+        item.append(caption);
+        $('yt-analytics-metrics').append(item);
+      }
+      for (const row of videos.rows) {
+        const tr = document.createElement('tr');
+        for (const key of ['video', 'views', 'estimatedMinutesWatched', 'averageViewDuration']) {
+          const td = document.createElement('td');
+          td.textContent = key === 'video' ? String(row[key] || '') : number(row[key]);
+          tr.append(td);
+        }
+        $('yt-analytics-rows').append(tr);
+      }
+      for (const row of daily.rows) {
+        const tr = document.createElement('tr');
+        for (const key of ['day', 'views', 'estimatedMinutesWatched']) {
+          const td = document.createElement('td');
+          td.textContent = key === 'day' ? String(row[key] || '') : number(row[key]);
+          tr.append(td);
+        }
+        $('yt-analytics-days-rows').append(tr);
+      }
+      status.textContent = summary.start_date + ' bis ' + summary.end_date + ' · Daten erfolgreich geladen.';
+    } catch (error) {
+      status.textContent = 'Analyse nicht verfügbar: ' + error.message;
+      throw error;
+    }
+  }
+  click('yt-analytics-load', loadAnalytics);
   const selectTab = async tab => {
     selectedTab = tab;
     for (const el of document.querySelectorAll('[data-panel]')) el.hidden = el.dataset.panel !== tab;
@@ -219,6 +262,7 @@
       if (video) renderPlayer();
       if (channel && !library.length) await loadVideos();
     }
+    if (tab === 'analytics') await loadAnalytics();
     if (tab === 'captions') await importSuiteThumbnail();
     if (tab === 'upload') {
       await loadJobs();
@@ -284,7 +328,7 @@
     notify('Google-Verbindungseinstellungen verschlüsselt gespeichert.');
   });
   click('yt-connect', async () => {
-    const result = await api('oauth/start', { memberships: $('yt-memberships').checked });
+    const result = await api('oauth/start', { memberships: $('yt-memberships').checked, analytics: $('yt-analytics-consent').checked });
     window.location.assign(result.url);
   });
   click('yt-disconnect', async () => {
