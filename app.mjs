@@ -7597,16 +7597,27 @@ async function start() {
     const accounts = (status.accounts || [])
       .map(account => '<li>' + esc(account.email || account.name || account.id) + '</li>')
       .join('');
-    const items = sites.map(site =>
-      '<li><a href="/sites/' + encodeURIComponent(site.slug) + '/search-console">' +
-      esc(site.name) + '</a> <span class="muted">· ' + esc(site.domain) + '</span></li>'
-    ).join('');
-    const html = '<header><div><span class="eyebrow">Integrationen / Google</span>' +
+    const items = sites
+      .map(
+        site =>
+          '<li><a href="/sites/' +
+          encodeURIComponent(site.slug) +
+          '/search-console">' +
+          esc(site.name) +
+          '</a> <span class="muted">· ' +
+          esc(site.domain) +
+          '</span></li>'
+      )
+      .join('');
+    const html =
+      '<header><div><span class="eyebrow">Integrationen / Google</span>' +
       '<h1>Google Search Console</h1><p>Zentrale Verbindung und Search-Console-Zugriff für deine Websites.</p>' +
       '</div></header><section><h2>Google-Verbindung</h2><p>' +
       (status.configured ? 'OAuth-Client konfiguriert.' : 'Google OAuth ist noch nicht eingerichtet.') +
-      '</p><p>Verbundene Google-Konten: ' + (status.accounts || []).length +
-      '</p>' + (accounts ? '<ul>' + accounts + '</ul>' : '') +
+      '</p><p>Verbundene Google-Konten: ' +
+      (status.accounts || []).length +
+      '</p>' +
+      (accounts ? '<ul>' + accounts + '</ul>' : '') +
       '<p>Google OAuth, Property-Verifizierung und DNS-Freigaben werden im jeweiligen Website-Dialog verwaltet.</p>' +
       '</section><section><h2>Google verbinden – Kurzanleitung</h2>' +
       '<ol><li>In der <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> ein Projekt auswählen und die Search Console API sowie die Site Verification API aktivieren.</li>' +
@@ -7617,7 +7628,8 @@ async function start() {
       '<p>Hinweis: Im Google-OAuth-Testmodus muss das verwendete Konto als Testnutzer hinterlegt sein. Die Sitemap-Einreichung garantiert keine Indexierung.</p>' +
       '</section><section><h2>Websites & Properties</h2><p>Website auswählen, um die Property zu verbinden, ' +
       'die Domain zu verifizieren, eine Sitemap einzureichen oder Suchdaten auszuwerten.</p>' +
-      (items ? '<ul>' + items + '</ul>' : '<p>Noch keine Websites vorhanden.</p>') + '</section>';
+      (items ? '<ul>' + items + '</ul>' : '<p>Noch keine Websites vorhanden.</p>') +
+      '</section>';
     return reply.type('text/html').send(page('Google Search Console', html));
   });
   registerSearchConsoleRoutes(app, searchConsoleService, {
