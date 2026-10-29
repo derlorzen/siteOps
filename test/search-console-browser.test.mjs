@@ -39,11 +39,12 @@ test(
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(app.listeningOrigin + '/sites/demo/search-console');
     await page.getByText('Verbindung geladen.', { exact: true }).waitFor();
+    await page.locator('#gsc-choice').selectOption('custom');
     await page.locator('#gsc-link input[name="property"]').fill('sc-domain:example.com');
-    await page.getByRole('button', { name: 'Lokal verknüpfen', exact: true }).click();
+    await page.getByRole('button', { name: 'Website zuordnen', exact: true }).click();
     await page.locator('#gsc-states').getByText('sc-domain:example.com', { exact: true }).waitFor();
     assert.equal(f.linkage.live_approved_at, null);
-    await page.getByRole('button', { name: 'Livegang-Freigabe vorbereiten' }).click();
+    await page.getByRole('button', { name: '1. Öffentliche Website freigeben' }).click();
     await page.locator('#gsc-preview:not([hidden])').waitFor();
     const preview = JSON.parse(await page.locator('#gsc-preview-text').textContent());
     assert.equal(preview.domain, f.site.domain);
@@ -69,6 +70,6 @@ test(
     assert.deepEqual(errors, []);
     // The same view must remain usable on a narrow phone viewport.
     await page.setViewportSize({ width: 390, height: 844 });
-    assert.ok(await page.getByRole('heading', { name: 'Suchleistung', exact: true }).isVisible());
+    assert.ok(await page.getByRole('heading', { name: 'Besucher über Google', exact: true }).isVisible());
   }
 );
