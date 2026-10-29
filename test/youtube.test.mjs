@@ -576,3 +576,32 @@ test('upload approval freezes the selected publication thumbnail with the review
   assert.equal(snapshot.title, 'Reviewed title');
   assert.equal(snapshot.description, 'Reviewed description');
 });
+
+test('YouTube Analytics requires explicit scope and returns bounded read-only reports', async () => {
+  const requested = [];
+  const h = harness(async (url, options) => {
+    requested.push({ url: String(url), method: options.method || 'GET' });
+    return Response.json({
+      columnHeaders: [{ name: 'views' }, { name: 'estimatedMinutesWatched' }, { name: 'averageViewDuration' }],
+      rows: [[120, 45, 32]]
+    });
+  });
+  await assert.rejects(h.service.analytics({ account_id: id, days: 28, dimension: 'summary' }), {
+    statusCode: 403
+  });
+  const row = h.accounts.get(id);
+  const credentials = decrypt(row.encrypted_credentials);
+  row.encrypted_credentials = encrypt({
+    ...credentials,
+    scope: 'https://www.googleapis.com/auth/yt-analytics.readonly'
+  });
+  const report = await h.service.analytics({ account_id: id, days: 28, dimension: 'summary' });
+  assert.equal(report.rows[0].views, 120);
+  assert.equal(report.rows[0].estimatedMinutesWatched, 45);
+  assert.equal(requested.length, 1);
+  assert.equal(requested[0].method, 'GET');
+  assert.equal(new URL(requested[0].url).hostname, 'youtubeanalytics.googleapis.com');
+  await assert.rejects(h.service.analytics({ account_id: id, days: 365, dimension: 'summary' }), {
+    statusCode: 422
+  });
+});
