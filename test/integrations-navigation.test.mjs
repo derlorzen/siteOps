@@ -10,7 +10,8 @@ test('Integrations group contains hosting, deployment, Google/YouTube and MCP', 
   assert.match(source, /\['\/mcp-info','Übersicht & MCP','⇄','Integrationen'\]/);
   assert.match(source, /\['\/hosting','Hosting & DNS','◎','Integrationen'\]/);
   assert.match(source, /\['\/coolify','Coolify & Supabase','◈','Integrationen'\]/);
-  assert.match(source, /\['\/youtube','Google \/ YouTube','▶','Integrationen'\]/);
+  assert.match(source, /\['\/search-console','Google Search Console','◎','Integrationen'\]/);
+  assert.match(source, /\['\/youtube','YouTube & Kanäle','▶','Integrationen'\]/);
   assert.doesNotMatch(source, /\['\/youtube','YouTube & Kanäle','↗','Video Suite'\]/);
   assert.match(source, /parent\?' ops-nav-subitem'/);
   assert.match(source, /current\.startsWith\('\/hosting'\)/);
@@ -33,4 +34,11 @@ test('Integration landing page links to the authenticated hosting workspace', as
   assert.match(app, /<a class="btn" href="\/hosting">Hosting & DNS verwalten/);
   assert.match(app, /app\.get\('\/hosting',/);
   assert.match(app, /allinkl_provision, cms_install_allinkl/);
+});
+
+test('Search Console central overview links to per-site property management', async () => {
+  const app = await appSource();
+  assert.match(app, /app\.get\('\/search-console',/);
+  assert.match(app, /encodeURIComponent\(site\.slug\) \+ '\/search-console'/);
+  assert.match(app, /searchConsoleService\.status\(\)/);
 });
