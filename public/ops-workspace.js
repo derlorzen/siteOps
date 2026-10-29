@@ -18,10 +18,18 @@
     ['/video-suite#script','Skript & Szenen','04','Video Suite'],['/video-suite#production','Full-HD-Produktion','05','Video Suite'],
     ['/video-suite#assets','SEO & Titelbild','06','Video Suite'],['/video-suite#review','Gesamtvorschau','07','Video Suite'],
     ['/video-suite#publish','Hochladen','08','Video Suite'],['/video-suite#repurpose','Shorts & Social Media','09','Video Suite'],
-    ['/youtube','YouTube & Kanäle','↗','Video Suite'],['/video-suite#settings','Suite-Einstellungen','⚙','Video Suite'],
+    ['/video-suite#settings','Suite-Einstellungen','⚙','Video Suite'],
     ['/mcp-info','Integrationen','⇄'],
-    ['/hosting','Hosting & DNS','◎','Integrationen'],['/coolify','Coolify','◈','Integrationen'],
-    ['/mcp-info','MCP & Verbindungen','⇄','Integrationen'],['/settings','Einstellungen','⚙']
+    ['/mcp-info','Übersicht & MCP','⇄','Integrationen'],
+    ['/hosting','Hosting & DNS','◎','Integrationen'],
+    ['/coolify','Coolify & Supabase','◈','Integrationen'],
+    ['/youtube','Google / YouTube','▶','Integrationen'],
+    ['/settings','Einstellungen','⚙'],
+    ['/settings#system','System & Design','⚙','Einstellungen'],
+    ['/settings#backups','GitHub & Backups','▤','Einstellungen'],
+    ['/settings#defaults','Website-Standards','▤','Einstellungen'],
+    ['/settings#alerts','Benachrichtigungen','◷','Einstellungen'],
+    ['/settings#seo','SEO & Tests','◎','Einstellungen']
   ];
   const path=location.pathname;
   const suiteRoute = href => href.startsWith('/video-suite#') ? href.split('#')[1] : '';
@@ -82,6 +90,7 @@
     const current=location.pathname;
     if(['/video-suite','/video-studio'].includes(current))return '/video-suite#'+(['overview','agent','ideas','storyboard','editing','script','production','assets','review','publish','repurpose','settings'].includes(location.hash.slice(1))?location.hash.slice(1):'overview');
     if(current==='/youtube')return '/youtube';
+    if(current==='/settings')return '/settings'+(['system','backups','defaults','alerts','seo'].includes(location.hash.slice(1))?location.hash:'#system');
     if(current.startsWith('/billing/projects'))return '/billing';
     if(current.startsWith('/sites/'))return '/websites';
     if(current.startsWith('/lorzcms'))return '/lorzcms';
@@ -106,6 +115,26 @@
     $('#siteopsCurrentPage').textContent=parent?parent+' / '+label:label;
     const video=href.startsWith('/video-suite')||href==='/youtube';
     const action=$('.ops-top-new');action.href=video?'/video-suite#ideas':'/setup';action.textContent=video?'+ Neues Video':'+ Website';
+  }
+  // Settings uses one established page; anchors expose its existing sections
+  // without duplicating forms or creating conflicting configuration endpoints.
+  if(path==='/settings'){
+    const sectionIds = new Map([
+      ['Design & Farben','system'],['GitHub','backups'],
+      ['Standardwerte','defaults'],['Benachrichtigungen','alerts'],
+      ['SEO-Audits','seo']
+    ]);
+    document.querySelectorAll('main h2').forEach(heading=>{
+      const id=sectionIds.get(heading.textContent.trim());
+      if(id){const section=heading.closest('section');if(section)section.id='settings-'+id;}
+    });
+    const scrollToSetting=()=>{
+      const name=location.hash.slice(1);
+      if(!name)return;
+      document.getElementById('settings-'+name)?.scrollIntoView({block:'start'});
+    };
+    window.addEventListener('hashchange',scrollToSetting);
+    if(location.hash)requestAnimationFrame(scrollToSetting);
   }
   sidebar.addEventListener('click',event=>{if(event.target.closest('a')&&mobile.matches){closeMenu();main.focus({preventScroll:true});}});
   window.addEventListener('hashchange',syncNavigation);window.addEventListener('popstate',syncNavigation);
