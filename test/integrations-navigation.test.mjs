@@ -39,6 +39,6 @@ test('Integration landing page links to the authenticated hosting workspace', as
 test('Search Console central overview links to per-site property management', async () => {
   const app = await appSource();
   assert.match(app, /app\.get\('\/search-console',/);
-  assert.match(app, /encodeURIComponent\(site\.slug\)\s*\+\s*'\/search-console'/);
+  assert.match(app, /encodeURIComponent\(site\.slug\)\s*\+\s*'\/search-console/);
   assert.match(app, /searchConsoleService\.status\(\)/);
 });
