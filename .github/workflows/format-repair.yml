@@ -27,5 +27,5 @@ jobs:
           git add app.mjs lib/allinkl-cms-move.mjs lib/allinkl.mjs lib/search-console.mjs test/allinkl-cms-move.test.mjs
           if ! git diff --cached --quiet; then
             git commit -m "style: apply Prettier to files failing CI"
-            git push origin HEAD:main
+            git push origin HEAD:refs/heads/repair/prettier-20261029
           fi
