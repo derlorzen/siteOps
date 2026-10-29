@@ -252,6 +252,10 @@
     }
   }
   click('yt-analytics-load', loadAnalytics);
+  click('yt-analytics-connect', async () => {
+    const result = await api('oauth/start', { memberships: false, analytics: true });
+    window.location.assign(result.url);
+  });
   const selectTab = async tab => {
     selectedTab = tab;
     for (const el of document.querySelectorAll('[data-panel]')) el.hidden = el.dataset.panel !== tab;
