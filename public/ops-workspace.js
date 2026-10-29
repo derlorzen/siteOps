@@ -231,7 +231,7 @@
       '<span class="ops-site-kicker">'+esc(link?.customer_name||'EIGENSTÄNDIGE WEBSITE')+'</span>'+
       '<h3><a href="/sites/'+encodeURIComponent(site.slug)+'">'+esc(site.name)+'</a></h3>'+
       '<p>'+(publicUrl?'<a href="'+esc(publicUrl)+'" target="_blank" rel="noopener noreferrer" title="Website in neuem Tab aufrufen">'+esc(site.domain)+' ↗</a>':esc(site.domain))+'</p><div class="ops-website-details">'+
-      '<span>'+esc(mode)+'</span><span>'+esc(site.site_type||'Website')+'</span></div>'+
+      '<span>'+esc(mode)+'</span><span>'+esc(site.site_type||'Website')+'</span>'+gscBadge(site)+'</div>'+
       '<div class="ops-website-association">'+
       (link?'<span>Projekt: <a href="/billing/projects/'+encodeURIComponent(link.project_id)+'">'+esc(link.project_name)+'</a></span>':
         '<span>Unabhängig verwaltet</span>')+'</div>'+
