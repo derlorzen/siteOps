@@ -43,7 +43,11 @@ test(
     await page.locator('#gsc-link input[name="property"]').fill('sc-domain:example.com');
     await page.getByRole('button', { name: 'Website zuordnen', exact: true }).click();
     await page.waitForTimeout(1200);
-    assert.match(await page.locator('#gsc-states').textContent(), /sc-domain:example.com/, 'Link did not save: ' + await page.locator('#gsc-message').textContent() + '; errors=' + JSON.stringify(errors));
+    assert.match(
+      await page.locator('#gsc-states').textContent(),
+      /sc-domain:example.com/,
+      'Link did not save: ' + (await page.locator('#gsc-message').textContent()) + '; errors=' + JSON.stringify(errors)
+    );
     assert.equal(f.linkage.live_approved_at, null);
     await page.getByRole('button', { name: '1. Öffentliche Website freigeben' }).click();
     await page.locator('#gsc-preview:not([hidden])').waitFor();
