@@ -30,3 +30,8 @@
 #gsc .actions button { text-align: left; white-space: normal; }
 #gsc input, #gsc select { max-width: 100%; }
 @media (max-width: 600px) { #gsc .gsc-step { padding: 15px; } }
+
+#gsc .gsc-feedback { padding: 12px 15px; margin: 12px 0; border-radius: 8px; border: 1px solid #a8bfcb; color: #203d50; background: #eef6fa; line-height: 1.5; }
+#gsc .gsc-feedback-success { border-color: #75b58f; background: #e9f7ed; color: #155a32; }
+#gsc .gsc-feedback-error { border-color: #d59a9a; background: #fff0ee; color: #8a2525; }
+#gsc-expected-confirmation { display: block; font-family: monospace; font-size: 0.95em; margin: 7px 0; overflow-wrap: anywhere; user-select: all; }
