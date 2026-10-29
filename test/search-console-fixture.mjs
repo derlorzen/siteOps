@@ -49,7 +49,12 @@ export function searchConsoleFixture(options = {}) {
         accounts.get(a[1]).encrypted_credentials = a[0];
         return [{ affectedRows: 1 }];
       }
-      if (sql.startsWith('SELECT encrypted_payload FROM search_console_previews')) return [[...previews.values()].filter(x => x.status === 'done').map(x => ({ encrypted_payload: x.encrypted_payload }))];
+      if (sql.startsWith('SELECT encrypted_payload FROM search_console_previews')) {
+        const rows = [...previews.values()]
+          .filter(x => x.status === 'done')
+          .map(x => ({ encrypted_payload: x.encrypted_payload }));
+        return [rows];
+      }
       if (sql.startsWith('INSERT INTO search_console_states')) {
         states.set(a[0], { encrypted_payload: a[1], expires_at: a[2] });
         return [{ affectedRows: 1 }];
