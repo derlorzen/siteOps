@@ -35,3 +35,15 @@
 #gsc .gsc-feedback-success { border-color: #75b58f; background: #e9f7ed; color: #155a32; }
 #gsc .gsc-feedback-error { border-color: #d59a9a; background: #fff0ee; color: #8a2525; }
 #gsc-expected-confirmation { display: block; font-family: monospace; font-size: 0.95em; margin: 7px 0; overflow-wrap: anywhere; user-select: all; }
+
+#gsc-progress { padding: 20px; border: 1px solid #b7d5c3; border-radius: 12px; background: #f5faf7; }
+#gsc-progress-title { display: block; font-size: 1.12rem; }
+#gsc-progress-help { margin: 7px 0 12px; }
+#gsc-progress-list { display: grid; gap: 6px; padding-left: 22px; margin: 0; }
+#gsc-progress-list li { padding: 5px 9px; }
+#gsc-progress-list .is-done { color: #22623c; }
+#gsc-progress-list .is-current { font-weight: 700; border-radius: 6px; background: #d9efdf; color: #154c2b; }
+#gsc-progress-list .is-upcoming { color: #75808c; }
+#gsc .actions button.is-next { outline: 3px solid #ecba54; outline-offset: 2px; }
+#gsc .actions button.is-done { opacity: .75; }
+#gsc .actions button:disabled { opacity: .42; cursor: not-allowed; }
