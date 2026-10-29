@@ -7592,6 +7592,27 @@ async function start() {
     worker: youtubeWorker
   });
   if (databaseReady) youtubeWorker.start();
+  app.get('/search-console', async (_req, reply) => {
+    const [sites, status] = await Promise.all([listSites(), searchConsoleService.status()]);
+    const accounts = (status.accounts || [])
+      .map(account => '<li>' + esc(account.email || account.name || account.id) + '</li>')
+      .join('');
+    const items = sites.map(site =>
+      '<li><a href="/sites/' + encodeURIComponent(site.slug) + '/search-console">' +
+      esc(site.name) + '</a> <span class="muted">· ' + esc(site.domain) + '</span></li>'
+    ).join('');
+    const html = '<header><div><span class="eyebrow">Integrationen / Google</span>' +
+      '<h1>Google Search Console</h1><p>Zentrale Verbindung und Search-Console-Zugriff für deine Websites.</p>' +
+      '</div></header><section><h2>Google-Verbindung</h2><p>' +
+      (status.configured ? 'OAuth-Client konfiguriert.' : 'Google OAuth ist noch nicht eingerichtet.') +
+      '</p><p>Verbundene Google-Konten: ' + (status.accounts || []).length +
+      '</p>' + (accounts ? '<ul>' + accounts + '</ul>' : '') +
+      '<p>Google OAuth, Property-Verifizierung und DNS-Freigaben werden im jeweiligen Website-Dialog verwaltet.</p>' +
+      '</section><section><h2>Websites & Properties</h2><p>Website auswählen, um die Property zu verbinden, ' +
+      'die Domain zu verifizieren, eine Sitemap einzureichen oder Suchdaten auszuwerten.</p>' +
+      (items ? '<ul>' + items + '</ul>' : '<p>Noch keine Websites vorhanden.</p>') + '</section>';
+    return reply.type('text/html').send(page('Google Search Console', html));
+  });
   registerSearchConsoleRoutes(app, searchConsoleService, {
     page,
     render: renderSearchConsole,
