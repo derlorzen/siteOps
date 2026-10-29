@@ -18,6 +18,8 @@ import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import * as cheerio from 'cheerio';
 import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/crypto.mjs';
+import { siteFilePath, normalizeChangeFiles } from './lib/site-paths.mjs';
+import { websiteToolResult } from './lib/website-tool-result.mjs';
 import { createCmsController, cmsInstallRequestSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
 import { renderCmsWorkspace } from './lib/lorzcms-workspace.mjs';
 import { billingDashboardBody } from './lib/billing-ui.mjs';
@@ -1391,7 +1393,8 @@ async function commitPaths(site, paths, message, knownState = null) {
       changes = [],
       treeUpdates = [];
     try {
-      for (const path of paths) {
+      for (const inputPath of paths) {
+        const path = siteFilePath(inputPath);
         const repoPath = 'sites/' + site.slug + '/public/' + path,
           rp = joinRemote(site.remote_root, path),
           existing = state.treeMap.get(repoPath);
@@ -1435,7 +1438,7 @@ async function treeForCommit(commit) {
 }
 async function readCommitMaybe(site, path, commit) {
   const map = await treeForCommit(commit),
-    entry = map.get('sites/' + site.slug + '/public/' + path);
+    entry = map.get('sites/' + site.slug + '/public/' + siteFilePath(path));
   if (!entry) return null;
   const blob = await gh('/git/blobs/' + entry.sha);
   return Buffer.from(String(blob.content || '').replace(/\n/g, ''), 'base64');
@@ -1569,6 +1572,7 @@ async function validateFiles(files) {
   return results;
 }
 async function createPreview(siteId, files, description, actor = 'mcp') {
+  files = normalizeChangeFiles(files);
   const site = await getSite(siteId),
     remote = await connectSite(site),
     details = [],
@@ -1646,9 +1650,12 @@ async function applyPreview(previewId) {
     preview = p.rows[0];
   if (!preview) throw new Error('Preview not found or expired');
   const site = await getSite(preview.site_id),
-    changes = preview.changes,
+    changes = normalizeChangeFiles(preview.changes),
     paths = changes.map(c => c.path),
-    { sha: preCommit, state: preCommitState } = await commitPaths(site, paths, 'Pre-change snapshot'),
+    { sha: preCommit, state: preCommitState } = await commitPaths(site, paths, 'Pre-change snapshot').catch(error => {
+      error.siteopsStage = 'pre_snapshot';
+      throw error;
+    }),
     remote = await connectSite(site),
     touched = [];
   let writeError = null;
@@ -4436,7 +4443,7 @@ function mcpServer() {
         'Apply an approved preview with pre/post snapshots and health check. Git-deployed sites commit to their deployment branch.',
       inputSchema: z.object({ preview_id: z.string().uuid() })
     },
-    async ({ preview_id }) => toolText(await applyPreview(preview_id))
+    async ({ preview_id }) => websiteToolResult('change_apply', () => applyPreview(preview_id))
   );
   registerTool(
     'history_list',
@@ -4468,7 +4475,7 @@ function mcpServer() {
       description: 'Create a full Git-backed SiteOps snapshot from the current source of truth.',
       inputSchema: z.object({ site: z.string() })
     },
-    async ({ site }) => toolText(await fullBackup(await getSite(site)))
+    async ({ site }) => websiteToolResult('site_backup', async () => fullBackup(await getSite(site)))
   );
   registerTool(
     'backup_status',
@@ -8128,6 +8135,10 @@ async function start() {
 }
 
 export {
+  FtpAdapter,
+  commitPaths,
+  readCommitMaybe,
+  createPreview,
   registerCoolifyWebsite,
   mcpAuth,
   mcpServer,
