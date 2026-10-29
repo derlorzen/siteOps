@@ -18,10 +18,17 @@
     ['/video-suite#script','Skript & Szenen','04','Video Suite'],['/video-suite#production','Full-HD-Produktion','05','Video Suite'],
     ['/video-suite#assets','SEO & Titelbild','06','Video Suite'],['/video-suite#review','Gesamtvorschau','07','Video Suite'],
     ['/video-suite#publish','Hochladen','08','Video Suite'],['/video-suite#repurpose','Shorts & Social Media','09','Video Suite'],
-    ['/youtube','YouTube & Kanäle','↗','Video Suite'],['/video-suite#settings','Suite-Einstellungen','⚙','Video Suite'],
+    ['/video-suite#settings','Suite-Einstellungen','⚙','Video Suite'],
     ['/mcp-info','Integrationen','⇄'],
-    ['/hosting','Hosting & DNS','◎','Integrationen'],['/coolify','Coolify','◈','Integrationen'],
-    ['/mcp-info','MCP & Verbindungen','⇄','Integrationen'],['/settings','Einstellungen','⚙']
+    ['/mcp-info','Übersicht & MCP','⇄','Integrationen'],
+    ['/hosting','Hosting & DNS','◎','Integrationen'],
+    ['/coolify','Coolify & Supabase','◈','Integrationen'],
+    ['/youtube','Google / YouTube','▶','Integrationen'],
+    ['/settings','Einstellungen','⚙'],
+    ['/settings','System & Design','⚙','Einstellungen'],
+    ['/settings#defaults','Website-Standards','▤','Einstellungen'],
+    ['/settings#alerts','Benachrichtigungen','◷','Einstellungen'],
+    ['/settings#seo','SEO & Prüfungen','◎','Einstellungen']
   ];
   const path=location.pathname;
   const suiteRoute = href => href.startsWith('/video-suite#') ? href.split('#')[1] : '';
