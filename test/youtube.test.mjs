@@ -371,7 +371,8 @@ test('MCP exposes channel capabilities but never credentials, and cannot execute
     },
     x => ({ content: [{ type: 'text', text: JSON.stringify(x) }] })
   );
-  assert.equal(definitions.size, 9);
+  assert.equal(definitions.size, 10);
+  assert.equal(definitions.has('youtube_analytics'), true);
   assert.equal(definitions.has('youtube_configure'), false);
   const result = await definitions
     .get('youtube_change_execute')
