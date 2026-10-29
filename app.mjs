@@ -7608,6 +7608,13 @@ async function start() {
       '</p><p>Verbundene Google-Konten: ' + (status.accounts || []).length +
       '</p>' + (accounts ? '<ul>' + accounts + '</ul>' : '') +
       '<p>Google OAuth, Property-Verifizierung und DNS-Freigaben werden im jeweiligen Website-Dialog verwaltet.</p>' +
+      '</section><section><h2>Google verbinden – Kurzanleitung</h2>' +
+      '<ol><li>In der <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> ein Projekt auswählen und die Search Console API sowie die Site Verification API aktivieren.</li>' +
+      '<li>OAuth-Zustimmungsbildschirm konfigurieren und einen OAuth-Client vom Typ Webanwendung anlegen. Die Weiterleitungs-URI steht im Google-Verbindungsbereich der jeweiligen Website.</li>' +
+      '<li>Eine Website unten auswählen, Client-ID und Client-Secret speichern und auf „Mit Google verbinden“ klicken.</li>' +
+      '<li>Vorhandene Property auswählen oder eine Domain-Property verknüpfen; Livegang, DNS-TXT, Google-Verifizierung und Sitemap jeweils separat prüfen und freigeben.</li>' +
+      '<li>Unter „Suchleistung“ die Daten erstmals synchronisieren. Weitere Abrufe erfolgen automatisch.</li></ol>' +
+      '<p>Hinweis: Im Google-OAuth-Testmodus muss das verwendete Konto als Testnutzer hinterlegt sein. Die Sitemap-Einreichung garantiert keine Indexierung.</p>' +
       '</section><section><h2>Websites & Properties</h2><p>Website auswählen, um die Property zu verbinden, ' +
       'die Domain zu verifizieren, eine Sitemap einzureichen oder Suchdaten auszuwerten.</p>' +
       (items ? '<ul>' + items + '</ul>' : '<p>Noch keine Websites vorhanden.</p>') + '</section>';
