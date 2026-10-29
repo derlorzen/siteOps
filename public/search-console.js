@@ -78,19 +78,83 @@
   $('account').addEventListener('change', () => loadProperties().catch(e => message(e.message)));
   $('existing').addEventListener('change', setPropertyMode);
   form($('link'), async data => { setPropertyMode(); if (!propertyInput.value) throw new Error('Bitte eine Website auswählen.'); data.property = propertyInput.value; await api('link', { site, ...data }); preview = null; $('preview').hidden = true; await load(); });
+  const feedback = $('action-feedback');
+  const labels = {
+    live: 'Öffentliche Website freigegeben',
+    dns: 'DNS-Eintrag verarbeitet',
+    verify: 'Domaininhaberschaft bestätigt',
+    property: 'Website bei Google angemeldet',
+    sitemap: 'Sitemap bei Google eingereicht'
+  };
+  function showFeedback(text, kind = 'info') {
+    feedback.hidden = false;
+    feedback.className = 'gsc-feedback gsc-feedback-' + kind;
+    feedback.textContent = text;
+    feedback.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  }
+  function describeResult(result) {
+    if (result?.live_approved) return 'Die Website ist für die nächsten Schritte freigegeben.';
+    if (result?.google_verified) return 'Google hat bestätigt, dass du die Domain verwalten darfst.';
+    if (result?.property_registered) return 'Die Website ist erfolgreich bei Google Search Console angemeldet.';
+    if (result?.sitemap_submitted) return 'Die Sitemap wurde erfolgreich an Google übermittelt.';
+    if (result?.status === 'done') return 'Der Vorgang wurde erfolgreich abgeschlossen.';
+    return 'Der Schritt wurde verarbeitet. Die aktualisierten Angaben stehen oben im Status.';
+  }
   root.querySelectorAll('[data-preview]').forEach(el => action(el, async () => {
     const data = { site, action: el.dataset.preview };
     if (['dns', 'verify'].includes(data.action) && $('allinkl').value) data.allinkl_account_id = $('allinkl').value;
     if (data.action === 'sitemap') data.sitemap_url = $('sitemap').value;
-    preview = await api('previews', data); $('preview-summary').textContent = el.textContent.trim() + ' für ' + domain + '. Details prüfen und danach ausdrücklich freigeben.'; $('preview-text').textContent = JSON.stringify(preview, null, 2); $('confirmation').value = ''; $('approved').checked = false; $('preview').hidden = false;
+    feedback.hidden = true;
+    try {
+      preview = await api('previews', data);
+      $('preview-summary').textContent = el.textContent.trim() + ' für ' + domain + '. Bitte Angaben prüfen und bestätigen.';
+      $('expected-confirmation').textContent = preview.confirmation;
+      $('confirmation').value = '';
+      $('approved').checked = false;
+      $('preview-text').textContent = JSON.stringify(preview, null, 2);
+      $('preview').hidden = false;
+      showFeedback('Vorbereitung erfolgreich. Zum Ausführen bitte den angezeigten Bestätigungstext eingeben und die Freigabe aktivieren.');
+      $('preview').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (error) {
+      preview = null;
+      $('preview').hidden = false;
+      $('expected-confirmation').textContent = '';
+      $('preview-summary').textContent = 'Dieser Schritt konnte nicht vorbereitet werden.';
+      showFeedback(error.message, 'error');
+    }
   }));
   action($('execute'), async () => {
-    if (!preview || !$('approved').checked) throw new Error('Konkrete Vorschau prüfen und die Freigabe bestätigen.');
-    $('execute').disabled = true;
-    const result = await api('execute', { preview_token: preview.preview_token, approved: true, confirmation: $('confirmation').value });
-    $('preview-text').textContent = JSON.stringify(result, null, 2); await load();
+    if (!preview) { showFeedback('Bitte zuerst einen Schritt vorbereiten.', 'error'); return; }
+    if (!$('approved').checked) { showFeedback('Bitte die ausdrückliche Freigabe aktivieren.', 'error'); return; }
+    if ($('confirmation').value.trim() !== preview.confirmation) {
+      showFeedback('Der Bestätigungstext stimmt nicht überein. Bitte exakt wie angezeigt eingeben.', 'error');
+      return;
+    }
+    showFeedback('Der Schritt wird ausgeführt …');
+    try {
+      const result = await api('execute', {
+        preview_token: preview.preview_token,
+        approved: true,
+        confirmation: $('confirmation').value
+      });
+      $('preview-text').textContent = JSON.stringify(result, null, 2);
+      await load();
+      showFeedback((labels[preview.action] || 'Aktion abgeschlossen') + '. ' + describeResult(result), 'success');
+    } catch (error) {
+      showFeedback('Aktion nicht abgeschlossen: ' + error.message + ' Bitte vor einem erneuten Versuch „Ergebnis prüfen“ verwenden.', 'error');
+    }
   });
-  action($('change-status'), async () => { if (preview) $('preview-text').textContent = JSON.stringify(await api('change-status', { preview_token: preview.preview_token }), null, 2); });
+  action($('change-status'), async () => {
+    if (!preview) { showFeedback('Noch kein vorbereiteter Vorgang vorhanden.', 'error'); return; }
+    try {
+      const status = await api('change-status', { preview_token: preview.preview_token });
+      $('preview-text').textContent = JSON.stringify(status, null, 2);
+      if (status.status === 'done') showFeedback('Erfolgreich abgeschlossen. ' + describeResult(status.result), 'success');
+      else if (status.status === 'failed') showFeedback('Der Vorgang ist fehlgeschlagen: ' + (status.error || 'Keine Fehlerbeschreibung verfügbar.'), 'error');
+      else if (status.status === 'running') showFeedback('Der Vorgang wird noch verarbeitet.');
+      else showFeedback('Der Vorgang ist vorbereitet und wartet auf die Freigabe.');
+    } catch (error) { showFeedback('Status konnte nicht geprüft werden: ' + error.message, 'error'); }
+  });
   action($('sync'), async () => { message('Google-Daten werden synchronisiert…'); await api('sites/' + encodeURIComponent(site) + '/sync', {}); await load(); });
   action($('unlink'), async () => { if (confirm('Lokale Verknüpfung für ' + site + ' entfernen? Google und DNS bleiben bestehen.')) { await api('sites/' + encodeURIComponent(site) + '/unlink', {}); await load(); } });
   action($('disconnect'), async () => { if (confirm('Gewähltes Google-Konto und seine lokalen Projektverknüpfungen trennen?')) { await api('accounts/' + encodeURIComponent($('account').value) + '/disconnect', {}); await load(); } });
