@@ -155,15 +155,15 @@
     if(!res.ok)throw Error(data.message||data.error||'HTTP '+res.status);
     return data;
   };
-  let projects=[],links=[],sites=[],searchConsoleStatuses=[];
+  let projects=[],links=[],sites=[],searchConsoleStatuses=[],searchConsoleAvailable=false;
   const searchConsoleStatus=site=>searchConsoleStatuses.find(item=>item.site_id===site.id);
   const assignment=site=>links.find(link=>link.site_id===site.id);
   async function fetchRelations(){
     [projects,links,sites]=await Promise.all([
       fetchJSON('/api/billing/projects'),fetchJSON('/api/site-projects'),fetchJSON('/api/sites')
     ]);
-    try { searchConsoleStatuses=await fetchJSON('/api/search-console/overview'); }
-    catch (error) { searchConsoleStatuses=[]; console.warn('Search Console status unavailable',error); }
+    try { searchConsoleStatuses=await fetchJSON('/api/search-console/overview'); searchConsoleAvailable=true; }
+    catch (error) { searchConsoleStatuses=[]; searchConsoleAvailable=false; console.warn('Search Console status unavailable',error); }
   }
   function assignmentDialog(site){
     const linked=assignment(site);
@@ -213,7 +213,7 @@
   }
   function gscBadge(site){
     const state=searchConsoleStatus(site);
-    const name=state?.invalidated?'GSC · Zuordnung prüfen':state?.sitemap_submitted?'GSC · Sitemap eingereicht':state?.verified?'GSC · bestätigt':state?.connected?'GSC · verknüpft':'GSC · nicht verbunden';
+    const name=!searchConsoleAvailable?'GSC · Status unbekannt':state?.invalidated?'GSC · Zuordnung prüfen':state?.sitemap_submitted?'GSC · Sitemap eingereicht':state?.verified?'GSC · bestätigt':state?.connected?'GSC · verknüpft':'GSC · nicht verbunden';
     const tone=state?.invalidated?'danger':state?.verified?'positive':'neutral';
     return '<a class="ops-site-badge '+tone+'" href="/sites/'+encodeURIComponent(site.slug)+'/search-console" title="Google Search Console für diese Website verwalten">'+esc(name)+'</a>';
   }
@@ -285,7 +285,7 @@
       (link?'Teil des Kundenprojekts':'Eigenständige Website')+'</strong><p>'+
       (link?'<a href="/billing/projects/'+link.project_id+'">'+esc(link.customer_name)+' / '+esc(link.project_name)+'</a>':
       'Monitoring, SEO, Backups und Deployments werden unabhängig verwaltet.')+
-      '</p></div><button type="button" class="ghost" id="opsSiteProjectEdit">Zuordnung ändern</button>';
+      '</p><p>Google Search Console: '+gscBadge(site)+'</p></div><button type="button" class="ghost" id="opsSiteProjectEdit">Zuordnung ändern</button>';
     $('#opsSiteProjectEdit')?.addEventListener('click',()=>assignmentDialog(site));
   }
   function siteTabs(){
