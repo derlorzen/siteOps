@@ -240,6 +240,8 @@
       '<a href="/sites/'+encodeURIComponent(site.slug)+'">Verwalten →</a>'+
       '<button type="button" data-manage-site="'+esc(site.id)+'">Zuordnen</button></div></article>';
   }
+  let portfolioSearch='';
+  let portfolioFilter='all';
   function renderPortfolio(){
     let node=$('#opsWebsitePortfolio');
     if(!node){
@@ -258,15 +260,45 @@
       const toggle=$('.view-toggle');if(toggle)toggle.classList.add('ops-legacy-toggle');
     }
     const unique=new Set(links.map(link=>link.site_id));
+    const verified=sites.filter(site=>searchConsoleStatus(site)?.verified&&!searchConsoleStatus(site)?.invalidated).length;
+    const needsAttention=sites.filter(site=>searchConsoleStatus(site)?.invalidated||websiteStatus(site)[1]==='danger').length;
+    const visible=sites.filter(site=>{
+      const query=portfolioSearch.trim().toLocaleLowerCase('de-DE');
+      const matching=!query||[site.name,site.domain,assignment(site)?.customer_name,assignment(site)?.project_name].some(value=>String(value||'').toLocaleLowerCase('de-DE').includes(query));
+      const state=searchConsoleStatus(site);
+      const filter=portfolioFilter==='all'||
+        (portfolioFilter==='connected'&&state?.connected&&!state.invalidated)||
+        (portfolioFilter==='missing'&&!state?.connected)||
+        (portfolioFilter==='attention'&&(state?.invalidated||websiteStatus(site)[1]==='danger'));
+      return matching&&filter;
+    });
     node.innerHTML='<div class="ops-portfolio-head"><div><span class="eyebrow">Website-Portfolio</span>'+
       '<h2>Alle Websites</h2><p>Unabhängige Websites oder Websites innerhalb eines Kundenprojekts.</p></div>'+
       '<a class="ops-primary-action" href="/setup">+ Website hinzufügen</a></div>'+
       '<div class="ops-portfolio-stats">'+
       '<div><strong>'+sites.length+'</strong><span>Websites</span></div>'+
       '<div><strong>'+unique.size+'</strong><span>Mit Projekt</span></div>'+
-      '<div><strong>'+(sites.length-unique.size)+'</strong><span>Eigenständig</span></div></div>'+
-      '<div class="ops-website-grid">'+sites.map(portfolioCard).join('')+'</div>'+
-      (!sites.length?'<div class="ops-empty">Noch keine Websites vorhanden.</div>':'');
+      '<div><strong>'+(sites.length-unique.size)+'</strong><span>Eigenständig</span></div>'+
+      '<div><strong>'+verified+'</strong><span>Search Console bestätigt</span></div>'+
+      '<div><strong>'+needsAttention+'</strong><span>Handlungsbedarf</span></div></div>'+
+      '<div class="ops-portfolio-controls"><label for="ops-portfolio-search">Websites durchsuchen<input id="ops-portfolio-search" type="search" placeholder="Name, Domain oder Kunde" value="'+esc(portfolioSearch)+'"></label>'+
+      '<label for="ops-portfolio-filter">Status filtern<select id="ops-portfolio-filter">'+
+      [['all','Alle Websites'],['connected','Search Console verbunden'],['missing','Search Console fehlt'],['attention','Handlungsbedarf']].map(([value,label])=>'<option value="'+value+'"'+(portfolioFilter===value?' selected':'')+'>'+label+'</option>').join('')+
+      '</select></label><span id="ops-portfolio-result-count" role="status" aria-live="polite">'+visible.length+' von '+sites.length+' Websites</span></div>'+
+      '<div class="ops-website-grid">'+visible.map(portfolioCard).join('')+'</div>'+
+      (!sites.length?'<div class="ops-empty">Noch keine Websites vorhanden.</div>':!visible.length?'<div class="ops-empty">Keine Websites passen zu deiner Suche. Filter oder Suchbegriff ändern.</div>':'');
+    node.querySelector('#ops-portfolio-search')?.addEventListener('input',event=>{
+      portfolioSearch=event.target.value;
+      const pos=event.target.selectionStart;
+      renderPortfolio();
+      const field=node.querySelector('#ops-portfolio-search');
+      field?.focus();
+      field?.setSelectionRange(pos,pos);
+    });
+    node.querySelector('#ops-portfolio-filter')?.addEventListener('change',event=>{
+      portfolioFilter=event.target.value;
+      renderPortfolio();
+    });
     node.querySelectorAll('[data-manage-site]').forEach(button=>button.addEventListener('click',()=>{
       const site=sites.find(s=>s.id===button.dataset.manageSite);
       if(site)assignmentDialog(site);
@@ -289,10 +321,10 @@
     $('#opsSiteProjectEdit')?.addEventListener('click',()=>assignmentDialog(site));
   }
   function siteTabs(){
-    const match=path.match(/^\/sites\/([^/]+)(?:\/(seo|tests|report))?$/);
+    const match=path.match(/^\/sites\/([^/]+)(?:\/(seo|search-console|tests|report))?$/);
     if(!match)return;
     const slug=match[1], sub=match[2]||'overview';
-    const tabs=[['overview','Übersicht',''],['seo','SEO','/seo'],['tests','Browser-Tests','/tests'],['report','Report','/report']];
+    const tabs=[['overview','Übersicht',''],['seo','SEO','/seo'],['search-console','Search Console','/search-console'],['tests','Browser-Tests','/tests'],['report','Report','/report']];
     const bar=document.createElement('nav');bar.className='ops-site-tabs';bar.setAttribute('aria-label','Website-Bereiche');
     bar.innerHTML=tabs.map(([key,label,tail])=>'<a href="/sites/'+esc(slug)+tail+'"'+
       (key===sub?' aria-current="page" class="is-active"':'')+'>'+label+'</a>').join('');
