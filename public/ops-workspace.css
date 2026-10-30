@@ -238,3 +238,18 @@ body.ops-mode #cmsCreateSection form label.check{display:flex;align-items:flex-s
  .ops-workspace-bar{flex-wrap:nowrap}
  .ops-workspace-bar .ops-top-new{display:none}
 }
+
+/* Shared command-centre pattern for portfolio and all operations dashboards. */
+.ops-portfolio-controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:15px 0 20px}
+.ops-portfolio-controls label{display:grid;gap:6px;font-size:12px;font-weight:700;color:var(--ops-ink,#24293b);flex:1;min-width:190px}
+.ops-portfolio-controls input,.ops-portfolio-controls select{display:block;width:100%;min-height:42px;background:#fff;border:1px solid var(--ops-line,#e5e8f0);border-radius:9px;padding:9px 12px;color:inherit;font:inherit}
+.ops-portfolio-controls #ops-portfolio-result-count{font-size:12px;color:var(--ops-muted,#737d92);padding:0 4px 11px}
+.ops-portfolio-controls input:focus-visible,.ops-portfolio-controls select:focus-visible,
+.ops-website-actions a:focus-visible,.ops-site-tabs a:focus-visible,.ops-nav-item:focus-visible{
+ outline:3px solid var(--siteops-accent-accent,#2465e8);outline-offset:2px
+}
+.ops-portfolio-stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.ops-portfolio-stats>div{min-width:0}
+.ops-website-card .ops-website-details{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ops-website-details .ops-site-badge{font-size:11px;max-width:100%;overflow-wrap:anywhere;line-height:1.35}
+@media(max-width:650px){.ops-portfolio-controls{display:grid;grid-template-columns:1fr}.ops-portfolio-controls label{min-width:0}.ops-portfolio-controls #ops-portfolio-result-count{padding:0}}
