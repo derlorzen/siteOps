@@ -143,3 +143,21 @@ body.siteops-workspace .siteops-sidebar .ops-side-links{overflow-x:visible}
 body.siteops-workspace .siteops-sidebar .ops-side-footer{display:block;padding-bottom:env(safe-area-inset-bottom)}
 body.siteops-workspace .siteops-sidebar{border-top:0}
 .siteops-nav-backdrop{border-radius:0}
+
+
+/* Shared information hierarchy and accessible controls across SiteOps workspaces. */
+body.siteops-workspace :where(main section,main .card){min-width:0}
+body.siteops-workspace :where(main h1,main h2,main h3){text-wrap:balance}
+body.siteops-workspace :where(main p,main td,main dd){overflow-wrap:anywhere}
+body.siteops-workspace :where(main input:not([type="checkbox"]):not([type="radio"]),main select,main textarea){max-width:100%;min-width:0}
+body.siteops-workspace :where(main button,main a,main input,main select,main textarea,main summary):focus-visible{
+  outline:3px solid var(--siteops-accent-accent,#2465e8);
+  outline-offset:3px
+}
+body.siteops-workspace :where(.tablewrap,[class*="table-wrap"]){max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+body.siteops-workspace :where(table){font-variant-numeric:tabular-nums}
+body.siteops-workspace :where(main button[disabled]){cursor:not-allowed;opacity:.55}
+body.siteops-workspace :where(main [role="alert"]){scroll-margin-top:100px}
+@media(prefers-reduced-motion:reduce){
+ body.siteops-workspace :where(*,*::before,*::after){scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}
+}
