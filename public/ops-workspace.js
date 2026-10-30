@@ -275,6 +275,10 @@
     node.innerHTML='<div class="ops-portfolio-head"><div><span class="eyebrow">Website-Portfolio</span>'+
       '<h2>Alle Websites</h2><p>Unabhängige Websites oder Websites innerhalb eines Kundenprojekts.</p></div>'+
       '<a class="ops-primary-action" href="/setup">+ Website hinzufügen</a></div>'+
+      '<nav class="ops-dashboard-shortcuts" aria-label="Schnellzugriff auf Arbeitsbereiche">'+
+      [['/billing','Kunden & Projekte','Angebote und Aufgaben'],['/tools','Werkzeuge','Technik und Prüfungen'],['/video-suite','Video Suite','Produktion und Veröffentlichung'],['/search-console','Search Console','Google-Sichtbarkeit'],['/hosting','Hosting & DNS','Server und Domains']].map(([href,label,description])=>
+        '<a href="'+href+'"><strong>'+label+'</strong><span>'+description+'</span></a>').join('')+
+      '</nav>'+
       '<div class="ops-portfolio-stats">'+
       '<div><strong>'+sites.length+'</strong><span>Websites</span></div>'+
       '<div><strong>'+unique.size+'</strong><span>Mit Projekt</span></div>'+
