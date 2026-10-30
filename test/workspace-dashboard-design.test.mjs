@@ -14,7 +14,8 @@ test('website portfolio exposes search, status filters and meaningful zero-resul
     'Keine Websites passen zu deiner Suche',
     'portfolioSearch.trim()',
     "portfolioFilter==='attention'"
-  ]) assert.ok(script.includes(part), part);
+  ])
+    assert.ok(script.includes(part), part);
   assert.match(script, /visible\.map\(portfolioCard\)/);
   assert.match(styles, /\.ops-portfolio-controls/);
 });
