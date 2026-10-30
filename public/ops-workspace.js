@@ -268,7 +268,8 @@
       const state=searchConsoleStatus(site);
       const filter=portfolioFilter==='all'||
         (portfolioFilter==='connected'&&state?.connected&&!state.invalidated)||
-        (portfolioFilter==='missing'&&!state?.connected)||
+        (portfolioFilter==='missing'&&searchConsoleAvailable&&!state?.connected)||
+        (portfolioFilter==='unknown'&&!searchConsoleAvailable)||
         (portfolioFilter==='attention'&&(state?.invalidated||websiteStatus(site)[1]==='danger'));
       return matching&&filter;
     });
@@ -283,11 +284,11 @@
       '<div><strong>'+sites.length+'</strong><span>Websites</span></div>'+
       '<div><strong>'+unique.size+'</strong><span>Mit Projekt</span></div>'+
       '<div><strong>'+(sites.length-unique.size)+'</strong><span>Eigenständig</span></div>'+
-      '<div><strong>'+verified+'</strong><span>Search Console bestätigt</span></div>'+
+      '<div><strong>'+(searchConsoleAvailable?verified:'–')+'</strong><span>Search Console bestätigt</span></div>'+
       '<div><strong>'+needsAttention+'</strong><span>Handlungsbedarf</span></div></div>'+
       '<div class="ops-portfolio-controls"><label for="ops-portfolio-search">Websites durchsuchen<input id="ops-portfolio-search" type="search" placeholder="Name, Domain oder Kunde" value="'+esc(portfolioSearch)+'"></label>'+
       '<label for="ops-portfolio-filter">Status filtern<select id="ops-portfolio-filter">'+
-      [['all','Alle Websites'],['connected','Search Console verbunden'],['missing','Search Console fehlt'],['attention','Handlungsbedarf']].map(([value,label])=>'<option value="'+value+'"'+(portfolioFilter===value?' selected':'')+'>'+label+'</option>').join('')+
+      [['all','Alle Websites'],['connected','Search Console verbunden'],['missing','Search Console fehlt'],['unknown','Status unbekannt'],['attention','Handlungsbedarf']].map(([value,label])=>'<option value="'+value+'"'+(portfolioFilter===value?' selected':'')+'>'+label+'</option>').join('')+
       '</select></label><span id="ops-portfolio-result-count" role="status" aria-live="polite">'+visible.length+' von '+sites.length+' Websites</span></div>'+
       '<div class="ops-website-grid">'+visible.map(portfolioCard).join('')+'</div>'+
       (!sites.length?'<div class="ops-empty">Noch keine Websites vorhanden.</div>':!visible.length?'<div class="ops-empty">Keine Websites passen zu deiner Suche. Filter oder Suchbegriff ändern.</div>':'');
