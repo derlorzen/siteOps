@@ -253,3 +253,11 @@ body.ops-mode #cmsCreateSection form label.check{display:flex;align-items:flex-s
 .ops-website-card .ops-website-details{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .ops-website-details .ops-site-badge{font-size:11px;max-width:100%;overflow-wrap:anywhere;line-height:1.35}
 @media(max-width:650px){.ops-portfolio-controls{display:grid;grid-template-columns:1fr}.ops-portfolio-controls label{min-width:0}.ops-portfolio-controls #ops-portfolio-result-count{padding:0}}
+
+.ops-dashboard-shortcuts{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:15px 0 19px}
+.ops-dashboard-shortcuts a{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:80px;padding:16px;background:#fff;border:1px solid var(--ops-line,#e5e8f0);border-radius:12px;color:var(--ops-ink,#24293b);text-decoration:none}
+.ops-dashboard-shortcuts a:hover{border-color:var(--siteops-accent-accent,#2465e8);box-shadow:0 3px 12px rgba(31,45,65,.06)}
+.ops-dashboard-shortcuts strong{font-size:13px;letter-spacing:-.01em}
+.ops-dashboard-shortcuts span{font-size:11px;line-height:1.45;color:var(--ops-muted,#737d92)}
+.ops-dashboard-shortcuts a:focus-visible{outline:3px solid var(--siteops-accent-accent,#2465e8);outline-offset:2px}
+@media(max-width:580px){.ops-dashboard-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}.ops-dashboard-shortcuts a{padding:12px}}
