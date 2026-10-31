@@ -54,7 +54,7 @@ test(
       'Link did not save: ' + (await page.locator('#gsc-message').textContent()) + '; errors=' + JSON.stringify(errors)
     );
     assert.equal(f.linkage.live_approved_at, null);
-    await page.getByRole('button', { name: '1. Öffentliche Website freigeben' }).click();
+    await page.locator('#gsc-next-step').getByRole('button', { name: 'Freigabe vorbereiten', exact: true }).click();
     await page.locator('#gsc-preview:not([hidden])').waitFor();
     const preview = JSON.parse(await page.locator('#gsc-preview-text').textContent());
     assert.equal(preview.domain, f.site.domain);
@@ -66,8 +66,7 @@ test(
       globalThis.document.getElementById('gsc-preview-text').textContent.includes('live_approved')
     );
     assert.ok(f.linkage.live_approved_at);
-    await page.locator('[data-gsc-tab=performance]').click();
-    await page.getByRole('button', { name: 'Jetzt synchronisieren', exact: true }).click();
+    await page.locator('#gsc-next-step').getByRole('button', { name: 'Suchdaten abrufen', exact: true }).click();
     await page.locator('#gsc-rows tr').first().waitFor();
     assert.match(await page.locator('#gsc-metrics').textContent(), /Impressionen/);
     assert.match(await page.locator('#gsc-range').textContent(), /Sync:/);

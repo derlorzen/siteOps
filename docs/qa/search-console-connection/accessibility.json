@@ -1,0 +1,52 @@
+[
+  {
+    "scenario": "connected",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "scenario": "no-access",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "scenario": "domain-verification",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "scenario": "connected",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "scenario": "no-access",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "scenario": "domain-verification",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "scenario": "overview-connected",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "scenario": "overview-account-missing",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "scenario": "overview-connected",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "scenario": "overview-account-missing",
+    "width": 1440,
+    "violations": []
+  }
+]

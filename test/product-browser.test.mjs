@@ -1,3 +1,4 @@
+import { searchConsoleSetup } from '../lib/search-console-setup.mjs';
 /* global document, innerWidth, getComputedStyle */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -278,7 +279,13 @@ test(
             accounts: [],
             redirect_uri: 'https://siteops.test/api/youtube/oauth/callback'
           },
-          '/api/search-console/status': { configured: false, accounts: [], connection: null },
+          '/api/search-console/status': {
+            configured: false,
+            accounts: [],
+            linkage: null,
+            site_enabled: true,
+            setup: searchConsoleSetup({ site_enabled: true })
+          },
           '/api/search-console/overview': [],
           '/api/mcp/capabilities': {
             items: Array.from({ length: 80 }, (_, i) => ({
