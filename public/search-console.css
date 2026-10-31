@@ -82,40 +82,195 @@
   gap: 10px;
 }
 #gsc .gsc-journey {
-  border: 1px solid var(--analytics-line);
-  border-radius: 6px;
-  background: #f8fafc;
-  padding: 16px 20px;
-  margin-bottom: 16px;
+  padding: 0 0 28px;
+  margin: 0 0 24px;
+  border: 0;
+  border-bottom: 1px solid var(--analytics-line);
+  background: transparent;
+  border-radius: 0;
 }
-#gsc .gsc-journey > summary {
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 13px;
+#gsc .gsc-journey h3 {
+  font-size: 18px;
+  margin: 0 0 8px;
 }
-#gsc .gsc-journey p {
-  margin: 12px 0;
+#gsc .gsc-journey > p {
   color: var(--analytics-muted);
+  margin: 0 0 24px;
 }
-#gsc-progress-list {
-  margin: 0;
+#gsc-progress-list,
+#gsc-completed-steps {
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 24px;
-  font-size: 13px;
+  gap: 0;
+  margin: 0 0 20px;
 }
-#gsc-progress-list li {
-  padding: 6px 0;
+#gsc-progress-list li,
+#gsc-completed-steps li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 24px;
+  padding: 16px 0;
+  border-top: 1px solid var(--analytics-line);
+  font-size: 14px;
+}
+#gsc-progress-list strong,
+#gsc-completed-steps strong {
+  font-weight: 500;
+}
+#gsc-progress-list p,
+#gsc-completed-steps p {
+  grid-column: 1/-1;
+  color: var(--analytics-muted);
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+#gsc .gsc-step-state {
+  font-size: 12px;
+  color: var(--analytics-muted);
+  white-space: nowrap;
+}
+#gsc-progress-list [aria-current='step'] .gsc-step-state {
+  color: var(--analytics-data);
+  font-weight: 600;
+}
+#gsc-next-step {
+  margin-bottom: 20px;
+}
+#gsc-setup-record {
+  margin: 20px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+#gsc-setup-record > summary {
+  font-size: 13px;
+  min-height: 40px;
+  cursor: pointer;
   color: var(--analytics-muted);
 }
-#gsc-progress-list .is-done {
-  color: #236344;
+#gsc .gsc-setup-complete {
+  font-size: 13px;
+  color: var(--analytics-muted);
+  margin: 0 0 24px;
 }
-#gsc-progress-list .is-current {
-  font-weight: 600;
+#gsc .gsc-report-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  margin: 12px 0 28px;
+}
+#gsc .gsc-report-meta .analytics-data-note {
+  margin: 0 !important;
+}
+body.siteops-workspace .ops-main #gsc .gsc-text-action {
+  padding: 0;
+  min-height: 32px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--analytics-muted);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: normal;
+}
+body.siteops-workspace .ops-main #gsc .gsc-text-action:hover {
+  background: none;
   color: var(--ink);
+  text-decoration: underline;
+}
+#gsc-overview .analytics-header {
+  align-items: baseline;
+}
+#gsc-overview .analytics-header h1 {
+  font-size: 24px;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+#gsc-overview .analytics-header p {
+  margin: 4px 0 0;
+  color: var(--analytics-muted);
+}
+#gsc-overview .gsc-overview-account {
+  font-size: 13px;
+  padding: 0;
+  border: 0;
+  background: none;
+  max-width: 400px;
+  color: var(--analytics-muted);
+}
+#gsc-overview .gsc-overview-account summary {
+  min-height: 40px;
+  cursor: pointer;
+}
+#gsc-overview .gsc-overview-account p {
+  font-size: 13px;
+  margin: 6px 0;
+}
+#gsc-overview .gsc-overview-onboarding {
+  border-left: 2px solid var(--analytics-data);
+  padding: 0 0 0 20px;
+  margin: 28px 0 32px;
+}
+#gsc-overview .gsc-overview-onboarding > p {
+  color: var(--analytics-muted);
+  margin: 6px 0 20px;
+}
+#gsc-overview .gsc-overview-steps {
+  display: grid;
+  gap: 18px;
+  padding-left: 20px;
+  max-width: 75ch;
+  margin: 0 0 20px;
+}
+#gsc-overview .gsc-overview-steps strong {
+  font-weight: 500;
+}
+#gsc-overview .gsc-overview-steps p {
+  color: var(--analytics-muted);
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+#gsc-overview .gsc-onboarding-action {
+  display: inline-flex;
+  padding: 9px 14px;
+  min-height: 40px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: white;
+  font-size: 13px;
+  text-decoration: none;
+}
+#gsc-overview .gsc-overview-table :is(th, td) {
+  text-align: left !important;
+  white-space: normal;
+}
+#gsc-overview .gsc-overview-table td:last-child {
+  min-width: 230px;
+}
+#gsc-overview .gsc-overview-table td small {
+  display: block;
+  color: var(--analytics-muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+#gsc-overview .gsc-overview-table td strong {
+  font-weight: 500;
+}
+#gsc-overview .gsc-row-status {
+  font-size: 13px;
+  color: var(--analytics-muted);
+}
+#gsc-overview .gsc-row-status[data-state='connected']::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #25704c;
+  margin-right: 7px;
+  vertical-align: middle;
 }
 #gsc .gsc-setup-actions {
   display: grid;
@@ -284,5 +439,48 @@
   }
   #gsc-preview {
     padding: 16px;
+  }
+}
+
+@media (max-width: 600px) {
+  #gsc .gsc-report-meta {
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  #gsc-progress-list li,
+  #gsc-completed-steps li {
+    gap: 6px;
+  }
+  #gsc .gsc-step-state {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  #gsc .gsc-journey {
+    padding-bottom: 20px;
+  }
+  #gsc-overview .analytics-table.gsc-overview-table {
+    min-width: 0 !important;
+  }
+  #gsc-overview .gsc-overview-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  #gsc-overview .gsc-overview-table :is(tbody, tr, td) {
+    display: block;
+    min-width: 0 !important;
+    max-width: none !important;
+    width: 100%;
+    position: static;
+  }
+  #gsc-overview .gsc-overview-table tr {
+    border-top: 1px solid var(--analytics-line);
+    padding: 16px 0;
+  }
+  #gsc-overview .gsc-overview-table td {
+    border: 0;
+    padding: 4px 0;
   }
 }

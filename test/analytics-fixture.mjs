@@ -1,3 +1,4 @@
+import { searchConsoleSetup } from '../lib/search-console-setup.mjs';
 export const analyticsAccount = '11111111-1111-4111-8111-111111111111';
 export const analyticsSite = {
   id: analyticsAccount,
@@ -97,15 +98,17 @@ export function createAnalyticsFixture() {
     unlinked: false,
     noAccount: false
   };
-  const requests = [];
+  const requests = [],
+    searchStatus = {};
   function respond(url, request) {
     const path = url.pathname;
     let body = request.postDataJSON?.();
     requests.push({ path, query: Object.fromEntries(url.searchParams), body });
     if (path === '/api/ui-theme') return { accent: '#2465E8' };
     if (path === '/api/build-info') return { version: '1.9.0', build: 'analytics-fixture' };
-    if (path === '/api/search-console/status')
-      return {
+    if (path === '/api/search-console/status') {
+      const status = {
+        site_enabled: true,
         configured: true,
         client_id: 'fixture',
         redirect_uri: 'https://siteops.test/api/search-console/oauth/callback',
@@ -122,6 +125,10 @@ export function createAnalyticsFixture() {
               last_complete_date: iso(27)
             }
       };
+      Object.assign(status, searchStatus);
+      status.setup = searchConsoleSetup(status);
+      return status;
+    }
     if (path.includes('/performance')) {
       if (failures.gsc) return { http: 503, message: 'Google-Daten vorübergehend nicht verfügbar.' };
       const dimension = url.searchParams.get('dimension') || 'query',
@@ -243,5 +250,5 @@ export function createAnalyticsFixture() {
     }
     return [];
   }
-  return { respond, failures, requests };
+  return { respond, failures, requests, searchStatus };
 }

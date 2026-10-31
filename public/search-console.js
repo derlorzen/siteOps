@@ -14,10 +14,14 @@
     dailyFailed = false,
     cachedReport = null,
     reportController,
-    tableTimer;
+    tableTimer,
+    setupState,
+    userSelected = Boolean(location.hash && ['settings', 'inspection', 'performance'].includes(location.hash.slice(1)));
   const A = window.SiteOpsAnalytics,
     metricDefinitions = A.definitions($('metrics'));
-  function selectTab(key) {
+  function selectTab(key, chosen = true) {
+    if (chosen) userSelected = true;
+    $('tab-settings').hidden = Boolean(setupState?.can_sync && key !== 'settings');
     root.querySelectorAll('[data-gsc-panel]').forEach(panel => (panel.hidden = panel.dataset.gscPanel !== key));
     root.querySelectorAll('[data-gsc-tab]').forEach(button => {
       const selected = button.dataset.gscTab === key;
@@ -31,7 +35,7 @@
   root.querySelectorAll('[role=tablist]').forEach(list =>
     list.addEventListener('keydown', event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-      const buttons = [...list.querySelectorAll('[role=tab]')],
+      const buttons = [...list.querySelectorAll('[role=tab]')].filter(button => !button.hidden),
         index = buttons.indexOf(document.activeElement);
       if (index < 0) return;
       event.preventDefault();
@@ -46,7 +50,8 @@
     })
   );
   selectTab(
-    ['performance', 'settings', 'inspection'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'performance'
+    ['performance', 'settings', 'inspection'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'performance',
+    false
   );
   const domain = root.dataset.domain;
   const propertyInput = $('link').elements.property;
@@ -66,88 +71,128 @@
     propertyInput.required = mode === 'custom';
   }
   choice.addEventListener('change', setPropertyMode);
-  const stages = [
-    ['account', 'Google-Konto verbinden', 'Verbinde dein Google-Konto mit SiteOps.'],
-    ['link', 'Website auswählen', 'Ordne diese Website einer Google-Property zu.'],
-    ['live', 'Website freigeben', 'Bestätige den Livegang dieser Website.'],
-    ['dns', 'DNS-Eintrag vorbereiten', 'Lege den Google-Bestätigungseintrag beim DNS-Anbieter an.'],
-    ['verify', 'Inhaberschaft bestätigen', 'Prüfe, ob Google den DNS-Eintrag erkannt hat.'],
-    ['property', 'Website bei Google anmelden', 'Melde die bestätigte Website bei Google an.'],
-    ['sitemap', 'Sitemap einreichen', 'Sende die Sitemap an Google.'],
-    ['sync', 'Suchdaten abrufen', 'Rufe die ersten Leistungsdaten ab.']
-  ];
+  const actionLabels = {
+    configure: 'Google-Zugang einrichten',
+    connect: 'Google-Konto verbinden',
+    link: 'Website auswählen',
+    activate: 'Websiteverwaltung öffnen',
+    live: 'Freigabe vorbereiten',
+    dns: 'DNS-Vorschau vorbereiten',
+    verify: 'Google-Bestätigung prüfen',
+    property: 'Google-Anmeldung vorbereiten',
+    google: 'Google Search Console öffnen',
+    sync: 'Suchdaten abrufen',
+    sitemap: 'Sitemap-Vorschau vorbereiten'
+  };
+  const groupFor = id =>
+    ['client', 'account'].includes(id) ? 'account-settings' : id === 'link' ? 'link-settings' : 'verification-settings';
+  function startStep(step) {
+    const group = $(groupFor(step.id));
+    group.open = true;
+    if (step.action === 'configure') {
+      $('technical').open = true;
+      $('config').elements.client_id.focus();
+    } else if (step.action === 'connect') $('connect').click();
+    else if (step.action === 'link') $('choice').focus();
+    else if (step.action === 'sync') $('sync').click();
+    else if (['live', 'dns', 'verify', 'property', 'sitemap'].includes(step.action))
+      root.querySelector('[data-preview="' + step.action + '"]').click();
+    group.scrollIntoView({ block: 'nearest' });
+  }
   function renderProgress(status) {
     const link = status.linkage?.invalidated ? null : status.linkage;
-    $('connection').dataset.state = link?.property ? 'connected' : 'missing';
-    $('connection').textContent = link?.property ? 'Property verbunden' : 'Einrichtung erforderlich';
+    setupState = status.setup;
+    $('connection').textContent = setupState?.connected ? 'Google-Verbindung eingerichtet' : 'Einrichtung noch offen';
     $('account-summary').textContent =
       status.accounts?.map(account => account.email).join(', ') || 'Noch kein Konto verbunden';
-    $('link-summary').textContent = link?.property || 'Noch nicht verknüpft';
+    $('link-summary').textContent = link?.property || 'Noch nicht zugeordnet';
     $('verification-summary').textContent =
-      link?.sitemap_status === 'submitted'
-        ? 'Sitemap eingereicht'
+      setupState?.steps.find(step => step.id === 'property')?.state === 'complete'
+        ? 'Google-Zugriff vorhanden'
         : link?.verified_at
           ? 'Inhaberschaft bestätigt'
           : 'Freigaben prüfen';
-    if (!root.dataset.setupInitialized) {
-      $('account-settings').open = !(status.accounts || []).length;
-      $('link-settings').open = Boolean(status.accounts?.length && !link?.property);
-      $('verification-settings').open = Boolean(link?.property && !link?.last_sync_at);
-      root.dataset.setupInitialized = 'true';
+    $('connect').disabled = !status.configured;
+    $('connect').textContent = status.accounts?.length ? 'Weiteres Google-Konto verbinden' : 'Google-Konto verbinden';
+    $('progress-list').replaceChildren();
+    $('completed-steps').replaceChildren();
+    $('next-step').replaceChildren();
+    if (!setupState) {
+      $('progress-title').textContent = 'Einrichtungsstatus nicht verfügbar';
+      $('progress-help').textContent = 'Lade die Ansicht erneut, um die noch fehlenden Schritte zu ermitteln.';
+      $('sync').disabled = true;
+      return;
     }
-    const accountReady = (status.accounts || []).length > 0;
-    const linked = Boolean(link?.property);
-    const live = Boolean(link?.live_approved_at);
-    const verified = Boolean(link?.verified_at);
-    const registered = Boolean(
-      link?.permission_level && !['Keine', 'siteUnverifiedUser'].includes(link.permission_level)
-    );
-    const sitemap = link?.sitemap_status === 'submitted';
-    const synced = Boolean(link?.last_sync_at);
-    // DNS has no separately persisted success state: do not claim it is complete.
-    const completed = [
-      accountReady,
-      linked,
-      live,
-      Boolean(link?.dns_applied) || verified,
-      verified,
-      registered,
-      sitemap,
-      synced
-    ];
-    const current = completed.findIndex(done => !done);
-    const active = current < 0 ? stages.length : current + 1;
+    const missing = setupState.steps.filter(step => step.required && step.state !== 'complete'),
+      next = setupState.steps.find(step => step.id === setupState.next_step);
+    $('progress').hidden = setupState.complete;
+    $('setup-complete').hidden = !setupState.complete;
     $('progress-title').textContent =
-      current < 0
-        ? 'Einrichtung abgeschlossen'
-        : 'Aktueller Schritt ' + active + ' von ' + stages.length + ': ' + stages[current][1];
+      missing.length === 1 ? 'Noch ein Schritt offen' : missing.length + ' Schritte sind noch offen';
     $('progress-help').textContent =
-      current < 0
-        ? 'Alle erfassten Einrichtungsschritte sind abgeschlossen.'
-        : stages[current][2] + (link?.reason ? ' Hinweis: ' + link.reason : '');
-    $('progress-list').replaceChildren(
-      ...stages.map(([key, label], index) => {
-        const item = document.createElement('li');
-        item.textContent = (completed[index] ? '✓ ' : index === current ? '→ ' : '○ ') + label;
-        item.className = completed[index] ? 'is-done' : index === current ? 'is-current' : 'is-upcoming';
-        if (index === current) item.setAttribute('aria-current', 'step');
-        return item;
-      })
-    );
+      'Diese Schritte fehlen für diese Website. Externe Änderungen werden erst nach eigener Vorschau und Freigabe ausgeführt.';
+    for (const step of setupState.steps) {
+      const li = document.createElement('li'),
+        title = document.createElement('strong'),
+        copy = document.createElement('p'),
+        state = document.createElement('span');
+      li.dataset.step = step.id;
+      li.dataset.state = step.state;
+      title.textContent = step.title;
+      copy.textContent = step.description;
+      state.className = 'gsc-step-state';
+      state.textContent =
+        step.state === 'complete'
+          ? 'Erledigt'
+          : step.state === 'not_required'
+            ? 'Nicht erforderlich'
+            : step.state === 'optional'
+              ? 'Optional'
+              : step.state === 'conditional'
+                ? 'Je nach Website'
+                : step.id === next?.id
+                  ? 'Als Nächstes'
+                  : step.can_start
+                    ? 'Noch offen'
+                    : 'Danach';
+      li.append(title, state, copy);
+      if (step.id === next?.id) li.setAttribute('aria-current', 'step');
+      (step.required && step.state !== 'complete' ? $('progress-list') : $('completed-steps')).append(li);
+    }
+    if (next?.can_start) {
+      const control = document.createElement(['activate', 'google'].includes(next.action) ? 'a' : 'button');
+      control.textContent = actionLabels[next.action] || next.title;
+      if (next.action === 'activate') control.href = '/sites/' + encodeURIComponent(site);
+      else if (next.action === 'google') {
+        control.href = 'https://search.google.com/search-console/';
+        control.target = '_blank';
+        control.rel = 'noopener noreferrer';
+      } else {
+        control.type = 'button';
+        control.className = 'analytics-primary';
+        control.onclick = () => startStep(next);
+      }
+      $('next-step').append(control);
+    }
     root.querySelectorAll('[data-preview]').forEach(button => {
-      const step = stages.findIndex(row => row[0] === button.dataset.preview);
-      const done = completed[step];
-      button.classList.toggle('is-next', step === current);
-      button.classList.toggle('is-done', done);
-      button.disabled = !linked || (step > current && !done);
-      button.title = done
-        ? 'Bereits erledigt – bei Bedarf erneut prüfen'
-        : button.disabled
-          ? 'Bitte zuerst die vorherigen Schritte abschließen'
-          : 'Nächster Schritt';
+      const step = setupState.steps.find(row => row.id === button.dataset.preview);
+      button.disabled = !step?.can_review || (step.id === 'property' && step.action !== 'property');
+      button.classList.toggle('is-next', step?.id === next?.id);
+      button.classList.toggle('is-done', step?.state === 'complete' || step?.state === 'not_required');
+      button.title = button.disabled
+        ? 'Für diese Einrichtung bereits erledigt, nicht erforderlich oder noch nicht freigegeben'
+        : 'Erstellt zunächst eine prüfbare Vorschau';
     });
-    $('sync').disabled = !registered;
-    $('connect').textContent = accountReady ? 'Weiteres Google-Konto verbinden' : 'Google-Konto verbinden';
+    $('sync').disabled = !setupState.can_sync;
+    $('manage').textContent = link?.sync_error ? 'Abruf und Verbindung prüfen' : 'Verbindung verwalten';
+    if ((!root.dataset.statusInitialized || !userSelected) && !setupState.complete && !link?.last_sync_at)
+      selectTab('settings', false);
+    else if (!userSelected) selectTab('performance', false);
+    else
+      $('tab-settings').hidden = Boolean(
+        setupState.can_sync && $('tab-settings').getAttribute('aria-selected') !== 'true'
+      );
+    root.dataset.statusInitialized = 'true';
   }
   const message = (value, bad = false) => {
     $('message').textContent = value;
@@ -568,6 +613,7 @@
     message('Google-Daten werden synchronisiert…');
     await api('sites/' + encodeURIComponent(site) + '/sync', {});
     await load();
+    selectTab('performance');
   });
   action($('unlink'), async () => {
     if (confirm('Lokale Verknüpfung für ' + site + ' entfernen? Google und DNS bleiben bestehen.')) {

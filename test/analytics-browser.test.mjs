@@ -108,7 +108,8 @@ test(
     await page.locator('#gsc-inspect input').fill('https://nordlicht.example.test/leistungen');
     await page.getByRole('button', { name: 'URL prüfen', exact: true }).click();
     await page.getByRole('heading', { name: 'Die URL ist bei Google indexiert', exact: true }).waitFor();
-    await page.locator('[data-gsc-tab=settings]').click();
+    await page.locator('[data-gsc-tab=performance]').click();
+    await page.locator('#gsc-manage').click();
     assert.equal(
       await page.locator('#gsc-account-settings').getAttribute('open'),
       null,
@@ -124,9 +125,8 @@ test(
     await page.locator('#gsc-data-error').waitFor({ state: 'hidden' });
     fixture.failures.unlinked = true;
     await page.reload();
-    await page.locator('#gsc-empty').waitFor({ state: 'visible' });
+    await page.locator('#gsc-progress-list li').first().waitFor();
     assert.equal(await page.locator('#gsc-report').isVisible(), false);
-    await page.locator('[data-gsc-go=settings]').click();
     assert.equal(await page.locator('#gsc-panel-settings').isVisible(), true);
     fixture.failures.unlinked = false;
     await page.goto('https://siteops.test/youtube#analytics');

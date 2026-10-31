@@ -78,6 +78,14 @@ export function searchConsoleFixture(options = {}) {
         return [{ affectedRows: 1 }];
       }
       if (sql.startsWith('SELECT * FROM search_console_sites')) return [[linkage].filter(Boolean)];
+      if (sql.startsWith('SELECT sc.site_id'))
+        return [
+          [
+            linkage && accounts.get(linkage.account_id)?.subject === a[0]
+              ? { ...linkage, current_domain: site.domain, site_enabled: site.enabled }
+              : null
+          ].filter(Boolean)
+        ];
       if (sql.startsWith('SELECT * FROM sites')) return [[{ ...site }]];
       if (sql.startsWith('SELECT g.site_id'))
         return [[linkage?.live_approved_at ? { site_id: site.id } : null].filter(Boolean)];
