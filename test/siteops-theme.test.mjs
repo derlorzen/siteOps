@@ -128,7 +128,7 @@ test('both UI stylesheets reference the shared accent palette, not hardcoded vio
   const shared = await readFile(new URL('../public/siteops-theme.css', import.meta.url), 'utf8');
   assert.match(shared, /--siteops-accent-strong/);
   assert.match(shared, /--siteops-accent-soft/);
-  for (const path of ['../public/crm-app.css', '../public/ops-workspace.css']) {
+  for (const path of ['../public/crm-app.css', '../public/workspace-shell.css']) {
     const stylesheet = await readFile(new URL(path, import.meta.url), 'utf8');
     assert.match(stylesheet, /var\(--siteops-accent/);
     assert.doesNotMatch(stylesheet, /#6856da/i);

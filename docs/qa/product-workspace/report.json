@@ -1,0 +1,581 @@
+{
+  "fixture": "Actual renderers with simulated read APIs; no external provider or real client verification",
+  "viewports": [
+    {
+      "path": "/",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/websites",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/setup",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/files",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/seo",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/tests",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/billing",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/billing/projects/11111111-1111-4111-8111-111111111111",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/billing/customers",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/billing/time",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/billing/invoices",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms/installations/11111111-1111-4111-8111-111111111111",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/hosting",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/coolify",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/video-suite",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/youtube",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/search-console",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/tools",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/settings",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/mcp-info",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/ai",
+      "width": 360,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/websites",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/setup",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/files",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/seo",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/tests",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/billing",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/billing/projects/11111111-1111-4111-8111-111111111111",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/billing/customers",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/billing/time",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/billing/invoices",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms/installations/11111111-1111-4111-8111-111111111111",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/hosting",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/coolify",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/video-suite",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/youtube",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/search-console",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/tools",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/settings",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/mcp-info",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/ai",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/websites",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/setup",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/files",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/seo",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/tests",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/billing",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/billing/projects/11111111-1111-4111-8111-111111111111",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/billing/customers",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/billing/time",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/billing/invoices",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms/installations/11111111-1111-4111-8111-111111111111",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/hosting",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/coolify",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/video-suite",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/youtube",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/search-console",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/tools",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/settings",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/mcp-info",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/ai",
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/websites",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/setup",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/files",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/seo",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/tests",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/billing",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/billing/projects/11111111-1111-4111-8111-111111111111",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/billing/customers",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/billing/time",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/billing/invoices",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms/installations/11111111-1111-4111-8111-111111111111",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/hosting",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/coolify",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/video-suite",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/youtube",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/search-console",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/tools",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/settings",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/mcp-info",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/ai",
+      "width": 1280,
+      "overflow": false
+    },
+    {
+      "path": "/",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/websites",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/setup",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/files",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/seo",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/tests",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/billing",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/billing/projects/11111111-1111-4111-8111-111111111111",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/billing/customers",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/billing/time",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/billing/invoices",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/lorzcms/installations/11111111-1111-4111-8111-111111111111",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/hosting",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/coolify",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/video-suite",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/youtube",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/sites/nordlicht/search-console",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/tools",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/settings",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/mcp-info",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "path": "/ai",
+      "width": 1440,
+      "overflow": false
+    }
+  ],
+  "errors": []
+}

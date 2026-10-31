@@ -10,15 +10,15 @@ test('search remains in the right-side actions of both desktop and mobile header
   const ops = await load('../public/ops-workspace.js');
   const crm = await load('../public/crm-app.js');
   const searchCss = await load('../public/workspace-search.css');
-  const opsCss = await load('../public/ops-workspace.css');
   const crmCss = await load('../public/crm-app.css');
   for (const js of [search, ops, crm]) assert.doesNotThrow(() => new vm.Script(js));
   assert.match(search, /header\.querySelector\('\.crm-top-actions, \.ops-top-actions'\)/);
   assert.match(search, /actions\.prepend\(trigger\)/);
-  assert.match(ops, /class="ops-top-actions"/);
+  const shell = await load('../lib/workspace-shell.mjs');
+  assert.match(shell, /class="ops-top-actions"/);
   assert.match(crm, /class="crm-top-actions"/);
   assert.match(searchCss, /width:42px;min-width:42px/);
-  assert.match(opsCss, /\.ops-workspace-bar \.ops-top-actions/);
+  assert.match(await load('../public/workspace-shell.css'), /\.siteops-topbar \.ops-top-actions/);
   assert.match(crmCss, /#crmRoot \.crm-topbar\{flex-direction:row;flex-wrap:nowrap/);
 });
 

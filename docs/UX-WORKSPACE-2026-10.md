@@ -1,27 +1,39 @@
-# SiteOps – UX- und Dashboard-Standard (Oktober 2026)
+# SiteOps – Produkt- und UX-Standard
 
-## Gemeinsame Leitlinien
-- Priorität vor Dekoration: Status, nächste Aktion und Ergebnis sollen ohne Fachbegriffe verständlich sein.
-- Keine erfundenen Metriken, Preise oder Erfolgsmeldungen. Externe APIs können ausfallen; der Zustand heißt dann „Status unbekannt“ statt „0“.
-- Die Website-Übersicht bleibt die zentrale Einstiegsseite. Suchen, Filtern und Schnellzugriffe sind unmittelbar erreichbar.
-- Jede datenverändernde Aktion benötigt eine eindeutige Vorschau, Sicherheitsprüfung und ausdrückliche Freigabe. Read-only-Aktionen dürfen einfacher sein.
-- Zugänglichkeit: durchgehende Fokusmarkierung, semantische Statusmeldung, Tabellen mit horizontalem Scrollen, Bedienbarkeit auf 390px und weniger Animation bei reduzierter Bewegung.
-- Weniger Fachjargon: „Website bei Google bestätigen“ statt unkommentierter OAuth-/Property-Begriffe.
+Stand: 30.10.2026. [Audit](TRANSFORMATION-AUDIT.md), [Umsetzung](PRODUCT-TRANSFORMATION.md), [Abdeckungsmatrix](UI-MCP-COVERAGE.md).
 
-## Bereits im Quellcode umgesetzt
-- Portfolio-Kennzahlen für Websites, Projektzuordnung, Search-Console-Verifizierung und erkennbaren Handlungsbedarf.
-- Website- und Kundenfilter; Suchfunktion ohne Neuladen.
-- Schnelleinstiege zu Kunden/Projekten, Tools, Video Suite, Search Console und Hosting.
-- Website-Detailnavigation mit direktem Search-Console-Reiter.
-- Einheitliche, responsive Fokus-, Formular- und Tabellenregeln im gemeinsamen Workspace.
-- Explizite Kennzeichnung unbekannter Integrationszustände.
+## Aufgaben und Navigation
 
-## Weitere funktionale Prüfpunkte
-1. **KI-Assistent und Kosten**: zentrale OpenAI-Konfiguration, Token-/Kostenledger, konfigurierbares Monatslimit sowie Änderungsvorschau vor Veröffentlichung. Das vorhandene Datenbankschema für Nutzungskosten allein implementiert noch keinen einsatzfähigen Assistenten.
-2. **Video Suite**: pro Produktionsstufe klare Statusmeldungen und nachvollziehbarer Wiedereinstieg nach Unterbrechung.
-3. **Hosting & DNS**: genau ein klarer Primärschritt pro Konfigurationsvorgang; keine „erfolgreich“-Meldung vor bestätigtem Provider-Ergebnis.
-4. **Kunden & Projekte**: Trennung von Arbeit, Risiken und erledigten Aufgaben sowie deutliche nächste Aktion.
-5. **SEO und Monitoring**: Fehlerfundstellen und „Mit KI beheben“ erst dann anbieten, wenn echte Vorschau und Freigabe implementiert sind.
-6. **Systemweite Qualität**: Browser-Smoke-Tests mit echten Klickwegen für Mobilgeräte, Formulare und Tastaturbedienung.
+- `/` ist die Arbeitszentrale: Handlungsbedarf, fällige Aufgaben und letzte Aktivitäten aus tatsächlichen Daten. Ausgefallene Datenquellen werden ausdrücklich ausgewiesen.
+- `/websites` verwaltet Websites in einer durchsuchbaren, sortierbaren und paginierten Liste mit Kunde, Projekt und nächster Aktion. Mobile Ansichten bewahren Identität und Handlung.
+- `/sites/:slug` verbindet Betrieb, Dateien, SEO, Search Console, Browserprüfungen und Bericht. Technische Verbindung, Prüfregeln und Sicherungsregeln sind gezielt aufklappbar.
+- `/billing` zeigt vergleichbare Kundenprojekte als Liste. Im Projekt stehen Aufgaben und Board vor aufklappbaren Website- und Abrechnungsdetails. Tastaturbedienbare Statusauswahl ergänzt Drag-and-drop.
+- Die Video Suite besitzt einen Produktionspfad. Globale Navigation wechselt den Arbeitsbereich, lokale Navigation die Produktionsphase.
+- `/ai` erklärt gemessene Tokens, reserviertes Budget, unbekannte Kosten und die Reichweite der Limits.
+- `/mcp-info` verwaltet Katalog, Rechte, persönliche Freigaben, bekannte Verbindungen und den lokalen Protokolltest.
 
-Die konkreten Daten aller integrierten Dienste bleiben führend; Design und Statuslogik dürfen keine Vollständigkeit oder Echtzeitdaten vortäuschen.
+Die zentrale Navigation stammt aus `lib/workspace-shell.mjs`. Die Anwendungshülle wird serverseitig erzeugt. JavaScript ergänzt Interaktion und Kontext.
+
+## Gestaltung und Komponenten
+
+Die zentrale Token- und Komponentenquelle ist `public/workspace-shell.css`; Akzentfarbe und Farbwähler liegen in `siteops-theme.css` und `siteops-theme.js`. Modulstyles enthalten die fachlichen Darstellungen. Weitere globale Override-Dateien vermeiden.
+
+Systemschrift, Dunkelblau, weiße Arbeitsflächen, 15px Leseschrift, 14px Bedienelemente und 12px Metadaten bilden die Grundlage. Seitentitel haben 28px, Panels 8px und Bedienelemente 6px Radius. Zustände tragen zusätzlich zur Farbe eine Textbezeichnung. Die globale Navigation nutzt einen gemeinsamen SVG-Satz.
+
+`product-ui.mjs` stellt Seitentitel, Zustände und Listenbausteine bereit. Gemeinsame Skripte ergänzen Fehlerrückmeldungen, native Inline-Validierung, Fokus, zugängliche Scrollbereiche, Freigabedialoge und Änderungsschutz für entsprechend markierte Formulare.
+
+Navigation öffnet mit 400ms und schließt mit 350ms. `prefers-reduced-motion` schaltet Bewegung aus. Keine dekorativen Daueranimationen oder erfundenen Fortschrittsanzeigen.
+
+## Verlässliche Zustände
+
+„Überwachung an“ bestätigt keine funktionierende Website. `monitoringState()` unterscheidet erreichbare, fehlgeschlagene, unbekannte, veraltete und deaktivierte Prüfungen. Portfolio, Website und Projektübersicht verwenden dieselbe Logik.
+
+Fehlende Daten werden nicht als erfolgreiche Nullwerte ausgegeben. Fehlgeschlagenes Nachladen lässt vorhandene Inhalte bestehen und bietet eine Wiederholung an. Eine Freigabe ist keine Ausführung. Eine übertragene Git-Datei bestätigt keinen Live-Deploy. Unklare Ergebnisse werden als unbestätigt beschrieben.
+
+Einfache lokale Bearbeitung bleibt direkt. Externe, finanzielle, kostenpflichtige und destruktive Änderungen benötigen eine konkrete Vorschau und eine serverseitig gebundene persönliche Freigabe. Dieselbe Grenze gilt für REST und MCP.
+
+## Verifikation
+
+Der Produkttest verwendet tatsächliche Serverrenderer bei 360, 390, 768, 1280 und 1440px. Mobil und Desktop erhalten zusätzlich axe-Prüfungen sowie Klick- und Tastaturabläufe. Simulierte Providerantworten bestätigen keine reale Verbindung oder vollständige WCAG-Konformität.
+
+Neue fachliche API-Routen benötigen einen Eintrag in `lib/ui-capabilities.json`, einen vorhandenen MCP-Adapter oder eine konkrete begründete Ausnahme. Der Abdeckungstest und die generierte Matrix zeigen Abweichungen.

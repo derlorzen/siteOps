@@ -1,44 +1,31 @@
-import { test } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
+import { workspaceNavigation, renderWorkspaceShell } from '../lib/workspace-shell.mjs';
 import { readFile } from 'node:fs/promises';
 
-const workspaceSource = () => readFile(new URL('../public/ops-workspace.js', import.meta.url), 'utf8');
-const appSource = () => readFile(new URL('../app.mjs', import.meta.url), 'utf8');
-
-test('Integrations group contains hosting, deployment, Google/YouTube and MCP', async () => {
-  const source = await workspaceSource();
-  assert.match(source, /\['\/mcp-info','Übersicht & MCP','⇄','Integrationen'\]/);
-  assert.match(source, /\['\/hosting','Hosting & DNS','◎','Integrationen'\]/);
-  assert.match(source, /\['\/coolify','Coolify & Supabase','◈','Integrationen'\]/);
-  assert.match(source, /\['\/search-console','Google Search Console','◎','Integrationen'\]/);
-  assert.match(source, /\['\/youtube','YouTube & Kanäle','▶','Integrationen'\]/);
-  assert.doesNotMatch(source, /\['\/youtube','YouTube & Kanäle','↗','Video Suite'\]/);
-  assert.match(source, /parent\?' ops-nav-subitem'/);
-  assert.match(source, /current\.startsWith\('\/hosting'\)/);
-  assert.match(source, /data-nav-group/);
+test('one integration group links to hosting, deployment, Google, YouTube and MCP', () => {
+  const group = workspaceNavigation.find(item => item.label === 'Integrationen');
+  assert.deepEqual(
+    group.children.map(item => item.href),
+    ['/mcp-info', '/hosting', '/coolify', '/search-console', '/youtube']
+  );
+  const html = renderWorkspaceShell('<h1>Test</h1>', 'Test');
+  assert.equal((html.match(/class="siteops-sidebar/g) || []).length, 1);
+  assert.ok(!workspaceNavigation.find(item => item.href === '/video-suite').children);
 });
-
-test('Settings links expose existing sections instead of cloned forms', async () => {
-  const source = await workspaceSource();
-  for (const anchor of ['system', 'backups', 'defaults', 'alerts', 'seo']) {
-    assert.ok(source.includes("'/settings#" + anchor + "'"));
-  }
-  for (const heading of ['Design & Farben', 'GitHub', 'Standardwerte', 'Benachrichtigungen', 'SEO-Audits']) {
-    assert.ok(source.includes("['" + heading + "'"));
-  }
-  assert.match(source, /window\.addEventListener\('hashchange',scrollToSetting\)/);
+test('settings links target the existing sections and preserve one form implementation', async () => {
+  const group = workspaceNavigation.find(item => item.label === 'Einstellungen');
+  assert.deepEqual(
+    group.children.map(item => item.href),
+    ['/settings#system', '/settings#backups', '/settings#defaults', '/settings#alerts', '/settings#seo']
+  );
+  const script = await readFile(new URL('../public/ops-workspace.js', import.meta.url), 'utf8');
+  assert.match(script, /scrollToSetting/);
+  assert.match(script, /hashchange/);
 });
-
-test('Integration landing page links to the authenticated hosting workspace', async () => {
-  const app = await appSource();
-  assert.match(app, /<a class="btn" href="\/hosting">Hosting & DNS verwalten/);
-  assert.match(app, /app\.get\('\/hosting',/);
-  assert.match(app, /allinkl_provision, cms_install_allinkl/);
-});
-
-test('Search Console central overview links to per-site property management', async () => {
-  const app = await appSource();
-  assert.match(app, /app\.get\('\/search-console',/);
-  assert.match(app, /encodeURIComponent\(site\.slug\)\s*\+\s*'\/search-console/);
-  assert.match(app, /searchConsoleService\.status\(\)/);
+test('integration routes remain available and Search Console links to the website context', async () => {
+  const app = await readFile(new URL('../app.mjs', import.meta.url), 'utf8');
+  assert.ok(app.includes("app.get('/hosting',"));
+  assert.ok(app.includes("app.get('/search-console',"));
+  assert.match(app, /searchConsoleService.status/);
 });

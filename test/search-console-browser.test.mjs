@@ -32,7 +32,10 @@ test(
     );
     await app.listen({ host: '127.0.0.1', port: 0 });
     t.after(() => app.close());
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: process.env.SUITE_CHROMIUM_EXECUTABLE || undefined
+    });
     t.after(() => browser.close());
     const page = await browser.newPage();
     const errors = [];

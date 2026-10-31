@@ -17,17 +17,28 @@
   const valid = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
   const normal = value => value.toUpperCase();
 
-  function foreground(hex) {
+  function luminance(hex) {
     const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
     const lum = rgb.map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
     const y = 0.2126 * lum[0] + 0.7152 * lum[1] + 0.0722 * lum[2];
-    return (1.05 / (y + 0.05)) >= ((y + 0.05) / 0.05) ? '#FFFFFF' : '#111827';
+    return y;
+  }
+  const mix = (hex, target, weight) => '#' + [1,3,5].map(i=>Math.round(parseInt(hex.slice(i,i+2),16)*(1-weight)+parseInt(target.slice(i,i+2),16)*weight).toString(16).padStart(2,'0')).join('');
+  function foreground(hex) {
+    const y=luminance(hex), dark=luminance('#111827');
+    return (1.05 / (y + 0.05)) >= ((y + 0.05) / (dark+0.05)) ? '#FFFFFF' : '#111827';
   }
   function applyColor(accent) {
     if (!valid(accent)) return;
     const root = document.documentElement;
     root.style.setProperty('--siteops-accent', accent);
-    root.style.setProperty('--siteops-on-accent', foreground(accent));
+    const ink=foreground(accent);
+    root.style.setProperty('--siteops-on-accent', ink);
+    let strong=accent;
+    for(let weight=0;1.05/(luminance(strong)+0.05)<7&&weight<=1;weight+=.05)strong=mix(accent,'#111827',weight);
+    root.style.setProperty('--siteops-accent-strong', strong);
+    root.style.setProperty('--siteops-accent-ring', strong);
+    root.style.setProperty('--siteops-accent-hover', mix(accent,ink==='#FFFFFF'?'#000000':'#FFFFFF',.08));
   }
   function getCached() {
     try {

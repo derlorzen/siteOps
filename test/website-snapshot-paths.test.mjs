@@ -36,6 +36,7 @@ test('absolute-style preview paths use the existing full-backup entry for snapsh
     treePaths = [];
   let closed = 0;
   t.mock.method(FtpAdapter, 'connect', async () => ({
+    list: async () => [{ name: 'index.php', type: 'file' }],
     exists: async path => {
       ftpPaths.push(path);
       return true;
