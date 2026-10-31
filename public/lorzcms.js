@@ -19,6 +19,18 @@
     if (!response.ok) throw Error(payload.message || payload.error || 'HTTP ' + response.status);
     return payload;
   };
+  document.querySelectorAll('[data-cms-recovery]').forEach(button=>button.onclick=async()=>{
+    const box=byId('cmsRecoveryResult');button.disabled=true;box.textContent='Persönliche Freigabe wird angefordert …';
+    try{const result=await send('installations/'+encodeURIComponent(button.dataset.cmsRecovery)+'/admin-recovery');
+      if(!result.ok||!result.temporaryPassword)throw Error('Die Passwortänderung konnte nicht bestätigt werden. Prüfe den Installationsverlauf.');
+      box.replaceChildren();const message=document.createElement('p');message.textContent='Passwortänderung vom CMS bestätigt. Melde dich jetzt an und ändere das temporäre Passwort.';
+      const label=document.createElement('label');label.textContent='Temporäres Passwort';const input=document.createElement('input');input.type='password';input.readOnly=true;input.autocomplete='off';input.value=result.temporaryPassword;label.append(input);
+      const reveal=document.createElement('button');reveal.type='button';reveal.className='ghost';reveal.textContent='Passwort anzeigen';reveal.onclick=()=>{input.type=input.type==='password'?'text':'password';reveal.textContent=input.type==='password'?'Passwort anzeigen':'Passwort verbergen';};
+      const account=document.createElement('p');account.textContent='CMS-Konto: '+result.email;
+      const link=document.createElement('a');link.href=result.loginUrl;link.target='_blank';link.rel='noopener noreferrer';link.textContent='CMS-Anmeldung öffnen';
+      box.append(message,account,label,reveal,link);window.addEventListener('pagehide',()=>{input.value='';box.replaceChildren();},{once:true});
+    }catch(error){box.textContent=error.message;}finally{button.disabled=false;}
+  });
   const action = async (button, task, { reload = true } = {}) => {
     button.disabled = true;
     show('Anfrage wird verarbeitet …');

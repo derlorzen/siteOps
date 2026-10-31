@@ -1,0 +1,890 @@
+{
+  "GET /api/workspace/overview": {
+    "tools": ["workspace_overview"]
+  },
+  "GET /api/workspace/websites": {
+    "tools": ["websites_search"]
+  },
+  "GET /api/workspace/search": {
+    "tools": ["workspace_search"]
+  },
+  "GET /api/workspace/projects/:id/overview": {
+    "tools": ["project_overview"]
+  },
+  "GET /api/workspace/activity": {
+    "tools": ["workspace_activity"]
+  },
+  "GET /api/mcp/capabilities": {
+    "tools": ["capabilities_list"]
+  },
+  "GET /api/mcp/approvals": {
+    "tools": ["action_status"],
+    "reason": "Das Dashboard listet offene Freigaben für die persönliche Prüfung. MCP kann mit action_status ausschließlich den Zustand eigener, bereits bekannter Freigaben abfragen."
+  },
+  "GET /api/lorzcms/overview": {
+    "tools": ["cms_overview"]
+  },
+  "POST /api/lorzcms/releases/bundled": {
+    "tools": ["cms_release_bundled"]
+  },
+  "POST /api/lorzcms/installations": {
+    "tools": ["cms_install"]
+  },
+  "POST /api/lorzcms/installations/attach": {
+    "tools": ["cms_attach"]
+  },
+  "POST /api/lorzcms/updates": {
+    "tools": ["cms_update_schedule"]
+  },
+  "POST /api/lorzcms/installations/:id/inspect": {
+    "tools": ["cms_inspect"]
+  },
+  "POST /api/lorzcms/jobs/:id/rollback": {
+    "tools": ["cms_rollback"]
+  },
+  "POST /api/lorzcms/jobs/:id/cancel": {
+    "tools": ["cms_job_cancel"]
+  },
+  "POST /api/lorzcms/jobs/:id/retry": {
+    "tools": ["cms_job_retry"]
+  },
+  "GET /api/billing/settings": {
+    "tools": ["billing_settings_get"]
+  },
+  "POST /api/billing/settings": {
+    "tools": ["billing_settings_update"]
+  },
+  "GET /api/billing/customers": {
+    "tools": ["customers_list"]
+  },
+  "POST /api/billing/customers": {
+    "tools": ["customer_create"]
+  },
+  "PATCH /api/billing/customers/:id": {
+    "tools": ["customer_update"]
+  },
+  "GET /api/billing/projects": {
+    "tools": ["projects_list"]
+  },
+  "POST /api/billing/projects": {
+    "tools": ["project_create"]
+  },
+  "PATCH /api/billing/projects/:id": {
+    "tools": ["project_update"]
+  },
+  "GET /api/billing/boards/:projectId": {
+    "tools": ["project_board"]
+  },
+  "GET /api/billing/tasks": {
+    "tools": ["tasks_list"]
+  },
+  "POST /api/billing/tasks": {
+    "tools": ["task_create"]
+  },
+  "PATCH /api/billing/tasks/:id": {
+    "tools": ["task_update"]
+  },
+  "GET /api/billing/entries": {
+    "tools": ["time_entries"]
+  },
+  "POST /api/billing/entries": {
+    "tools": ["time_entry_create"]
+  },
+  "PATCH /api/billing/entries/:id": {
+    "tools": ["time_entry_update"]
+  },
+  "DELETE /api/billing/entries/:id": {
+    "tools": ["time_entry_delete"]
+  },
+  "POST /api/billing/timer/start": {
+    "tools": ["timer_start"]
+  },
+  "POST /api/billing/timer/:id/stop": {
+    "tools": ["timer_stop"]
+  },
+  "GET /api/billing/invoices": {
+    "tools": ["invoices_list"]
+  },
+  "POST /api/billing/invoices": {
+    "tools": ["invoice_draft_create"]
+  },
+  "GET /api/billing/invoices/:id": {
+    "tools": ["invoice_get"]
+  },
+  "DELETE /api/billing/invoices/:id": {
+    "tools": ["invoice_draft_discard"]
+  },
+  "POST /api/billing/invoices/:id/issue": {
+    "tools": ["invoice_issue"]
+  },
+  "POST /api/billing/invoices/:id/pay": {
+    "tools": ["invoice_mark_paid"]
+  },
+  "POST /api/billing/invoices/:id/cancel": {
+    "tools": ["invoice_cancel"]
+  },
+  "POST /api/billing/invoices/:id/send": {
+    "tools": ["invoice_send"]
+  },
+  "GET /api/billing/due": {
+    "tools": ["tasks_due"]
+  },
+  "GET /api/billing/templates": {
+    "tools": ["project_templates"]
+  },
+  "GET /api/billing/tasks/:id/detail": {
+    "tools": ["task_get"]
+  },
+  "GET /api/billing/projects/:projectId/recurring": {
+    "tools": ["project_recurring_rules"]
+  },
+  "GET /api/billing/invoices/:id/mail-history": {
+    "tools": ["invoice_mail_history"]
+  },
+  "GET /api/billing/datev/:year.csv": {
+    "tools": ["invoice_datev_export"]
+  },
+  "GET /api/billing/archive-manifest/:year": {
+    "tools": ["invoice_archive_manifest"]
+  },
+  "POST /api/billing/projects/:projectId/template": {
+    "tools": ["project_template_apply"]
+  },
+  "POST /api/billing/tasks/:id/checklist": {
+    "tools": ["task_checklist_add"]
+  },
+  "PATCH /api/billing/tasks/:id/checklist/:itemId": {
+    "tools": ["task_checklist_update"]
+  },
+  "DELETE /api/billing/tasks/:id/checklist/:itemId": {
+    "tools": ["task_checklist_remove"]
+  },
+  "POST /api/billing/tasks/:id/comments": {
+    "tools": ["task_comment_add"]
+  },
+  "POST /api/billing/projects/:projectId/recurring": {
+    "tools": ["project_recurring_add"]
+  },
+  "PATCH /api/billing/recurring/:id": {
+    "tools": ["project_recurring_toggle"]
+  },
+  "GET /api/site-projects": {
+    "tools": ["websites_search"]
+  },
+  "PUT /api/sites/:site/project": {
+    "tools": ["website_project_assign"]
+  },
+  "GET /api/video-suite/drafts/:id": {
+    "tools": ["video_draft_get"]
+  },
+  "POST /api/video-suite/drafts/:id": {
+    "tools": ["video_draft_save"]
+  },
+  "GET /api/video-suite/knowledge": {
+    "tools": ["video_knowledge_get"]
+  },
+  "GET /api/video-suite/settings": {
+    "tools": ["video_workspace_status"]
+  },
+  "GET /api/video-suite/conversations": {
+    "tools": ["video_conversations"]
+  },
+  "GET /api/video-suite/conversations/:id": {
+    "tools": ["video_conversation_get"]
+  },
+  "GET /api/video-suite/assets": {
+    "tools": ["video_assets"]
+  },
+  "POST /api/video-suite/chat": {
+    "tools": ["video_assistant_request"]
+  },
+  "POST /api/video-suite/thumbnails": {
+    "tools": ["video_thumbnail_generate"]
+  },
+  "GET /api/video-studio/capabilities": {
+    "tools": ["video_studio_runner_status"]
+  },
+  "GET /api/video-studio/projects": {
+    "tools": ["video_studio_projects"]
+  },
+  "GET /api/video-studio/demo-templates": {
+    "tools": ["video_studio_demo_templates"]
+  },
+  "GET /api/video-studio/jobs": {
+    "tools": ["video_studio_list_jobs"]
+  },
+  "GET /api/video-studio/jobs/:id": {
+    "tools": ["video_studio_job_status"]
+  },
+  "GET /api/video-studio/jobs/:id/downloads": {
+    "tools": ["video_studio_downloads"]
+  },
+  "GET /api/video-studio/jobs/:id/publication": {
+    "tools": ["video_publication_get"]
+  },
+  "POST /api/video-studio/projects": {
+    "tools": ["video_studio_create_project"]
+  },
+  "POST /api/video-studio/projects/:id": {
+    "tools": ["video_studio_update_project"]
+  },
+  "POST /api/video-studio/demo-templates": {
+    "tools": ["video_studio_save_demo_template"]
+  },
+  "POST /api/video-studio/demo-templates/:id": {
+    "tools": ["video_studio_save_demo_template"]
+  },
+  "POST /api/video-studio/jobs": {
+    "tools": ["video_studio_create_job"]
+  },
+  "POST /api/video-studio/jobs/:id/metadata": {
+    "tools": ["video_studio_update_metadata"]
+  },
+  "POST /api/video-studio/jobs/:id/render": {
+    "tools": ["video_studio_render_job"]
+  },
+  "POST /api/video-studio/jobs/:id/trash": {
+    "tools": ["video_job_trash"]
+  },
+  "POST /api/video-studio/jobs/:id/restore": {
+    "tools": ["video_job_restore"]
+  },
+  "GET /api/youtube/status": {
+    "tools": ["youtube_status"]
+  },
+  "GET /api/youtube/catalog": {
+    "tools": ["youtube_api_catalog"]
+  },
+  "GET /api/youtube/uploads": {
+    "tools": ["youtube_uploads"]
+  },
+  "POST /api/youtube/analytics": {
+    "tools": ["youtube_analytics"]
+  },
+  "POST /api/youtube/read": {
+    "tools": ["youtube_read"]
+  },
+  "POST /api/youtube/previews": {
+    "tools": ["youtube_change_preview"]
+  },
+  "POST /api/youtube/execute": {
+    "tools": ["youtube_change_execute"]
+  },
+  "POST /api/youtube/change-status": {
+    "tools": ["youtube_change_status"]
+  },
+  "POST /api/youtube/upload-preview": {
+    "tools": ["youtube_upload_preview"]
+  },
+  "POST /api/youtube/asset-preview": {
+    "tools": ["youtube_studio_asset_preview"]
+  },
+  "GET /api/search-console/overview": {
+    "tools": ["search_console_status"]
+  },
+  "GET /api/search-console/status": {
+    "tools": ["search_console_status"]
+  },
+  "GET /api/search-console/properties": {
+    "tools": ["search_console_properties"]
+  },
+  "GET /api/search-console/sites/:site/performance": {
+    "tools": ["search_console_performance"]
+  },
+  "POST /api/search-console/link": {
+    "tools": ["search_console_link"]
+  },
+  "POST /api/search-console/previews": {
+    "tools": ["search_console_change_preview"]
+  },
+  "POST /api/search-console/execute": {
+    "tools": ["search_console_change_execute"]
+  },
+  "POST /api/search-console/change-status": {
+    "tools": ["search_console_change_status"]
+  },
+  "POST /api/search-console/sites/:site/sync": {
+    "tools": ["search_console_sync"]
+  },
+  "POST /api/search-console/sites/:site/inspect": {
+    "tools": ["search_console_inspect_url"]
+  },
+  "POST /api/search-console/sites/:site/unlink": {
+    "tools": ["search_console_unlink"]
+  },
+  "POST /api/coolify/analyze": {
+    "tools": ["coolify_app_analyze"]
+  },
+  "POST /api/coolify/plans": {
+    "tools": ["coolify_app_plan"]
+  },
+  "POST /api/coolify/adopt": {
+    "tools": ["coolify_app_adopt"]
+  },
+  "POST /api/coolify/installations/:id/execute": {
+    "tools": ["coolify_install_execute"]
+  },
+  "POST /api/coolify/installations/:id/redeploy": {
+    "tools": ["coolify_app_redeploy"]
+  },
+  "POST /api/coolify/projects": {
+    "tools": ["coolify_project_create"]
+  },
+  "POST /api/coolify/applications": {
+    "tools": ["coolify_app_create"]
+  },
+  "POST /api/coolify/applications/:uuid/deploy": {
+    "tools": ["coolify_app_deploy"]
+  },
+  "POST /api/coolify/commands/run": {
+    "tools": ["coolify_command_run"]
+  },
+  "POST /api/coolify/applications/:uuid/restart": {
+    "tools": ["coolify_app_restart"]
+  },
+  "POST /api/coolify/supabase": {
+    "tools": ["coolify_supabase_create"]
+  },
+  "POST /api/coolify/supabase/:id/retry": {
+    "tools": ["coolify_supabase_retry"]
+  },
+  "GET /api/coolify/installations": {
+    "tools": ["coolify_installations_list"]
+  },
+  "GET /api/coolify/installations/:id": {
+    "tools": ["coolify_app_status"]
+  },
+  "GET /api/coolify/installations/:id/logs": {
+    "tools": ["coolify_install_logs"]
+  },
+  "GET /api/coolify/installations/:id/deployment": {
+    "tools": ["coolify_deployment_status"]
+  },
+  "GET /api/coolify/connections/:id/targets": {
+    "tools": ["coolify_targets"]
+  },
+  "GET /api/coolify/connections/:id/projects/:uuid/environments": {
+    "tools": ["coolify_environments_list"]
+  },
+  "GET /api/coolify/connections": {
+    "tools": ["coolify_connections"]
+  },
+  "GET /api/coolify/connections/:id/info": {
+    "tools": ["coolify_connection_info"]
+  },
+  "GET /api/coolify/connections/:id/services": {
+    "tools": ["coolify_services_list"]
+  },
+  "GET /api/coolify/connections/:id/services/:uuid": {
+    "tools": ["coolify_service_info"]
+  },
+  "GET /api/coolify/connections/:id/projects": {
+    "tools": ["coolify_projects_list"]
+  },
+  "GET /api/coolify/connections/:id/sources": {
+    "tools": ["coolify_sources_list"]
+  },
+  "GET /api/coolify/connections/:id/applications": {
+    "tools": ["coolify_apps_list"]
+  },
+  "GET /api/coolify/connections/:id/applications/:uuid": {
+    "tools": ["coolify_app_info"]
+  },
+  "GET /api/coolify/connections/:id/commands": {
+    "tools": ["coolify_command_list"]
+  },
+  "GET /api/coolify/connections/:id/applications/:uuid/logs": {
+    "tools": ["coolify_app_logs"]
+  },
+  "GET /api/coolify/supabase": {
+    "tools": ["coolify_supabase_list"]
+  },
+  "GET /api/coolify/supabase/:id": {
+    "tools": ["coolify_supabase_status"]
+  },
+  "GET /api/tools": {
+    "tools": ["tools_list"]
+  },
+  "POST /api/tools": {
+    "tools": ["tool_link_create"]
+  },
+  "PUT /api/tools/:id": {
+    "tools": ["tool_link_update"]
+  },
+  "DELETE /api/tools/:id": {
+    "tools": ["tool_link_remove"]
+  },
+  "POST /api/tools/phpcheck": {
+    "tools": ["php_version_check"]
+  },
+  "GET /api/tools/projects": {
+    "tools": ["projects_list"]
+  },
+  "POST /api/website-factory/plan": {
+    "tools": ["website_create_plan"]
+  },
+  "POST /api/website-factory/create": {
+    "tools": ["website_create"]
+  },
+  "GET /api/website-factory/:installationId": {
+    "tools": ["website_create_status"]
+  },
+  "GET /api/hosting/allinkl/accounts": {
+    "tools": ["allinkl_accounts"]
+  },
+  "GET /api/hosting/allinkl/accounts/:id/domains": {
+    "tools": ["allinkl_domains"]
+  },
+  "GET /api/hosting/allinkl/accounts/:id/diagnostics": {
+    "tools": ["allinkl_diagnostics"]
+  },
+  "GET /api/hosting/allinkl/accounts/:id/subdomains": {
+    "tools": ["allinkl_subdomains"]
+  },
+  "GET /api/hosting/allinkl/accounts/:id/dns": {
+    "tools": ["allinkl_dns_list"]
+  },
+  "GET /api/hosting/allinkl/ssl": {
+    "tools": ["allinkl_ssl_list"]
+  },
+  "GET /api/hosting/allinkl/ssl/diagnostics": {
+    "tools": ["allinkl_ssl_diagnostics"]
+  },
+  "GET /api/hosting/allinkl/ssl/:hostname": {
+    "tools": ["allinkl_ssl_status"]
+  },
+  "POST /api/hosting/allinkl/accounts/:id/dns": {
+    "tools": ["allinkl_dns_add"]
+  },
+  "PUT /api/hosting/allinkl/accounts/:id/dns/:recordId": {
+    "tools": ["allinkl_dns_update"]
+  },
+  "DELETE /api/hosting/allinkl/accounts/:id/dns/:recordId": {
+    "tools": ["allinkl_dns_remove"]
+  },
+  "POST /api/hosting/allinkl/provision": {
+    "tools": ["allinkl_provision"]
+  },
+  "POST /api/hosting/allinkl/ssl": {
+    "tools": ["allinkl_ssl_enable"]
+  },
+  "GET /api/sites": {
+    "tools": ["sites_list"]
+  },
+  "POST /api/sites": {
+    "tools": ["site_register"]
+  },
+  "GET /api/sites/:site": {
+    "tools": ["site_get"]
+  },
+  "GET /api/sites/:site/overview": {
+    "tools": ["site_overview"]
+  },
+  "GET /api/sites/:site/monitor-checks": {
+    "tools": ["monitor_history"]
+  },
+  "GET /api/sites/:site/incidents": {
+    "tools": ["incidents_list"]
+  },
+  "GET /api/sites/:site/deployment": {
+    "tools": ["deployment_info"]
+  },
+  "GET /api/sites/:site/backup-status": {
+    "tools": ["backup_status"]
+  },
+  "GET /api/sites/:site/seo/latest": {
+    "tools": ["seo_latest"]
+  },
+  "GET /api/sites/:site/seo/graph": {
+    "tools": ["seo_graph"]
+  },
+  "GET /api/sites/:site/seo/issues": {
+    "tools": ["seo_issues"]
+  },
+  "GET /api/sites/:site/seo/compare": {
+    "tools": ["seo_compare"]
+  },
+  "GET /api/sites/:site/quality": {
+    "tools": ["quality_overview"]
+  },
+  "GET /api/sites/:site/synthetics": {
+    "tools": ["synthetics_list"]
+  },
+  "POST /api/sites/:site/delete-preview": {
+    "tools": ["site_delete_preview"]
+  },
+  "POST /api/sites/:site/connection-test": {
+    "tools": ["site_connection_test"]
+  },
+  "POST /api/sites/:site/seo-runs": {
+    "tools": ["seo_start"]
+  },
+  "POST /api/sites/:site/synthetics": {
+    "tools": ["synthetic_create"]
+  },
+  "POST /api/sites/:site/backup": {
+    "tools": ["site_backup"]
+  },
+  "POST /api/sites/:site/check": {
+    "tools": ["monitor_check_run"]
+  },
+  "PATCH /api/sites/:site/connection": {
+    "tools": ["site_connection_update"]
+  },
+  "PATCH /api/sites/:site": {
+    "tools": ["site_update"]
+  },
+  "GET /api/incidents/:id": {
+    "tools": ["incident_get"]
+  },
+  "GET /api/seo-runs/:id": {
+    "tools": ["seo_run_status"]
+  },
+  "GET /api/seo-pages/:id": {
+    "tools": ["seo_page"]
+  },
+  "PATCH /api/synthetic-tests/:id": {
+    "tools": ["synthetic_update"]
+  },
+  "POST /api/synthetic-tests/:id/run": {
+    "tools": ["synthetic_run"]
+  },
+  "GET /api/synthetic-runs/:id": {
+    "tools": ["synthetic_run_get"]
+  },
+  "POST /api/fix-prompt": {
+    "tools": ["fix_prompt"]
+  },
+  "POST /api/site-deletions/confirm": {
+    "tools": ["site_delete_confirm"]
+  },
+  "GET /api/server-profiles": {
+    "tools": ["server_profiles_list"]
+  },
+  "GET /api/settings": {
+    "tools": ["settings_get"]
+  },
+  "POST /api/backups/:id/restore-preview": {
+    "tools": ["backup_restore_preview"]
+  },
+  "POST /api/changes/:id/rollback-preview": {
+    "tools": ["rollback_preview"]
+  },
+  "POST /api/previews/:id/apply": {
+    "tools": ["change_apply"]
+  },
+  "GET /api/sites/:site/files": {
+    "tools": ["files_list"]
+  },
+  "GET /api/sites/:site/file": {
+    "tools": ["file_read"]
+  },
+  "POST /api/sites/:site/file-preview": {
+    "tools": ["change_preview"]
+  },
+  "GET /api/build-info": {
+    "tools": ["settings_get"]
+  },
+  "POST /api/mcp/approvals/:id/approve": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Freigabegrenze: Ein KI-Agent darf seine eigenen kritischen Aktionen nicht freigeben."
+  },
+  "POST /api/mcp/self-test": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Die Administration erzeugt ein temporäres OAuth-Testtoken für den internen HTTP-Test. KI-Clients testen ihre eigene Verbindung direkt mit Discovery und ungefährlichen Tools."
+  },
+  "POST /api/lorzcms/releases": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Neue ausführbare Releasearchive werden nur nach manueller Artefaktprüfung im Dashboard registriert. MCP installiert und aktualisiert bereits bekannte Releases."
+  },
+  "POST /api/lorzcms/installations/:id/resume": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Erneute Hinterlegung von Installations-Zugangsdaten erfolgt nur im Dashboard. MCP verwendet cms_job_retry für vorhandene wiederaufnehmbare Aufträge."
+  },
+  "PUT /api/billing/boards/:projectId": {
+    "tools": ["project_board_update"]
+  },
+  "GET /api/billing/invoices/:id/cancellation-pdf": {
+    "tools": ["invoice_document"]
+  },
+  "GET /api/billing/invoices/:id/pdf": {
+    "tools": ["invoice_document"]
+  },
+  "POST /api/billing/tasks/:id/files": {
+    "tools": ["task_file_upload"]
+  },
+  "GET /api/billing/tasks/:id/files/:fileId": {
+    "tools": ["task_file_read"]
+  },
+  "DELETE /api/billing/tasks/:id/files/:fileId": {
+    "tools": ["task_file_remove"]
+  },
+  "POST /api/billing/recurring/run": {
+    "tools": ["project_recurring_run"]
+  },
+  "GET /api/video-suite/preview/:id": {
+    "tools": ["video_studio_downloads"]
+  },
+  "POST /api/video-suite/chat-images": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Originalbilder werden über die UI übertragen; MCP verwendet vorhandene projektgebundene Bildkennungen. Große Base64-Bildtransfers durch den Sprachmodellkontext werden vermieden."
+  },
+  "GET /api/video-suite/chat-images/:id": {
+    "tools": ["video_image_get"]
+  },
+  "POST /api/video-suite/knowledge": {
+    "tools": ["video_knowledge_save"]
+  },
+  "GET /api/video-suite/models": {
+    "tools": ["video_models_list"]
+  },
+  "POST /api/video-suite/test-connection": {
+    "tools": ["video_connection_test"]
+  },
+  "POST /api/video-suite/settings": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "API-Schlüssel werden unmittelbar im Dashboard hinterlegt. MCP kann den bereinigten Verbindungszustand und echte Tests nach Freigabe abrufen."
+  },
+  "GET /api/video-suite/assets/:id": {
+    "tools": ["video_image_get"]
+  },
+  "GET /api/video-studio/intro-assets": {
+    "tools": ["video_intros_list"]
+  },
+  "POST /api/video-studio/intro-assets": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Original-Introdateien bis 50 MB und ihre Upload-Chunks werden direkt zwischen Dashboard und Runner übertragen. MCP wählt vorhandene geprüfte Intro-IDs im Szenen-/Renderauftrag."
+  },
+  "POST /api/video-studio/intro-assets/:id/chunks": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Original-Introdateien bis 50 MB und ihre Upload-Chunks werden direkt zwischen Dashboard und Runner übertragen. MCP wählt vorhandene geprüfte Intro-IDs im Szenen-/Renderauftrag."
+  },
+  "POST /api/video-studio/intro-assets/:id/complete": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Original-Introdateien bis 50 MB und ihre Upload-Chunks werden direkt zwischen Dashboard und Runner übertragen. MCP wählt vorhandene geprüfte Intro-IDs im Szenen-/Renderauftrag."
+  },
+  "POST /api/video-studio/intro-assets/:id/cancel": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Original-Introdateien bis 50 MB und ihre Upload-Chunks werden direkt zwischen Dashboard und Runner übertragen. MCP wählt vorhandene geprüfte Intro-IDs im Szenen-/Renderauftrag."
+  },
+  "GET /api/video-studio/intro-assets/:id/file": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Original-Introdateien bis 50 MB und ihre Upload-Chunks werden direkt zwischen Dashboard und Runner übertragen. MCP wählt vorhandene geprüfte Intro-IDs im Szenen-/Renderauftrag."
+  },
+  "GET /api/video-studio/demo-policy": {
+    "tools": ["video_demo_policy"]
+  },
+  "POST /api/video-studio/demo-policy": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Vertrauensgrenze: KI-Agenten dürfen ihre eigenen erlaubten Demo-Domains nicht erweitern."
+  },
+  "POST /api/video-studio/openai-audio-test": {
+    "tools": ["video_audio_test"]
+  },
+  "GET /api/video-studio/demo-logins": {
+    "tools": ["video_demo_logins"]
+  },
+  "POST /api/video-studio/demo-logins": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Passwörter für Testkonten werden unmittelbar im Dashboard hinterlegt, ohne sie durch den Agentenkontext zu leiten."
+  },
+  "POST /api/video-studio/demo-logins/:id/test": {
+    "tools": ["video_demo_login_test"]
+  },
+  "POST /api/video-studio/jobs/:id/publication": {
+    "tools": ["video_publication_save"]
+  },
+  "GET /api/video-studio/jobs/:id/publication/thumbnail": {
+    "tools": ["video_publication_get"]
+  },
+  "POST /api/video-studio/capture-test": {
+    "tools": ["video_capture_test"]
+  },
+  "GET /api/video-studio/jobs/:id/file": {
+    "tools": ["video_studio_downloads"]
+  },
+  "POST /api/youtube/configure": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen."
+  },
+  "POST /api/youtube/oauth/start": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Anmeldung, Tokenfreigabe und Widerruf sind persönliche Sicherheitsentscheidungen im Dashboard oder beim OAuth-Client, keine vom Agenten ausführbaren Rechtevergaben."
+  },
+  "GET /api/youtube/oauth/callback": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Anmeldung, Tokenfreigabe und Widerruf sind persönliche Sicherheitsentscheidungen im Dashboard oder beim OAuth-Client, keine vom Agenten ausführbaren Rechtevergaben."
+  },
+  "POST /api/youtube/disconnect": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Trennen und erneutes Autorisieren eines Providerkontos bleibt im persönlichen Verbindungsdialog. MCP darf dadurch seine Sicherheitsgrenzen nicht selbst verändern."
+  },
+  "POST /api/search-console/configure": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen."
+  },
+  "POST /api/search-console/oauth/start": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Anmeldung, Tokenfreigabe und Widerruf sind persönliche Sicherheitsentscheidungen im Dashboard oder beim OAuth-Client, keine vom Agenten ausführbaren Rechtevergaben."
+  },
+  "GET /api/search-console/oauth/callback": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Anmeldung, Tokenfreigabe und Widerruf sind persönliche Sicherheitsentscheidungen im Dashboard oder beim OAuth-Client, keine vom Agenten ausführbaren Rechtevergaben."
+  },
+  "POST /api/search-console/accounts/:id/disconnect": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Trennen und erneutes Autorisieren eines Providerkontos bleibt im persönlichen Verbindungsdialog. MCP darf dadurch seine Sicherheitsgrenzen nicht selbst verändern."
+  },
+  "POST /api/coolify/connections": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen."
+  },
+  "PUT /api/coolify/connections/:id": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen."
+  },
+  "POST /api/coolify/commands": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Vertrauensgrenze: Nur Administratoren definieren die ausführbaren Remote-Befehle. MCP darf die erlaubte Befehlsliste nicht selbst erweitern."
+  },
+  "DELETE /api/coolify/commands/:id": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Änderung der Remote-Befehlsfreigaben bleibt im Dashboard."
+  },
+  "POST /api/hosting/allinkl/accounts": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen."
+  },
+  "DELETE /api/hosting/allinkl/accounts/:id": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen."
+  },
+  "GET /api/synthetic-runs/:id/screenshot": {
+    "tools": ["synthetic_screenshot"]
+  },
+  "GET /api/synthetic-tests/:id/baseline": {
+    "tools": ["synthetic_baseline"]
+  },
+  "POST /api/site-connection-test": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Neue, noch nicht gespeicherte Verbindungsdaten werden nur im Dashboard geprüft. MCP testet gespeicherte, autorisierte Verbindungen mit site_connection_test."
+  },
+  "GET /api/server-profiles/source-sites": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Auswahl für die Übernahme verschlüsselter Verbindungsdaten. MCP verwendet die bereits freigegebenen Profile aus server_profiles_list."
+  },
+  "POST /api/server-profiles": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen."
+  },
+  "POST /api/server-profiles/from-site": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Kopieren von Zugangsdaten zwischen Verbindungsprofilen bleibt ein administrativer Dashboard-Vorgang."
+  },
+  "DELETE /api/server-profiles/:id": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen."
+  },
+  "GET /api/ui-theme": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Rein visuelle persönliche Akzentfarbe, keine fachliche Aktion."
+  },
+  "PUT /api/ui-theme": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Rein visuelle persönliche Akzentfarbe, keine fachliche Aktion."
+  },
+  "GET /api/oauth/connections": {
+    "tools": ["mcp_connections_list"]
+  },
+  "GET /api/audit-log": {
+    "tools": ["audit_log_list"]
+  },
+  "POST /api/oauth/revoke-all": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Anmeldung, Tokenfreigabe und Widerruf sind persönliche Sicherheitsentscheidungen im Dashboard oder beim OAuth-Client, keine vom Agenten ausführbaren Rechtevergaben."
+  },
+  "POST /api/oauth/revoke-client": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Anmeldung, Tokenfreigabe und Widerruf sind persönliche Sicherheitsentscheidungen im Dashboard oder beim OAuth-Client, keine vom Agenten ausführbaren Rechtevergaben."
+  },
+  "PATCH /api/settings": {
+    "tools": ["settings_update_defaults"],
+    "reason": "MCP ändert ausschließlich öffentliche Website-Standardwerte. Zugangsdaten, Webhooks, SMTP und OAuth-Basisadresse bleiben aus Sicherheitsgründen im Dashboard."
+  },
+  "POST /api/settings/github-test": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Einrichtung und Prüfung neuer GitHub-Zugangsdaten erfolgen im Dashboard; MCP verwendet die bestehende Backupkonfiguration."
+  },
+  "POST /api/settings/alert-test": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Versendet eine externe Testnachricht; die administrative Benachrichtigungseinrichtung bleibt im Dashboard."
+  },
+  "POST /api/settings/pagespeed-test": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Einrichtung und Prüfung neuer API-Zugangsdaten bleiben im Dashboard. MCP verwendet seo_start mit gespeicherter Konfiguration und persönlicher Freigabe."
+  },
+  "POST /api/settings/browser-runner-test": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Neue Runner-URLs und Tokens werden im Dashboard eingerichtet. MCP prüft den gespeicherten Runner mit video_studio_runner_status."
+  },
+  "GET /api/ai/usage": {
+    "tools": ["ai_usage_get"]
+  },
+  "PUT /api/ai/limits": {
+    "tools": ["ai_limits_update"]
+  },
+  "POST /api/sites/:site/backup-jobs": {
+    "tools": ["backup_start"]
+  },
+  "GET /api/backup-jobs/:id": {
+    "tools": ["backup_job_get"]
+  },
+  "POST /api/sites/:site/status": {
+    "tools": ["site_status"]
+  },
+  "POST /api/lorzcms/installations/:id/admin-recovery": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Wiederherstellung: Das neue temporäre Passwort wird ausschließlich im geschützten Dashboard angezeigt. cms_admin_recovery liefert den Einstieg, setzt aber kein Passwort zurück und gibt keine Zugangsdaten an Agenten aus."
+  }
+}

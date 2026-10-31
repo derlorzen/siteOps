@@ -8,7 +8,7 @@
   const esc = x => String(x ?? '').replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
   const eur = cents => (Number(cents || 0)/100).toLocaleString('de-DE',{style:'currency',currency:'EUR'});
-  const day = value => String(value || '').slice(0,10);
+  const day = value => value&&Number.isFinite(new Date(value).getTime())?new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value)):'';
   const today = () => new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   const hour = seconds => {
     const s = Math.max(0,Math.floor(Number(seconds)||0));
@@ -20,9 +20,9 @@
   const state = {
     customers:[],projects:[],tasks:[],entries:[],invoices:[],sites:[],siteLinks:[],cmsInstallations:{installations:[]},settings:{},
     board:null,boardLoading:false,boardError:'',projectId:'',token:0,saving:false,
-    search:'',customerFilter:'',statusFilter:'all',view:'board',mobileColumn:'open',
+    search:'',customerFilter:'',statusFilter:'all',projectSort:'name',view:'board',mobileColumn:'open',
     dialog:'',taskId:'',taskDetail:null,loading:true,recurring:[],
-    overview:null,activityEntries:[],activityLoading:false,activityError:'',activityFilter:'all'
+    sourceErrors:{},overview:null,activityEntries:[],activityLoading:false,activityError:'',activityFilter:'all'
   };
   let noticeTimer = 0;
   const userError = error => error?.message || String(error);
@@ -91,7 +91,7 @@
     '<dialog id="crmDialog" class="crm-dialog" aria-label="Bearbeiten"><div id="crmDialogContent"></div></dialog>',
     '</div></div>'
   ].join('');
-  const dom = content => $('crmMain').innerHTML=content;
+  const dom = content => {$('crmMain').innerHTML=(Object.keys(state.sourceErrors).length?'<div class="ui-feedback" role="status"><strong>Einige Daten sind nicht aktuell verfügbar.</strong><p>Die zuletzt geladenen Inhalte bleiben sichtbar. Prüfe die Verbindung und lade die Daten erneut.</p>'+button('Erneut laden','reload-workspace','','crm-btn-ghost')+'</div>':'')+content;};
   const heading = (eyebrow,title,sub,actions='') =>
     '<div class="crm-heading"><div><span class="crm-kicker">'+eyebrow+'</span><h1>'+esc(title)+'</h1><p>'+esc(sub)+'</p></div>'+
     '<div class="crm-heading-actions">'+actions+'</div></div>';
@@ -138,9 +138,10 @@
     const results=await Promise.allSettled(urls.map(url=>api(url)));
     for (let i=0;i<names.length;i++){
       const result=results[i];
-      if(result.status==='fulfilled') state[names[i]]=result.value;
+      if(result.status==='fulfilled'){state[names[i]]=result.value;delete state.sourceErrors[names[i]];}
       else if(i<2) throw Error('Kunden und Projekte konnten nicht geladen werden: '+userError(result.reason));
       else {
+        state.sourceErrors[names[i]]=true;
         // Keep the most recently loaded data if an optional endpoint temporarily fails.
         if(!state[names[i]]) state[names[i]]=names[i]==='settings'?{}:[];
         console.error('optional CRM endpoint failed:',names[i],result.reason);
@@ -226,44 +227,32 @@
         (!state.customerFilter||p.customer_id===state.customerFilter) &&
         (state.statusFilter==='all'||p.status===state.statusFilter);
     });
-    let cards=visible.map(p=>{
-      const tasks=projectTasks(p.id),complete=tasks.filter(t=>t.status==='done').length;
-      const progress=tasks.length?Math.round(complete/tasks.length*100):0;
-      const active=tasks.filter(t=>t.status!=='done').length;
-      const customer=findCustomer(p.customer_id);
-      return '<a class="crm-project-card" href="/billing/projects/'+p.id+'" data-route="/billing/projects/'+p.id+'">'+
-        '<div class="crm-project-card-head"><span class="crm-project-icon">'+esc(p.name.charAt(0).toUpperCase())+'</span>'+
-        badge(p.status==='completed'?'Abgeschlossen':p.status==='paused'?'Pausiert':'Aktiv',p.status==='active'?'positive':'')+'</div>'+
-        '<span class="crm-card-caption">'+esc(customer?.name||'Kunde')+'</span>'+
-        '<h3>'+esc(p.name)+'</h3><p>'+esc(p.description||p.site_domain||'Aufgaben, Zeiten und Projektfortschritt verwalten.')+'</p>'+
-        '<div class="crm-project-progress"><div class="crm-progress-caption"><span>'+complete+' von '+tasks.length+' erledigt</span><strong>'+progress+' %</strong></div>'+
-        '<div class="crm-progress-track"><span style="width:'+progress+'%"></span></div></div>'+
-        '<div class="crm-project-card-footer"><span>'+active+' offen</span><span>'+Math.round(tracked(p.id)/3600*10)/10+' Std.</span>'+
-        '<strong>Öffnen →</strong></div></a>';
+    visible.sort((a,b)=>{
+      const urgent=p=>projectTasks(p.id).filter(isOverdue).length;
+      return (state.projectSort==='attention'?urgent(b)-urgent(a):0)||a.name.localeCompare(b.name,'de')||a.id.localeCompare(b.id);
+    });
+    const rows=visible.map(p=>{
+      const tasks=projectTasks(p.id),complete=tasks.filter(t=>t.status==='done').length,overdue=tasks.filter(isOverdue).length,customer=findCustomer(p.customer_id);
+      const url='/billing/projects/'+p.id;
+      return '<tr><td data-label="Projekt"><a class="ui-identity" href="'+url+'" data-route="'+url+'">'+esc(p.name)+'</a>'+ (overdue?'<small>'+overdue+' Aufgaben überfällig</small>':'')+'</td>'+
+        '<td data-label="Kunde">'+esc(customer?.name||'Nicht zugeordnet')+'</td><td data-label="Status">'+badge(p.status==='completed'?'Abgeschlossen':p.status==='paused'?'Pausiert':'Aktiv',p.status==='active'?'positive':'')+'</td>'+
+        '<td data-label="Aufgaben">'+(state.sourceErrors.tasks?'Aufgabenstand nicht verfügbar':tasks.length?complete+' von '+tasks.length+' erledigt':'Noch keine Aufgaben')+'</td><td data-label="Zeit">'+(state.sourceErrors.entries?'Nicht verfügbar':new Intl.NumberFormat('de-DE',{maximumFractionDigits:1}).format(tracked(p.id)/3600)+' Std.')+'</td>'+
+        '<td><a class="ui-row-action" href="'+url+'" data-route="'+url+'">Projekt öffnen →</a></td></tr>';
     }).join('');
-    // A monitored website without a customer project is a first-class standalone workspace item.
-    const assigned = new Set(state.siteLinks.map(link => link.site_id));
-    const independentSites = state.sites.filter(site => !assigned.has(site.id) &&
-      !state.customerFilter && state.statusFilter==='all' &&
-      (site.name+' '+site.domain).toLocaleLowerCase('de-DE').includes(state.search.toLocaleLowerCase('de-DE')));
-    cards += independentSites.map(site =>
-      '<a class="crm-project-card crm-standalone-site" href="/sites/'+encodeURIComponent(site.slug)+'">'+
-      '<div class="crm-project-card-head"><span class="crm-project-icon">◎</span>'+
-      badge('Website','positive')+'</div><span class="crm-card-caption">EIGENSTÄNDIG</span>'+
-      '<h3>'+esc(site.name)+'</h3><p>'+esc(site.domain)+'</p>'+
-      '<div class="crm-project-progress"><span class="crm-muted">Monitoring · SEO · Backups · Deployment</span></div>'+
-      '<div class="crm-project-card-footer"><span>Ohne Kundenprojekt</span><strong>Website öffnen →</strong></div></a>'
-    ).join('');
-    return heading('ARBEITSBEREICH','Alle Projekte',state.projects.length+' Kundenprojekte · '+independentSites.length+' eigenständige Websites',
-      button('+ Neues Projekt','new-project','','crm-btn-primary')+button('+ Kunde','new-customer','','crm-btn-ghost'))+
-      '<div class="crm-summary-grid">'+[
-        [state.projects.length+state.sites.filter(site=>!new Set(state.siteLinks.map(l=>l.site_id)).has(site.id)).length,'Projekte & Websites'],[state.tasks.filter(t=>t.status!=='done').length,'Offene Tasks'],
-        [state.tasks.filter(isOverdue).length,'Überfällig'],[Math.round(state.entries.reduce((s,e)=>s+Number(e.duration_seconds),0)/3600*10)/10+' h','Erfasste Zeit']
-      ].map(([value,label])=>'<div class="crm-stat"><strong>'+value+'</strong><span>'+label+'</span></div>').join('')+'</div>'+
-      '<div class="crm-filters"><label class="crm-search"><span>⌕</span><input type="search" id="crmProjectSearch" placeholder="Projekte oder Kunden suchen" value="'+esc(state.search)+'" autocomplete="off"></label>'+
+    const assigned=new Set(state.siteLinks.map(link=>link.site_id)),independent=state.sites.filter(site=>!assigned.has(site.id)).length;
+    return heading('Kunden & Projekte','Projekte','Aufgaben, Websites, Zeiten und Abrechnung im jeweiligen Kundenprojekt bearbeiten.',
+      button('Neues Projekt','new-project','','crm-btn-primary')+button('Kunde anlegen','new-customer','','crm-btn-ghost'))+
+      '<dl class="ui-summary">'+[
+        [state.projects.length,'Projekte'],[state.sourceErrors.tasks?'–':state.tasks.filter(t=>t.status!=='done').length,'Offene Aufgaben'],
+        [state.sourceErrors.tasks?'–':state.tasks.filter(isOverdue).length,'Überfällig'],[state.sourceErrors.entries?'–':new Intl.NumberFormat('de-DE',{maximumFractionDigits:1}).format(state.entries.reduce((sum,entry)=>sum+Number(entry.duration_seconds),0)/3600)+' Std.','Erfasste Zeit']
+      ].map(([value,label])=>'<div><dt>'+label+'</dt><dd>'+value+'</dd></div>').join('')+'</dl>'+
+      '<div class="crm-filters"><label class="crm-search"><input aria-label="Projekte oder Kunden suchen" type="search" id="crmProjectSearch" placeholder="Projekte oder Kunden suchen" value="'+esc(state.search)+'" autocomplete="off"></label>'+
       '<label class="crm-filter-label">Kunde '+select('crmCustomerFilter',[['','Alle Kunden'],...customerOptions()],state.customerFilter,'id="crmCustomerFilter"')+'</label>'+
-      '<label class="crm-filter-label">Status '+select('crmStatusFilter',[['all','Alle'],['active','Aktiv'],['paused','Pausiert'],['completed','Abgeschlossen']],state.statusFilter,'id="crmStatusFilter"')+'</label></div>'+
-      '<div id="crmProjectCards" class="crm-project-grid">'+(cards||'<div class="crm-empty"><h3>Keine passenden Projekte</h3><p>Filter anpassen oder ein neues Projekt anlegen.</p></div>')+'</div>';
+      '<label class="crm-filter-label">Status '+select('crmStatusFilter',[['all','Alle'],['active','Aktiv'],['paused','Pausiert'],['completed','Abgeschlossen']],state.statusFilter,'id="crmStatusFilter"')+'</label>'+
+      '<label class="crm-filter-label">Sortierung '+select('crmProjectSort',[['name','Name'],['attention','Überfällige Aufgaben']],state.projectSort,'id="crmProjectSort"')+'</label></div>'+
+      '<p role="status" class="ui-meta">'+visible.length+' von '+state.projects.length+' Projekten</p><div class="tablewrap"><table class="ui-data-table" id="crmProjectTable"><caption class="ui-sr-only">Kundenprojekte mit Status, Aufgaben und Zeitaufwand</caption><thead><tr><th scope="col">Projekt</th><th scope="col">Kunde</th><th scope="col">Status</th><th scope="col">Aufgaben</th><th scope="col">Zeit</th><th scope="col">Nächster Schritt</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+      (rows?'':'<div class="crm-empty"><h2>Keine passenden Projekte</h2><p>Ändere die Filter oder lege ein neues Kundenprojekt an.</p></div>')+
+      (independent?'<p class="ui-meta">'+independent+' Websites sind noch keinem Projekt zugeordnet. <a href="/websites">Websites zuordnen</a></p>':'');
   }
 
   function prettyDate(value) {
@@ -305,9 +294,7 @@
       (data.sites.length?data.sites.map(site=>
         '<a class="crm-360-site" href="/sites/'+encodeURIComponent(site.slug)+'"><span>'+
         '<strong>'+esc(site.name)+'</strong><small>'+esc(site.domain)+'</small></span>'+
-        badge(!site.monitor_enabled?'Monitoring aus':site.last_check_ok===null?'Ohne Prüfwert':
-        site.last_check_ok?'Online':'Störung',
-        !site.monitor_enabled?'':site.last_check_ok===null?'':site.last_check_ok?'positive':'danger')+
+        badge(site.status?.label||'Status unbekannt',site.status?.tone==='positive'?'positive':site.status?.tone==='danger'?'danger':'')+
         '</a>').join(''):'<p class="crm-muted">Noch keine Websites im Projekt.</p>')+
       (activeIncidents.length?'<h3>Aktuelle Störungen</h3>'+activeIncidents.map(issue=>
         '<a class="crm-360-incident" href="/sites/'+encodeURIComponent(issue.slug)+'">'+
@@ -372,7 +359,7 @@
           '<a class="crm-btn crm-btn-ghost" href="'+esc(installation.baseUrl)+'/admin/" target="_blank" rel="noopener">Redaktion ↗</a>'+
           '<a class="crm-btn crm-btn-ghost" href="/lorzcms">Verwalten →</a></div>';
       }).join(''):'<p class="crm-muted">Noch kein LorzCMS in diesem Projekt. Eine Installation kann in der CMS-Zentrale zugeordnet werden.</p>')+
-      '<a class="crm-btn crm-btn-primary" href="/lorzcms#cmsCreateSection">+ LorzCMS-Website anlegen</a></section>';
+      '<a class="crm-btn crm-btn-primary" href="/lorzcms/new">+ LorzCMS-Website anlegen</a></section>';
     const sitePanel='<section class="crm-project-websites"><div class="crm-panel-head"><div><h2>Websites im Projekt</h2>'+
       '<p>Monitoring, SEO, Backups und Deployments direkt mit diesem Projekt verbinden.</p></div></div>'+
       '<div class="crm-linked-site-list">'+(linkedSites.map(link=>
@@ -387,7 +374,7 @@
       '<a class="crm-btn crm-btn-ghost" href="/setup">+ Neue Website</a></div></section>';
     const stats='<div class="crm-project-stats"><div><strong>'+taskList.length+'</strong><span>Tasks</span></div>'+
       '<div><strong>'+complete+'</strong><span>Erledigt</span></div>'+
-      '<div><strong>'+progress+' %</strong><span>Fortschritt</span></div>'+
+      '<div><strong>'+(taskList.length?progress+' %':'–')+'</strong><span>Fortschritt</span></div>'+
       '<div><strong>'+Math.round(totalSeconds/3600*10)/10+' h</strong><span>Arbeitszeit</span></div></div>';
     const tabs='<div class="crm-view-tabs" role="group" aria-label="Projektansicht">'+
       '<button type="button" class="'+(state.view==='board'?'selected':'')+'" data-action="view-board">▦ Board</button>'+
@@ -398,10 +385,10 @@
       !state.board?'<div class="crm-loading">Board wird vorbereitet …</div>':state.view==='list'?listView():boardView();
     return '<div class="crm-breadcrumb"><a href="/billing" data-route="/billing">Projekte</a><span>›</span><span>'+esc(customer?.name||'')+'</span></div>'+
       heading('PROJEKT',project.name,customer?.name||'',
-        '<a class="crm-btn crm-btn-ghost" href="/coolify?projectId='+encodeURIComponent(project.id)+'">+ Coolify-Anwendung</a>'+button('+ Task','new-task','','crm-btn-primary')+button('Projekt bearbeiten','edit-project','','crm-btn-ghost'))+
-      stats+project360Panel()+sitePanel+cmsPanel+'<div class="crm-project-toolbar"><div>'+tabs+'</div><div class="crm-project-tools">'+
+        '<a class="crm-btn crm-btn-ghost" href="/coolify?projectId='+encodeURIComponent(project.id)+'">+ Coolify-Anwendung</a>'+button('Aufgabe erstellen','new-task','','crm-btn-primary')+button('Projekt bearbeiten','edit-project','','crm-btn-ghost'))+
+      stats+'<div class="crm-project-toolbar"><div>'+tabs+'</div><div class="crm-project-tools">'+
       button('↻','retry-board','aria-label="Board neu laden"','crm-btn-ghost')+'</div></div>'+
-      board+'<details class="crm-project-maintenance"><summary>Wartungsaufgaben & Vorlagen</summary>'+maintenanceView()+'</details>'+
+      board+'<details class="crm-project-maintenance"><summary>Websites und Abrechnung im Projekt</summary>'+project360Panel()+sitePanel+cmsPanel+'</details><details class="crm-project-maintenance"><summary>Wartungsaufgaben & Vorlagen</summary>'+maintenanceView()+'</details>'+
       '<section class="crm-activity-panel"><div class="crm-panel-head"><h2>Letzte Projektaktivitäten</h2>'+
       '<a class="crm-btn crm-btn-ghost" href="/billing/activity" data-route="/billing/activity">Gesamter Verlauf →</a></div>'+
       activityTimeline(state.activityEntries.slice(0,10))+'</section>';
@@ -979,6 +966,7 @@
     }
     if(target.id==='crmCustomerFilter'){state.customerFilter=target.value;render();}
     if(target.id==='crmStatusFilter'){state.statusFilter=target.value;render();}
+    if(target.id==='crmProjectSort'){state.projectSort=target.value;render();}
     if(target.id==='crmActivityFilter'){state.activityFilter=target.value;render();}
     if(target.id==='crmInvoiceCustomer'){state.invoiceCustomer=target.value;render();}
     if(target.id==='crmInvoiceFrom'){state.invoiceFrom=target.value;render();}

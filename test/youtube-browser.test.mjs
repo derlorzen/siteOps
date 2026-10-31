@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderYouTube } from '../lib/youtube-ui.mjs';
 import { publicYouTubeCatalog } from '../lib/youtube-contract.mjs';
+import { renderWorkspaceShell } from '../lib/workspace-shell.mjs';
 
 test('YouTube CSS and JavaScript share the deployment version to invalidate old browser assets', () => {
   const html = renderYouTube('build-123');
@@ -17,7 +18,10 @@ test(
   { skip: process.env.RUN_VIDEO_BROWSER_TESTS !== '1', timeout: 30000 },
   async t => {
     const { chromium } = await import('../runner/node_modules/playwright/index.mjs');
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: process.env.SUITE_CHROMIUM_EXECUTABLE || undefined
+    });
     t.after(() => browser.close());
     const page = await browser.newPage();
     page.setDefaultTimeout(2000);
@@ -25,7 +29,10 @@ test(
     await page.route('https://siteops.test/**', route =>
       route.fulfill({
         contentType: 'text/html; charset=utf-8',
-        body: '<body class="ops-mode"><nav class="topnav"><a href="/youtube">YouTube</a></nav><main>Workspace</main></body>'
+        body:
+          '<body class="ops-mode siteops-workspace">' +
+          renderWorkspaceShell('<h1>Workspace</h1>', 'Workspace') +
+          '</body>'
       })
     );
     await page.goto('https://siteops.test/video-studio');
@@ -33,10 +40,14 @@ test(
     const link = page.getByRole('navigation', { name: 'SiteOps-Navigation' }).locator('a[href="/youtube"]');
     assert.equal(await link.getAttribute('href'), '/youtube');
     assert.equal(await link.getAttribute('aria-current'), null);
+    await page
+      .getByRole('navigation', { name: 'SiteOps-Navigation' })
+      .getByText('Integrationen', { exact: true })
+      .click();
     await link.click();
     await page.addScriptTag({ content: script });
     assert.equal(await link.getAttribute('aria-current'), 'page');
-    assert.equal(await page.locator('.ops-workspace-bar strong').textContent(), 'Video Suite / YouTube & Kanäle');
+    assert.equal(await page.locator('.ops-workspace-bar strong').textContent(), 'Integrationen / YouTube & Kanäle');
     assert.equal(await page.locator('.ops-side-links [aria-current="page"]').count(), 1);
   }
 );
@@ -46,7 +57,10 @@ test(
   { skip: process.env.RUN_VIDEO_BROWSER_TESTS !== '1', timeout: 30000 },
   async t => {
     const { chromium } = await import('../runner/node_modules/playwright/index.mjs');
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: process.env.SUITE_CHROMIUM_EXECUTABLE || undefined
+    });
     t.after(() => browser.close());
     const context = await browser.newContext({ viewport: { width: 1300, height: 1000 } });
     t.after(() => context.close());

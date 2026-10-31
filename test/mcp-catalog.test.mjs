@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMcpHandler } from '@modelcontextprotocol/server';
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/server/validators/ajv';
+import { spawnSync } from 'node:child_process';
 
 test('authenticated ChatGPT and Claude discover the same complete tool definitions', async t => {
   process.env.SITEOPS_TEST_NO_AUTOSTART = '1';
@@ -50,6 +52,29 @@ test('authenticated ChatGPT and Claude discover the same complete tool definitio
     }
   }
   assert.deepEqual(catalogs[0], catalogs[1]);
+  const validator = new AjvJsonSchemaValidator(),
+    patterns = [];
+  const visit = (value, path) => {
+    if (!value || typeof value !== 'object') return;
+    if (typeof value.pattern === 'string') patterns.push({ path, pattern: value.pattern });
+    for (const [key, child] of Object.entries(value)) visit(child, path + '.' + key);
+  };
+  for (const tool of catalogs[0])
+    for (const field of ['inputSchema', 'outputSchema']) {
+      assert.equal(tool[field]?.type, 'object', tool.name + ' ' + field);
+      assert.doesNotThrow(() => validator.getValidator(tool[field]), tool.name + ' ' + field);
+      visit(tool[field], tool.name + '.' + field);
+    }
+  const compiled = spawnSync(
+    process.platform === 'win32' ? 'python' : 'python3',
+    [
+      '-c',
+      'import json,re,sys\nfor item in json.load(sys.stdin):\n try: re.compile(item["pattern"])\n except re.error as error: sys.exit(item["path"]+": "+str(error))'
+    ],
+    { input: JSON.stringify(patterns), encoding: 'utf8' }
+  );
+  assert.ifError(compiled.error);
+  assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
   assert.ok(catalogs[0].length >= 125);
   for (const name of [
     'cms_admin_recovery',
