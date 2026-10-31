@@ -606,3 +606,28 @@ test('YouTube Analytics requires explicit scope and returns bounded read-only re
     statusCode: 422
   });
 });
+
+test('YouTube Analytics retains every day of a 90-day report while bounding video selection', async () => {
+  const requested = [];
+  const h = harness(async url => {
+    const query = new URL(url).searchParams;
+    requested.push(query);
+    return Response.json({
+      columnHeaders: [{ name: query.get('dimensions') }, { name: 'views' }],
+      rows: Array.from({ length: 95 }, (_, i) => [String(i), i])
+    });
+  });
+  const row = h.accounts.get(id);
+  row.encrypted_credentials = encrypt({
+    ...decrypt(row.encrypted_credentials),
+    scope: 'https://www.googleapis.com/auth/yt-analytics.readonly'
+  });
+  const daily = await h.service.analytics({ account_id: id, days: 90, dimension: 'day' });
+  assert.equal(daily.rows.length, 90);
+  assert.equal(daily.rows[89].views, 89);
+  assert.equal(requested[0].get('maxResults'), '90');
+  assert.equal(requested[0].get('sort'), 'day');
+  const videos = await h.service.analytics({ account_id: id, days: 90, dimension: 'video' });
+  assert.equal(videos.rows.length, 50);
+  assert.equal(requested[1].get('maxResults'), '50');
+});

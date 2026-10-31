@@ -1,49 +1,288 @@
-#gsc { display: grid; gap: 20px; min-width: 0; }
-#gsc section { min-width: 0; }
-#gsc form { padding: 0; margin: 20px 0; max-width: 760px; }
-#gsc .actions { margin: 20px 0; }
-#gsc label { display: block; margin: 12px 0; }
-#gsc input[type="checkbox"] { width: auto; margin-right: 8px; }
-#gsc-states { display: grid; grid-template-columns: minmax(160px, 1fr) 2fr; gap: 8px 20px; }
-#gsc-states dt { color:var(--ink-muted,#5f6d7e); }
-#gsc-states dd { margin: 0; overflow-wrap: anywhere; }
-#gsc pre, #gsc code { overflow-wrap: anywhere; white-space: pre-wrap; }
-#gsc .metrics { flex-wrap: wrap; margin-bottom: 24px; }
-#gsc-rows td:first-child { max-width: 520px; overflow-wrap: anywhere; }
-#gsc-preview { padding: 18px; border: 1px solid #1489a8; border-radius: 9px; margin: 20px 0; }
-@media (max-width: 600px) {
-  #gsc-states { grid-template-columns: 1fr; }
-  #gsc-states dd { margin-bottom: 12px; }
-  #gsc section { padding: 16px; }
+/* Google account and approval controls belong to setup, not the report canvas. */
+#gsc .gsc-settings-heading,
+#gsc .gsc-inspection-header {
+  margin-bottom: 24px;
 }
-
-#gsc .gsc-step { padding: 22px; border: 1px solid var(--border, #d8e0e7); border-radius: 14px; }
-#gsc .gsc-step-heading { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
-#gsc .gsc-step-heading h2 { margin: 0 0 4px; }
-#gsc .gsc-step-heading p { margin: 0; color:var(--ink-muted,#5f6d7e); }
-#gsc .gsc-number { flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #e7f4ed; color: #17663f; font-weight: 700; }
-#gsc .gsc-hint { padding: 12px 14px; border-radius: 8px; background: #f3f6f8; color: #445763; line-height: 1.5; }
-#gsc .gsc-step details { margin: 12px 0; }
-#gsc .gsc-step summary { cursor: pointer; font-weight: 600; }
-#gsc [hidden] { display: none !important; }
-#gsc .actions { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 9px; }
-#gsc .actions button { text-align: left; white-space: normal; }
-#gsc input, #gsc select { max-width: 100%; }
-@media (max-width: 600px) { #gsc .gsc-step { padding: 15px; } }
-
-#gsc .gsc-feedback { padding: 12px 15px; margin: 12px 0; border-radius: 8px; border: 1px solid #a8bfcb; color: #203d50; background: #eef6fa; line-height: 1.5; }
-#gsc .gsc-feedback-success { border-color: #75b58f; background: #e9f7ed; color: #155a32; }
-#gsc .gsc-feedback-error { border-color: #d59a9a; background: #fff0ee; color: #8a2525; }
-#gsc-expected-confirmation { display: block; font-family: monospace; font-size: 0.95em; margin: 7px 0; overflow-wrap: anywhere; user-select: all; }
-
-#gsc-progress { padding: 20px; border: 1px solid #b7d5c3; border-radius: 12px; background: #f5faf7; }
-#gsc-progress-title { display: block; font-size: 1.12rem; }
-#gsc-progress-help { margin: 7px 0 12px; }
-#gsc-progress-list { display: grid; gap: 6px; padding-left: 22px; margin: 0; }
-#gsc-progress-list li { padding: 5px 9px; }
-#gsc-progress-list .is-done { color: #22623c; }
-#gsc-progress-list .is-current { font-weight: 700; border-radius: 6px; background: #d9efdf; color: #154c2b; }
-#gsc-progress-list .is-upcoming { color:var(--ink-muted,#5f6d7e); }
-#gsc .actions button.is-next { outline: 3px solid #ecba54; outline-offset: 2px; }
-#gsc .actions button.is-done { opacity: .75; }
-#gsc .actions button:disabled { opacity: .42; cursor: not-allowed; }
+#gsc .gsc-settings-heading p,
+#gsc .gsc-inspection-header p {
+  margin: 6px 0 0;
+  color: var(--analytics-muted);
+}
+#gsc .gsc-setup-group {
+  border-bottom: 1px solid var(--analytics-line);
+  padding: 0;
+}
+#gsc .gsc-setup-group > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  cursor: pointer;
+  padding: 22px 0;
+  list-style: none;
+  min-height: 64px;
+  font-size: 14px;
+  font-weight: 600;
+}
+#gsc .gsc-setup-group > summary::after {
+  content: '+';
+  font-size: 20px;
+  color: var(--analytics-muted);
+  font-weight: 400;
+  order: 3;
+}
+#gsc .gsc-setup-group[open] > summary::after {
+  content: '−';
+}
+#gsc .gsc-setup-group > summary small {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--analytics-muted);
+  margin-left: auto;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+#gsc .gsc-setup-body {
+  padding: 0 0 24px;
+  max-width: 850px;
+}
+#gsc form {
+  display: grid;
+  gap: 18px;
+  max-width: 650px;
+  margin: 16px 0 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+#gsc label {
+  display: grid;
+  gap: 6px;
+  font-weight: 500;
+  font-size: 13px;
+}
+#gsc label input,
+#gsc label select {
+  width: 100%;
+}
+#gsc .gsc-approval-check {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  margin: 18px 0;
+}
+#gsc .gsc-approval-check input {
+  width: auto;
+  flex: none;
+  margin: 4px 0;
+}
+#gsc .gsc-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+#gsc .gsc-journey {
+  border: 1px solid var(--analytics-line);
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+#gsc .gsc-journey > summary {
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 13px;
+}
+#gsc .gsc-journey p {
+  margin: 12px 0;
+  color: var(--analytics-muted);
+}
+#gsc-progress-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 24px;
+  font-size: 13px;
+}
+#gsc-progress-list li {
+  padding: 6px 0;
+  color: var(--analytics-muted);
+}
+#gsc-progress-list .is-done {
+  color: #236344;
+}
+#gsc-progress-list .is-current {
+  font-weight: 600;
+  color: var(--ink);
+}
+#gsc .gsc-setup-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  max-width: 500px;
+}
+#gsc .gsc-setup-actions button {
+  text-align: left;
+  white-space: normal;
+}
+#gsc .gsc-setup-actions button.is-next {
+  border-color: var(--analytics-data);
+  color: var(--analytics-data);
+  background: #f6f8fb;
+}
+#gsc .gsc-connection-facts {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 2fr;
+  gap: 14px 24px;
+  margin: 0 0 24px;
+  font-size: 13px;
+}
+#gsc .gsc-connection-facts dt {
+  color: var(--analytics-muted);
+}
+#gsc .gsc-connection-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+#gsc :is(pre, code) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+#gsc code {
+  display: block;
+  padding: 12px;
+  font-size: 12px;
+  margin: 8px 0 16px;
+}
+#gsc .gsc-setup-body details {
+  margin: 16px 0;
+}
+#gsc .gsc-setup-body summary {
+  cursor: pointer;
+  font-weight: 500;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  color: var(--analytics-muted);
+}
+#gsc .gsc-hint {
+  padding: 12px 16px;
+  background: #f6f8fa;
+  border-radius: 6px;
+  font-size: 13px !important;
+  color: var(--analytics-muted);
+}
+#gsc-preview {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid #a3b5cb;
+  border-radius: 6px;
+  background: #fafbfd;
+}
+#gsc-expected-confirmation {
+  display: block;
+  font:
+    500 13px ui-monospace,
+    monospace;
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+#gsc .gsc-feedback {
+  padding: 12px 16px;
+  border-left: 3px solid #758ca7;
+  font-size: 13px;
+  background: #f0f4f8;
+  margin: 16px 0;
+}
+#gsc .gsc-feedback-success {
+  border-color: #28724b;
+  color: #205e3f;
+  background: #f2f8f4;
+}
+#gsc .gsc-feedback-error {
+  border-color: #a42b40;
+  color: #962a3b;
+  background: #fff6f7;
+}
+#gsc .gsc-inspection-form {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  max-width: 800px;
+}
+#gsc .gsc-inspection-form label {
+  flex: 1;
+  min-width: 0;
+}
+#gsc .gsc-inspection-result {
+  border: 1px solid var(--analytics-line);
+  border-radius: 6px;
+  padding: 24px;
+  min-height: 120px;
+  margin: 24px 0;
+}
+#gsc .gsc-inspection-result p {
+  margin: 0;
+  color: var(--analytics-muted);
+}
+#gsc .gsc-inspection-result h3 {
+  margin: 0 0 12px;
+}
+#gsc .gsc-inspection-result dl {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 12px 20px;
+  font-size: 13px;
+  margin: 16px 0 0;
+}
+#gsc .gsc-inspection-result dt {
+  color: var(--analytics-muted);
+}
+#gsc .gsc-inspection-result dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+#gsc .gsc-diagnostics {
+  margin: 24px 0;
+  color: var(--analytics-muted);
+  font-size: 13px;
+}
+#gsc .gsc-diagnostics summary {
+  cursor: pointer;
+  min-height: 40px;
+}
+@media (max-width: 600px) {
+  #gsc .gsc-setup-group > summary {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  #gsc .gsc-setup-group > summary small {
+    margin-left: 0;
+    flex-basis: 100%;
+    order: 4;
+    text-align: left;
+  }
+  #gsc .gsc-setup-group > summary::after {
+    margin-left: auto;
+  }
+  #gsc .gsc-connection-facts {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  #gsc .gsc-connection-facts dd {
+    margin-bottom: 12px;
+  }
+  #gsc-progress-list {
+    grid-template-columns: 1fr;
+  }
+  #gsc .gsc-inspection-form {
+    display: grid;
+  }
+  #gsc-preview {
+    padding: 16px;
+  }
+}

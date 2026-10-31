@@ -267,6 +267,57 @@ test('sync paginates API and retries bounded transient failures without losing l
   assert.ok(f.linkage.sync_error);
 });
 
+test('performance filters and sorts the complete authorized cache before pagination without modifying it', async () => {
+  const f = searchConsoleFixture({
+    fetcher: async (url, init) => {
+      if (url.includes('/searchAnalytics/') && JSON.parse(init.body).dimensions[0] === 'query')
+        return Response.json({
+          rows: Array.from({ length: 135 }, (_, i) => ({
+            keys: [i === 134 ? 'Bücher Agentur' : 'query-' + i],
+            clicks: i,
+            impressions: 200,
+            ctr: i / 200,
+            position: 135 - i
+          }))
+        });
+    }
+  });
+  await f.link();
+  await f.approve('live');
+  await f.service.sync('demo');
+  const before = JSON.stringify([...f.reports]);
+  const filtered = await f.service.performance('demo', { query: 'BÜCHER', limit: 10, sort: 'clicks' });
+  assert.equal(filtered.total_rows, 1);
+  assert.equal(filtered.source_total_rows, 135);
+  assert.equal(filtered.rows[0].clicks, 134);
+  assert.equal(filtered.next_offset, null);
+  const page = await f.service.performance('demo', { sort: 'clicks', order: 'desc', offset: 10, limit: 10 });
+  assert.equal(page.rows[0].clicks, 124);
+  assert.equal(page.next_offset, 20);
+  const position = await f.service.performance('demo', { sort: 'position', order: 'asc', limit: 1 });
+  assert.equal(position.rows[0].position, 1);
+  assert.equal(JSON.stringify([...f.reports]), before);
+  assert.equal((await f.service.performance('demo')).rows[0].clicks, 0);
+  const tools = new Map();
+  registerSearchConsoleTools(
+    { registerTool: (name, definition, run) => tools.set(name, { definition, run }) },
+    f.service,
+    value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] })
+  );
+  const mcp = await tools
+    .get('search_console_performance')
+    .run({ site: 'demo', query: 'BÜCHER', sort: 'position', order: 'asc', limit: 10 });
+  assert.deepEqual(
+    JSON.parse(mcp.content[0].text).rows,
+    filtered.rows,
+    'MCP shares the same full-cache search and authorization'
+  );
+  await assert.rejects(f.service.performance('demo', { limit: 1000 }), { statusCode: 422 });
+  await assert.rejects(f.service.performance('demo', { sort: 'credentials' }), { statusCode: 422 });
+  f.setSubject('another-user');
+  await assert.rejects(f.service.performance('demo', { query: 'Bücher' }), { statusCode: 403 });
+});
+
 test('URL inspection enforces property boundaries and persistent per-property quota', async () => {
   const f = searchConsoleFixture();
   await f.link();
