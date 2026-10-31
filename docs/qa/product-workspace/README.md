@@ -18,6 +18,12 @@ Geprüft am 31.10.2026 mit Node 24.14 und Chromium Headless unter Windows. Alle 
 
 Die 15 übersprungenen Tests sind keine bestandenen Prüfungen. Insbesondere war lokal keine MySQL-Testdatenbank konfiguriert. CI stellt MySQL bereit und prüft Migrationen, echte SQL-Abfragen, Budgetkonkurrenz und Freigabeatomizität. Echte ChatGPT-/Claude-Sitzungen, Hostingänderungen und Veröffentlichungen wurden nicht ausgeführt. Automatisierte axe-Analysen sind keine vollständige Accessibility-Zertifizierung.
 
+## GitHub-CI
+
+Die [SiteOps-CI auf dem Entwicklungsbranch](https://github.com/derlorzen/siteOps/actions/runs/41178361832) hat die Anwendung unter Linux/Node 22 geprüft: **443 Tests bestanden, 0 fehlgeschlagen, 8 übersprungen**. Der echte MySQL-Migrationstest einschließlich konkurrierender Budgetreservierung und Freigabeatomizität wurde ausgeführt und bestanden. Search Console sowie die Produkt- und Video-Browserabläufe bestanden ebenfalls. Der separate Docker-Runner-Test war erfolgreich.
+
+Ein zusätzlicher YouTube-Navigationstest erwartete noch die entfernte clientseitige Shell. Seine Fixture wurde auf den tatsächlichen Serverrenderer umgestellt; alle drei YouTube-Browsertests bestanden anschließend lokal. Der aktuelle Gesamtstatus ist bei [PR #92](https://github.com/derlorzen/siteOps/pull/92/checks) nachvollziehbar.
+
 ## Screenshots
 
 - [Arbeitszentrale Desktop](1440-home.png), [Mobil](390-home.png)
