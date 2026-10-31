@@ -3,16 +3,64 @@
   color: var(--text, #172338);
 }
 .yt-heading {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 2rem;
+  margin-bottom: 20px;
 }
-.yt-connection {
-  padding: 1.5rem;
-  background: var(--surface, #fff);
-  border: 1px solid var(--border, #dce2eb);
-  border-radius: 12px;
+body.siteops-workspace .ops-main .yt-workspace .yt-connection {
+  margin: 0 0 16px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.yt-connection > .yt-toolbar {
+  margin: 0;
+  gap: 12px;
+  align-items: end;
+}
+#yt-message:empty {
+  display: none;
+}
+.yt-account-field {
+  width: 340px;
+  max-width: 100%;
+  flex: 0 1 340px;
+}
+.yt-account-field label {
+  display: block;
+  margin-top: 0;
+  font-size: 12px;
+  margin-bottom: 6px;
+  color: var(--analytics-muted);
+}
+.yt-connection #yt-status {
+  font-size: 12px;
+  color: var(--analytics-muted);
+  margin: 8px 0;
+}
+body.siteops-workspace .ops-main .yt-workspace .yt-connection > details {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: 13px;
+  color: var(--analytics-muted);
+}
+body.siteops-workspace .ops-main .yt-workspace .yt-connection > details > summary {
+  cursor: pointer;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+body.siteops-workspace .ops-main .yt-workspace .yt-connection > details[open] {
+  background: #f8fafc;
+  padding: 20px;
+  border: 1px solid var(--analytics-line);
+  border-radius: 6px;
+}
+body.siteops-workspace .ops-main .yt-workspace .yt-connection > details p {
+  font-size: 13px !important;
+  max-width: 75ch;
 }
 .yt-toolbar {
   display: flex;
@@ -23,11 +71,11 @@
 }
 .yt-tabs {
   display: flex;
-  gap: 0.5rem;
-  overflow: auto;
-  margin: 1.8rem 0;
-  border-bottom: 1px solid var(--border, #dce2eb);
-  padding-bottom: 0.8rem;
+  gap: 24px;
+  overflow-x: auto;
+  margin: 20px 0 24px;
+  border-bottom: 1px solid var(--analytics-line);
+  padding: 0;
 }
 .yt-workspace button {
   font: inherit;
@@ -52,7 +100,6 @@
   opacity: 0.5;
   cursor: wait;
 }
-.yt-workspace button[aria-current='page'],
 #yt-execute {
   background: #195d9e;
   color: white;
@@ -169,53 +216,11 @@
   color: #195d9e;
   text-underline-offset: 3px;
 }
-/* Keep the shared workspace theme, but reserve filled buttons for primary actions. */
-body.ops-mode .ops-main .yt-workspace button {
-  color: #253246;
-  background: #fff;
-  border-color: #cdd6df;
-  font-size: 0.9rem;
-}
-body.ops-mode .ops-main .yt-workspace button:hover {
-  background: #f3f6f8;
-}
+/* Provider mutations remain visually distinct from read-only controls. */
 body.ops-mode .ops-main .yt-workspace :is(form > button, #yt-execute, #yt-upload-preview) {
   background: var(--siteops-accent, #195d9e);
   color: var(--siteops-on-accent, #fff);
   border-color: transparent;
-}
-body.ops-mode .ops-main .yt-workspace .yt-tabs button {
-  border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: #59667a;
-  white-space: nowrap;
-}
-body.ops-mode .ops-main .yt-workspace .yt-tabs button[aria-current='page'] {
-  color: var(--siteops-accent-strong, #195d9e);
-  border-bottom-color: var(--siteops-accent, #195d9e);
-  background: var(--siteops-accent-soft, #edf4fa);
-}
-.yt-tabs {
-  padding-bottom: 0;
-  gap: 0.4rem;
-}
-.yt-connection {
-  padding: 1rem 1.4rem;
-}
-.yt-connection > .yt-toolbar {
-  margin: 0;
-}
-.yt-account-field {
-  flex: 1 1 20rem;
-}
-.yt-account-field label {
-  margin-top: 0;
-}
-.yt-connection > p {
-  margin: 0.7rem 0 0;
-  font-size: 0.86rem;
 }
 .yt-video-layout {
   display: grid;
@@ -431,5 +436,129 @@ body.ops-mode .ops-main .yt-workspace .yt-play {
 @media (prefers-reduced-motion: reduce) {
   .yt-workspace button {
     transition: none;
+  }
+}
+
+/* Report-specific objects: the video identity remains recognizable in a data row. */
+.yt-analytics-panel .analytics-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+body.siteops-workspace .ops-main .yt-workspace .yt-analytics-video {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  max-width: 460px;
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  white-space: normal;
+  box-shadow: none;
+}
+.yt-analytics-video > span:last-child {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.yt-analytics-video strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.yt-analytics-video small {
+  font-size: 12px;
+  color: var(--analytics-muted);
+  font-weight: 400;
+}
+.yt-analytics-cover {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 64px;
+  height: 36px;
+  background: #f0f3f7;
+  color: #60758e;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.yt-analytics-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.yt-analytics-bar {
+  display: block;
+  width: 90px;
+  height: 3px;
+  background: #edf1f6;
+  margin-top: 7px;
+  margin-left: auto;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.yt-analytics-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--analytics-data);
+}
+body.siteops-workspace .ops-main .yt-workspace .yt-daily-details {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  border-top: 1px solid var(--analytics-line);
+  padding-top: 16px;
+  margin-top: 12px;
+}
+.yt-daily-details > summary {
+  font-size: 13px;
+  color: var(--analytics-muted);
+  cursor: pointer;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+}
+@media (max-width: 600px) {
+  .yt-connection > .yt-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .yt-account-field {
+    width: auto;
+  }
+  .yt-analytics-panel .analytics-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+  .yt-analytics-panel .analytics-metric:nth-child(3) {
+    grid-column: 1/-1;
+    border-top: 1px solid var(--analytics-line) !important;
+  }
+  .yt-analytics-panel .analytics-metric:nth-child(2) {
+    border-bottom: 1px solid var(--analytics-line) !important;
+  }
+  .yt-analytics-cover {
+    display: none;
+  }
+  .yt-analytics-video small {
+    display: none;
+  }
+  .yt-analytics-video strong {
+    font-size: 13px;
+  }
+  .yt-analytics-table td:first-child {
+    min-width: 210px !important;
+  }
+  .yt-account-field {
+    flex: 1;
+    min-width: 0;
+  }
+  body.siteops-workspace .ops-main .yt-workspace .yt-connection > details[open] {
+    padding: 16px;
   }
 }

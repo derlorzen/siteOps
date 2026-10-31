@@ -7538,6 +7538,12 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
       .type('text/javascript')
       .send(await readFile(new URL('./public/product-workspace.js', import.meta.url), 'utf8'))
   );
+  app.get('/assets/analytics.css', async (_req, reply) =>
+    reply.type('text/css').send(await readFile(new URL('./public/analytics.css', import.meta.url), 'utf8'))
+  );
+  app.get('/assets/analytics.js', async (_req, reply) =>
+    reply.type('text/javascript').send(await readFile(new URL('./public/analytics.js', import.meta.url), 'utf8'))
+  );
   app.get('/assets/action-approval.js', async (_r, reply) =>
     reply.type('text/javascript').send(await readFile(new URL('./public/action-approval.js', import.meta.url), 'utf8'))
   );
@@ -7899,7 +7905,7 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   });
   registerSearchConsoleRoutes(app, searchConsoleService, {
     page,
-    render: renderSearchConsole,
+    render: site => renderSearchConsole(site, buildInfo.build),
     getSite,
     origin: () => new URL(cfg.publicBaseUrl).origin
   });

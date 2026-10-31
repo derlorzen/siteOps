@@ -14,7 +14,18 @@
     libraryRequest = 0,
     thumbnailUrl,
     categories,
-    selectedTab = 'videos';
+    selectedTab = 'videos',
+    analyticsRequest = 0,
+    analyticsCache = null,
+    analyticsContext = '',
+    analyticsMetric = 'views',
+    analyticsSort = 'views',
+    analyticsOrder = 'desc',
+    analyticsVisible = 10,
+    analyticsVideoRows = [],
+    analyticsMetadata = new Map();
+  const A = window.SiteOpsAnalytics,
+    analyticsDefinitions = A.definitions($('yt-analytics-metrics'));
   const account = () => {
     const id = $('yt-account').value;
     if (!id) throw Error('Bitte zuerst einen YouTube-Kanal verbinden und auswählen.');
@@ -32,7 +43,7 @@
       body: data ? JSON.stringify(data) : undefined
     });
     const x = await r.json().catch(() => ({}));
-    if (!r.ok) throw Error(x.message || x.error || 'HTTP ' + r.status);
+    if (!r.ok) throw Object.assign(Error(x.message || x.error || 'HTTP ' + r.status), { status: r.status });
     return x;
   };
   const read = (action, parameters = {}) => api('read', { account_id: account(), action, parameters });
@@ -122,6 +133,13 @@
     $('yt-new-thumbnail-box').hidden = true;
   };
   function resetVideos() {
+    analyticsRequest++;
+    analyticsCache = null;
+    analyticsContext = '';
+    analyticsVideoRows = [];
+    analyticsMetadata.clear();
+    $('yt-analytics-report').hidden = true;
+    $('yt-analytics-empty').hidden = true;
     video = null;
     channel = null;
     videoRequest++;
@@ -209,58 +227,293 @@
       container.append(b);
     }
   }
-  async function loadAnalytics() {
-    const status = $('yt-analytics-status');
-    status.textContent = 'Analyse wird geladen …';
-    for (const id of ['yt-analytics-metrics', 'yt-analytics-rows', 'yt-analytics-days-rows']) $(id).replaceChildren();
-    try {
-      const days = Number($('yt-analytics-days').value);
-      const report = dimension => api('analytics', { account_id: account(), days, dimension });
-      const [summary, videos, daily] = await Promise.all([report('summary'), report('video'), report('day')]);
-      const number = value => Number(value || 0).toLocaleString('de-DE', { maximumFractionDigits: 1 });
-      const total = summary.rows[0] || {};
-      for (const [key, label] of [['views', 'Aufrufe'], ['estimatedMinutesWatched', 'Wiedergabeminuten'], ['averageViewDuration', 'Ø Dauer (Sek.)']]) {
-        const item = document.createElement('span');
-        const caption = document.createElement('em');
-        item.textContent = number(total[key]);
-        caption.textContent = label;
-        item.append(caption);
-        $('yt-analytics-metrics').append(item);
-      }
-      for (const row of videos.rows) {
-        const tr = document.createElement('tr');
-        for (const key of ['video', 'views', 'estimatedMinutesWatched', 'averageViewDuration']) {
-          const td = document.createElement('td');
-          td.textContent = key === 'video' ? String(row[key] || '') : number(row[key]);
-          tr.append(td);
-        }
-        $('yt-analytics-rows').append(tr);
-      }
-      for (const row of daily.rows) {
-        const tr = document.createElement('tr');
-        for (const key of ['day', 'views', 'estimatedMinutesWatched']) {
-          const td = document.createElement('td');
-          td.textContent = key === 'day' ? String(row[key] || '') : number(row[key]);
-          tr.append(td);
-        }
-        $('yt-analytics-days-rows').append(tr);
-      }
-      status.textContent = summary.start_date + ' bis ' + summary.end_date + ' · Daten erfolgreich geladen.';
-    } catch (error) {
-      status.textContent = 'Analyse nicht verfügbar: ' + error.message;
-      throw error;
+  function drawAnalyticsTrend() {
+    const metric = analyticsDefinitions.find(item => item.key === analyticsMetric) || analyticsDefinitions[0];
+    $('yt-analytics-chart-title').textContent = metric.label + ' im Zeitverlauf';
+    if (analyticsCache?.daily) {
+      A.chart($('yt-analytics-chart'), analyticsCache.daily.rows, metric, {
+        dateKey: 'day',
+        title: $('yt-analytics-chart-title'),
+        context: $('yt-analytics-chart-context'),
+        insight: $('yt-analytics-chart-insight')
+      });
+    } else {
+      A.chartState(
+        $('yt-analytics-chart'),
+        'Der Tagesverlauf konnte nicht geladen werden. Die übrige Auswertung bleibt verfügbar.'
+      );
+      $('yt-analytics-chart-insight').textContent = 'Keine fehlenden Tageswerte ergänzt.';
     }
   }
+  function renderAnalyticsVideos() {
+    const tbody = $('yt-analytics-rows'),
+      term = $('yt-analytics-search').value.toLocaleLowerCase('de-DE');
+    tbody.replaceChildren();
+    const rows = analyticsVideoRows
+      .filter(row =>
+        [analyticsMetadata.get(row.video)?.snippet?.title, row.video].some(value =>
+          String(value || '')
+            .toLocaleLowerCase('de-DE')
+            .includes(term)
+        )
+      )
+      .sort((a, b) => (analyticsOrder === 'asc' ? 1 : -1) * (Number(a[analyticsSort]) - Number(b[analyticsSort])));
+    const maximum = Math.max(1, ...rows.map(row => Number(row.views) || 0));
+    rows.slice(0, analyticsVisible).forEach(row => {
+      const meta = analyticsMetadata.get(row.video),
+        tr = document.createElement('tr'),
+        identity = document.createElement('td'),
+        button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'yt-analytics-video';
+      const cover = document.createElement('span');
+      cover.className = 'yt-analytics-cover';
+      const thumbnail = imageUrl(
+        meta?.snippet?.thumbnails?.medium?.url || meta?.snippet?.thumbnails?.default?.url || ''
+      );
+      if (thumbnail) {
+        const img = document.createElement('img');
+        img.src = thumbnail;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.referrerPolicy = 'no-referrer';
+        img.addEventListener(
+          'error',
+          () => {
+            cover.textContent = '▶';
+          },
+          { once: true }
+        );
+        cover.append(img);
+      } else cover.textContent = '▶';
+      const text = document.createElement('span'),
+        title = document.createElement('strong'),
+        detail = document.createElement('small');
+      title.textContent = meta?.snippet?.title || 'Video ' + row.video;
+      detail.textContent = meta?.snippet?.publishedAt
+        ? 'Veröffentlicht am ' + A.date(meta.snippet.publishedAt, true)
+        : row.video;
+      text.append(title, detail);
+      button.append(cover, text);
+      button.onclick = () =>
+        run(button, async () => {
+          await loadVideo(row.video);
+          await selectTab('videos');
+        });
+      identity.append(button);
+      tr.append(identity);
+      for (const [key, kind] of [
+        ['views', 'count'],
+        ['estimatedMinutesWatched', 'hours'],
+        ['averageViewDuration', 'duration']
+      ]) {
+        const td = document.createElement('td'),
+          value = document.createElement('span');
+        value.textContent = A.format(row[key], kind);
+        td.append(value);
+        if (key === 'views') {
+          const bar = document.createElement('span');
+          bar.className = 'yt-analytics-bar';
+          bar.setAttribute('aria-hidden', 'true');
+          const fill = document.createElement('span');
+          fill.style.width = Math.max(0, Math.min(100, (Number(row.views) / maximum) * 100)) + '%';
+          bar.append(fill);
+          td.append(bar);
+        }
+        tr.append(td);
+      }
+      tbody.append(tr);
+    });
+    if (!rows.length) {
+      const tr = document.createElement('tr'),
+        td = document.createElement('td');
+      td.colSpan = 4;
+      td.textContent = analyticsCache?.videos
+        ? term
+          ? 'Keine Videos für diesen Suchbegriff.'
+          : 'Für diesen Zeitraum wurden keine Videowerte gemeldet.'
+        : 'Videowerte konnten nicht geladen werden. Versuche es erneut.';
+      tr.append(td);
+      tbody.append(tr);
+    }
+    $('yt-analytics-video-count').textContent =
+      Math.min(analyticsVisible, rows.length) + ' von ' + rows.length + ' Videos';
+    $('yt-analytics-more').hidden = analyticsVisible >= rows.length;
+  }
+  function analyticsGate(title, copy, connect) {
+    $('yt-analytics-empty').hidden = false;
+    $('yt-analytics-report').hidden = true;
+    $('yt-analytics-empty').querySelector('h3').textContent = title;
+    $('yt-analytics-empty').querySelector('p').textContent = copy;
+    $('yt-analytics-connect').hidden = !connect;
+  }
+  async function loadAnalytics() {
+    const request = ++analyticsRequest,
+      status = $('yt-analytics-status');
+    let accountId;
+    try {
+      accountId = account();
+    } catch {
+      analyticsCache = null;
+      analyticsGate(
+        'Verbinde deinen YouTube-Kanal',
+        'Wähle eine Kanalverbindung aus. Danach kannst du seine Aufrufe und Wiedergabezeit auswerten.',
+        true
+      );
+      status.textContent = 'Noch kein Kanal ausgewählt.';
+      return;
+    }
+    const days = Number($('yt-analytics-days').value),
+      context = accountId + '|' + days;
+    if (context !== analyticsContext) {
+      analyticsCache = null;
+      analyticsVideoRows = [];
+      $('yt-analytics-report').hidden = false;
+      $('yt-analytics-empty').hidden = true;
+      A.metrics($('yt-analytics-metrics'), analyticsDefinitions, {}, {});
+      A.chartState($('yt-analytics-chart'), 'Videoanalyse wird geladen …');
+      $('yt-analytics-rows').replaceChildren();
+    }
+    analyticsContext = context;
+    $('yt-analytics-error').hidden = true;
+    $('yt-analytics-report').setAttribute('aria-busy', 'true');
+    status.textContent = 'Videoanalyse wird geladen …';
+    const report = dimension => api('analytics', { account_id: accountId, days, dimension });
+    const results = await Promise.allSettled([report('summary'), report('video'), report('day')]);
+    if (request !== analyticsRequest) return;
+    $('yt-analytics-report').removeAttribute('aria-busy');
+    const [summary, videos, daily] = results.map(result => (result.status === 'fulfilled' ? result.value : null)),
+      failed = results.filter(result => result.status === 'rejected');
+    if (!summary && !videos && !daily) {
+      const permission = failed.some(result => result.reason.status === 403);
+      status.textContent = 'Videoanalyse nicht verfügbar.';
+      if (analyticsCache && !permission) {
+        $('yt-analytics-error').hidden = false;
+        $('yt-analytics-error-text').textContent =
+          'Die zuletzt geladene Auswertung bleibt sichtbar. Prüfe die Verbindung und versuche es erneut.';
+        return;
+      }
+      analyticsCache = null;
+      analyticsVideoRows = [];
+      analyticsGate(
+        permission ? 'Lesezugriff auf Videoanalyse fehlt' : 'Keine Auswertung verfügbar',
+        permission
+          ? 'Erteile bei Google den zusätzlichen Lesezugriff für diesen Kanal. Deine Videos werden dabei nicht verändert.'
+          : 'YouTube konnte die Auswertung gerade nicht bereitstellen. Prüfe die Verbindung und versuche es erneut.',
+        permission
+      );
+      if (!permission) {
+        $('yt-analytics-error').hidden = false;
+        $('yt-analytics-error-text').textContent = 'Die Anfrage wurde nicht abgeschlossen.';
+      }
+      return;
+    }
+    analyticsCache = { summary, videos, daily };
+    analyticsVisible = 10;
+    analyticsVideoRows = videos?.rows || [];
+    $('yt-analytics-empty').hidden = true;
+    $('yt-analytics-report').hidden = false;
+    const range = summary || daily || videos;
+    $('yt-analytics-period').textContent = A.date(range.start_date, true) + ' – ' + A.date(range.end_date, true);
+    $('yt-analytics-freshness').textContent =
+      'YouTube Analytics · Abgerufen um ' +
+      new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date()) +
+      ' · Die jüngsten Tage können noch fehlen.';
+    A.metrics($('yt-analytics-metrics'), analyticsDefinitions, summary?.rows?.[0] || {}, {}, metric => {
+      analyticsMetric = metric.key;
+      drawAnalyticsTrend();
+    });
+    drawAnalyticsTrend();
+    $('yt-analytics-days-rows').replaceChildren();
+    for (const row of daily?.rows || []) {
+      const tr = document.createElement('tr');
+      for (const valueofRow of [
+        A.date(row.day, true),
+        A.format(row.views, 'count'),
+        A.format(row.estimatedMinutesWatched, 'hours')
+      ]) {
+        const td = document.createElement('td');
+        td.textContent = valueofRow;
+        tr.append(td);
+      }
+      $('yt-analytics-days-rows').append(tr);
+    }
+    if (!daily?.rows?.length) {
+      const tr = document.createElement('tr'),
+        td = document.createElement('td');
+      td.colSpan = 3;
+      td.textContent = daily
+        ? 'Für diesen Zeitraum wurden keine Tageswerte gemeldet.'
+        : 'Tageswerte konnten nicht geladen werden. Aktualisiere die Auswertung.';
+      tr.append(td);
+      $('yt-analytics-days-rows').append(tr);
+    }
+    if (failed.length) {
+      $('yt-analytics-error').hidden = false;
+      $('yt-analytics-error-text').textContent =
+        'Ein Teil der Auswertung fehlt. Erfolgreich geladene Kennzahlen bleiben verfügbar. Aktualisiere die Ansicht, um den fehlenden Teil erneut zu laden.';
+    }
+    analyticsMetadata = new Map(library.map(item => [item.id, item]));
+    renderAnalyticsVideos();
+    status.textContent = failed.length ? 'Videoanalyse teilweise geladen.' : 'Videoanalyse geladen.';
+    $('yt-analytics-video-notice').textContent = '';
+    const missing = analyticsVideoRows.map(row => row.video).filter(id => videoId(id) && !analyticsMetadata.has(id));
+    if (missing.length) {
+      try {
+        const details = await read('videos.list', { part: 'snippet', id: missing.join(',') });
+        if (request !== analyticsRequest) return;
+        for (const item of details.items || []) analyticsMetadata.set(item.id, item);
+        renderAnalyticsVideos();
+      } catch {
+        if (request === analyticsRequest)
+          $('yt-analytics-video-notice').textContent =
+            'Einige Videotitel konnten nicht geladen werden. Die Kennzahlen bleiben verfügbar.';
+      }
+    }
+  }
+  $('yt-analytics-search').addEventListener('input', () => {
+    analyticsVisible = 10;
+    renderAnalyticsVideos();
+  });
+  $('yt-analytics-more').onclick = () => {
+    analyticsVisible += 10;
+    renderAnalyticsVideos();
+  };
+  document.querySelectorAll('[data-video-sort]').forEach(
+    button =>
+      (button.onclick = () => {
+        analyticsOrder =
+          analyticsSort === button.dataset.videoSort ? (analyticsOrder === 'desc' ? 'asc' : 'desc') : 'desc';
+        analyticsSort = button.dataset.videoSort;
+        analyticsVisible = 10;
+        document.querySelectorAll('[data-video-sort]').forEach(item => item.closest('th').removeAttribute('aria-sort'));
+        button.closest('th').setAttribute('aria-sort', analyticsOrder === 'asc' ? 'ascending' : 'descending');
+        renderAnalyticsVideos();
+      })
+  );
+  $('yt-analytics-days').onchange = () => loadAnalytics();
+  click('yt-analytics-retry', loadAnalytics);
   click('yt-analytics-load', loadAnalytics);
   click('yt-analytics-connect', async () => {
+    if (!$('yt-account').value) {
+      $('yt-connection-settings').open = true;
+      (state?.configured ? $('yt-connect') : $('yt-client-id')).focus();
+      return;
+    }
     const result = await api('oauth/start', { memberships: false, analytics: true });
     window.location.assign(result.url);
   });
-  const selectTab = async tab => {
+  const selectTab = async (tab, load = true) => {
     selectedTab = tab;
     for (const el of document.querySelectorAll('[data-panel]')) el.hidden = el.dataset.panel !== tab;
-    for (const el of document.querySelectorAll('[data-tab]'))
-      el.setAttribute('aria-current', el.dataset.tab === tab ? 'page' : 'false');
+    for (const el of document.querySelectorAll('[data-tab]')) {
+      const selected = el.dataset.tab === tab;
+      el.setAttribute('aria-current', selected ? 'page' : 'false');
+      el.setAttribute('aria-selected', String(selected));
+      el.tabIndex = selected ? 0 : -1;
+    }
+    if (location.hash.slice(1).split('?')[0] !== tab) history.replaceState(null, '', '#' + tab);
+    if (!load) return;
     $('yt-player').replaceChildren();
     if (tab === 'videos') {
       if (video) renderPlayer();
@@ -308,7 +561,13 @@
   async function loadStatus() {
     const previousAccount = $('yt-account').value;
     state = await api('status');
-    choices('yt-account', state.accounts, x => x.title + ' · ' + x.channel_id);
+    choices(
+      'yt-account',
+      state.accounts,
+      x =>
+        x.title +
+        (state.accounts.filter(item => item.title === x.title).length > 1 ? ' · ' + x.channel_id.slice(-6) : '')
+    );
     if (!state.accounts.length || previousAccount !== $('yt-account').value) resetVideos();
     $('yt-client-id').value = state.client_id;
     $('yt-client-secret').value = '';
@@ -332,7 +591,10 @@
     notify('Google-Verbindungseinstellungen verschlüsselt gespeichert.');
   });
   click('yt-connect', async () => {
-    const result = await api('oauth/start', { memberships: $('yt-memberships').checked, analytics: $('yt-analytics-consent').checked });
+    const result = await api('oauth/start', {
+      memberships: $('yt-memberships').checked,
+      analytics: $('yt-analytics-consent').checked
+    });
     window.location.assign(result.url);
   });
   click('yt-disconnect', async () => {
@@ -355,6 +617,7 @@
       for (const id of ['yt-videos', 'yt-playlists', 'yt-comments', 'yt-captions']) $(id).replaceChildren();
       await loadChannel();
       if (selectedTab === 'videos') await loadVideos();
+      if (selectedTab === 'analytics') await loadAnalytics();
     })
   );
   async function loadChannel() {
@@ -692,13 +955,20 @@
   async function importSuiteThumbnail() {
     const id = new URLSearchParams(location.hash.split('?')[1] || '').get('asset');
     if (!id || !/^[a-f0-9-]{36}$/i.test(id)) return;
-    const image = new Image(); image.src = '/api/video-suite/assets/' + encodeURIComponent(id); await image.decode();
-    const canvas = document.createElement('canvas'); canvas.width=1280; canvas.height=720;
-    const h=image.width*9/16; canvas.getContext('2d').drawImage(image,0,(image.height-h)/2,image.width,h,0,0,1280,720);
-    const blob = await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.9));
+    const image = new Image();
+    image.src = '/api/video-suite/assets/' + encodeURIComponent(id);
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280;
+    canvas.height = 720;
+    const h = (image.width * 9) / 16;
+    canvas.getContext('2d').drawImage(image, 0, (image.height - h) / 2, image.width, h, 0, 0, 1280, 720);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
     if (!blob) throw Error('Titelbild konnte nicht übernommen werden.');
-    const transfer = new DataTransfer(); transfer.items.add(new File([blob],'video-suite-thumbnail.jpg',{type:'image/jpeg'}));
-    $('yt-thumbnail').files=transfer.files; $('yt-thumbnail').dispatchEvent(new Event('change'));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([blob], 'video-suite-thumbnail.jpg', { type: 'image/jpeg' }));
+    $('yt-thumbnail').files = transfer.files;
+    $('yt-thumbnail').dispatchEvent(new Event('change'));
     notify('Titelbild aus Video Suite übernommen. Video-ID wählen und Thumbnailänderung prüfen.');
   }
   $('yt-thumbnail').addEventListener('change', () => {
@@ -731,7 +1001,8 @@
     choices('yt-upload-job', jobs, x => x.title);
     const requestedJob = new URLSearchParams(location.hash.split('?')[1] || '').get('job');
     if (jobs.some(j => j.id === requestedJob)) $('yt-upload-job').value = requestedJob;
-    if(new URLSearchParams(location.hash.split('?')[1] || '').get('kind')==='short')$('yt-upload-kind').value='short';
+    if (new URLSearchParams(location.hash.split('?')[1] || '').get('kind') === 'short')
+      $('yt-upload-kind').value = 'short';
     if (!jobs.length) $('yt-upload-job').append(new Option('Keine abgeschlossenen Aufträge vorhanden', ''));
   }
   click('yt-upload-preview', async () => {
@@ -901,11 +1172,42 @@
       $('yt-operation-result').textContent = JSON.stringify(await read(definition.action, parameters), null, 2);
     else await preview(definition.action, parameters, body, media);
   });
-  if (['upload','videos','channel','playlists','comments','captions','advanced'].includes(location.hash.slice(1).split('?')[0])) selectTab(location.hash.slice(1).split('?')[0]).catch(e=>notify(e.message,true));
-  loadStatus().catch(e => {
-    notify(e.message, true);
-    $('yt-status').textContent = 'Verbindung konnte nicht geprüft werden.';
+  const initialTab = [
+    'analytics',
+    'upload',
+    'videos',
+    'channel',
+    'playlists',
+    'comments',
+    'captions',
+    'advanced'
+  ].includes(location.hash.slice(1).split('?')[0])
+    ? location.hash.slice(1).split('?')[0]
+    : 'videos';
+  selectTab(initialTab, false);
+  document.querySelector('.yt-tabs').addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = [...document.querySelectorAll('[data-tab]')],
+      index = tabs.indexOf(document.activeElement);
+    if (index < 0) return;
+    event.preventDefault();
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? tabs.length - 1
+          : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+    tabs[next].focus();
+    tabs[next].click();
   });
+  loadStatus()
+    .then(() => selectTab(initialTab))
+    .catch(e => {
+      notify(e.message, true);
+      $('yt-status').textContent = 'Verbindung konnte nicht geprüft werden.';
+      if (initialTab === 'analytics')
+        analyticsGate('Verbindung nicht verfügbar', 'Prüfe die Kanalverbindung und lade die Ansicht erneut.', true);
+    });
   setInterval(() => {
     if (selectedTab === 'upload' && document.visibilityState === 'visible' && $('yt-account').value)
       loadUploads().catch(e => notify(e.message, true));

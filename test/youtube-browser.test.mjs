@@ -11,6 +11,8 @@ test('YouTube CSS and JavaScript share the deployment version to invalidate old 
   const html = renderYouTube('build-123');
   assert.match(html, /href="\/assets\/youtube\.css\?v=build-123"/);
   assert.match(html, /src="\/assets\/youtube\.js\?v=build-123"/);
+  assert.match(html, /href="\/assets\/analytics\.css\?v=build-123"/);
+  assert.match(html, /src="\/assets\/analytics\.js\?v=build-123"/);
 });
 
 test(
@@ -81,14 +83,14 @@ test(
         return route.fulfill({
           contentType: 'text/html; charset=utf-8',
           body:
-            '<meta charset="utf-8"><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/ops-workspace.css"><link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-shell.css"><body class="ops-mode"><main class="ops-main">' +
+            '<meta charset="utf-8"><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/ops-workspace.css"><link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-shell.css"><body class="ops-mode siteops-workspace"><main class="ops-main">' +
             renderYouTube() +
             '</main></body>'
         });
-      if (url.pathname === '/assets/youtube.js')
+      if (['/assets/youtube.js', '/assets/analytics.js'].includes(url.pathname))
         return route.fulfill({
           contentType: 'text/javascript',
-          body: await fs.readFile(new URL('../public/youtube.js', import.meta.url), 'utf8')
+          body: await fs.readFile(new URL('../public/' + url.pathname.split('/').pop(), import.meta.url), 'utf8')
         });
       if (url.pathname === '/assets/youtube.css')
         return route.fulfill({
@@ -97,6 +99,7 @@ test(
         });
       if (
         [
+          '/assets/analytics.css',
           '/assets/app.css',
           '/assets/ops-workspace.css',
           '/assets/siteops-theme.css',

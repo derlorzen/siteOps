@@ -25,10 +25,10 @@ test(
       getSite: async () => f.site
     });
     app.get('/api/hosting/allinkl/accounts', async () => []);
-    app.get('/assets/search-console.js', async (_req, reply) =>
+    app.get('/assets/:file', async (req, reply) =>
       reply
-        .type('text/javascript')
-        .send(await readFile(new URL('../public/search-console.js', import.meta.url), 'utf8'))
+        .type(req.params.file.endsWith('.css') ? 'text/css' : 'text/javascript')
+        .send(await readFile(new URL('../public/' + req.params.file, import.meta.url), 'utf8'))
     );
     await app.listen({ host: '127.0.0.1', port: 0 });
     t.after(() => app.close());
@@ -42,6 +42,8 @@ test(
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(app.listeningOrigin + '/sites/demo/search-console');
     await page.getByText('Verbindung geladen.', { exact: true }).waitFor();
+    await page.locator('[data-gsc-tab=settings]').click();
+    await page.locator('#gsc-link-settings').evaluate(el => (el.open = true));
     await page.locator('#gsc-choice').selectOption('custom');
     await page.locator('#gsc-link input[name="property"]').fill('sc-domain:example.com');
     await page.getByRole('button', { name: 'Website zuordnen', exact: true }).click();
@@ -64,12 +66,14 @@ test(
       globalThis.document.getElementById('gsc-preview-text').textContent.includes('live_approved')
     );
     assert.ok(f.linkage.live_approved_at);
+    await page.locator('[data-gsc-tab=performance]').click();
     await page.getByRole('button', { name: 'Jetzt synchronisieren', exact: true }).click();
     await page.locator('#gsc-rows tr').first().waitFor();
     assert.match(await page.locator('#gsc-metrics').textContent(), /Impressionen/);
     assert.match(await page.locator('#gsc-range').textContent(), /Sync:/);
-    await page.locator('#gsc-dimension').selectOption('page');
-    await page.locator('#gsc-rows').getByText('https://example.com/', { exact: true }).waitFor();
+    await page.locator('[data-dimension=page]').click();
+    await page.locator('#gsc-rows').getByRole('link', { name: '/', exact: true }).waitFor();
+    await page.locator('[data-gsc-tab=inspection]').click();
     await page.locator('#gsc-inspect input[name="url"]').fill('https://example.com/page');
     await page.getByRole('button', { name: 'URL prüfen', exact: true }).click();
     await page.waitForFunction(() => globalThis.document.getElementById('gsc-inspection').textContent.includes('PASS'));
@@ -78,6 +82,7 @@ test(
     assert.deepEqual(errors, []);
     // The same view must remain usable on a narrow phone viewport.
     await page.setViewportSize({ width: 390, height: 844 });
-    assert.ok(await page.getByRole('heading', { name: 'Besucher über Google', exact: true }).isVisible());
+    await page.locator('[data-gsc-tab=performance]').click();
+    assert.ok(await page.getByRole('heading', { name: 'Klicks im Zeitverlauf', exact: true }).isVisible());
   }
 );
