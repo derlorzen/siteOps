@@ -1,4 +1,5 @@
 import test from 'node:test';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import { createYouTubeService, boundedYouTubeBody } from '../lib/youtube.mjs';
@@ -126,7 +127,7 @@ test('verified catalog validates method/query/body types, bounds and fixed Googl
 test('Google OAuth credentials are encrypted, state is PKCE/session-bound, single-use and never returned', async () => {
   let exchanges = 0;
   const h = harness(async (url, options) => {
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     if (String(url).includes('/token')) {
       exchanges++;
       assert.equal(options.body.get('code_verifier').length, 43);
@@ -203,7 +204,7 @@ test('YouTube changes are immutable expiring approvals; execute is replay-safe a
 test('YouTube transport rejects redirects, quota failures, stale edits and malformed confirmations', async () => {
   let mode = 'quota';
   const h = harness(async (_url, options) => {
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     if (mode === 'network') throw Error('redirect or network failure');
     if (mode === 'quota') return Response.json({ error: { errors: [{ reason: 'quotaExceeded' }] } }, { status: 403 });
     if (mode === 'stale') return Response.json({}, { status: 412 });
@@ -371,7 +372,8 @@ test('MCP exposes channel capabilities but never credentials, and cannot execute
     },
     x => ({ content: [{ type: 'text', text: JSON.stringify(x) }] })
   );
-  assert.equal(definitions.size, 10);
+  assert.equal(definitions.size, 11);
+  assert.ok(definitions.has('youtube_upload_retry'));
   assert.equal(definitions.has('youtube_analytics'), true);
   assert.equal(definitions.has('youtube_configure'), false);
   const result = await definitions
@@ -635,4 +637,60 @@ test('YouTube Analytics retains every day of a 90-day report while bounding vide
   const videos = await h.service.analytics({ account_id: id, days: 90, dimension: 'video' });
   assert.equal(videos.rows.length, 50);
   assert.equal(requested[1].get('maxResults'), '50');
+});
+
+test('real fetch exposes resumable 308 progress without following Location or forwarding credentials', async () => {
+  let requests = 0;
+  const server = http.createServer((_req, res) => {
+    requests++;
+    res.writeHead(308, { location: '/must-not-follow', range: 'bytes=0-4' });
+    res.end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const h = harness((...args) => fetch(...args));
+    const response = await h.service.google('http://127.0.0.1:' + server.address().port + '/session', {
+      method: 'PUT',
+      headers: { 'content-length': '0', 'content-range': 'bytes */10', authorization: 'Bearer test' }
+    });
+    assert.equal(response.status, 308);
+    assert.equal(confirmedUploadOffset(response, 10), 5);
+    assert.equal(requests, 1);
+    await response.body.cancel();
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('retry resumes only the same failed upload with a saved session and matching account', async () => {
+  const calls = [];
+  const row = { id, account_id: id, status: 'failed', encrypted_session: encrypt({ url: 'session' }) };
+  let affected = 1;
+  const service = createYouTubeService({
+    db: {
+      query: async (query, args) => {
+        calls.push({ query, args });
+        if (query.startsWith('SELECT * FROM youtube_accounts')) return [[{ id }]];
+        if (query.startsWith('SELECT * FROM youtube_uploads')) return [[row].filter(x => x.account_id === args[1])];
+        return [{ affectedRows: affected }];
+      }
+    },
+    encrypt,
+    decrypt,
+    publicBaseUrl: () => 'https://siteops.test',
+    studio: () => ({})
+  });
+  assert.equal((await service.retryUpload({ account_id: id, upload_id: id })).status, 'retry');
+  assert.ok(calls.some(x => x.query.includes("status='failed' AND (lease_until IS NULL")));
+  assert.ok(!calls.some(x => x.query.startsWith('INSERT')));
+  row.status = 'uploading';
+  await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 409 });
+  row.status = 'failed';
+  row.encrypted_session = null;
+  await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 409 });
+  row.remote_video_id = 'existing-video';
+  affected = 0;
+  await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 409 });
+  row.account_id = 'other-account';
+  await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 404 });
 });

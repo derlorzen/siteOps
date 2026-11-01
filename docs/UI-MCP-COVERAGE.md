@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 271 API-Funktionen, 240 MCP-Tools, 41 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 272 API-Funktionen, 241 MCP-Tools, 41 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -278,6 +278,7 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | youtube | /youtube | youtube_read | POST /api/youtube/read | youtube_read | Lesen | Keine zusätzliche | Zugeordnet |  |
 | youtube | /youtube | youtube_status | GET /api/youtube/status | youtube_status | Lesen | Keine zusätzliche | Zugeordnet |  |
 | youtube | /youtube | youtube_upload_preview | POST /api/youtube/upload-preview | youtube_upload_preview | Ändern | Keine zusätzliche | Zugeordnet |  |
+| youtube | /youtube | youtube_upload_retry | POST /api/youtube/uploads/retry | youtube_upload_retry | Ändern | Keine zusätzliche | Zugeordnet |  |
 | youtube | /youtube | youtube_uploads | GET /api/youtube/uploads | youtube_uploads | Lesen | Keine zusätzliche | Zugeordnet |  |
 
 ## Zusätzliche fachliche MCP-Aktionen

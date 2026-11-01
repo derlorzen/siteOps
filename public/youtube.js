@@ -1039,6 +1039,22 @@
         a.textContent = ' Video auf YouTube öffnen';
         article.append(a);
       }
+      if (row.status === 'failed') {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Upload fortsetzen';
+        retry.addEventListener('click', async () => {
+          retry.disabled = true;
+          try {
+            await api('uploads/retry', { account_id: account(), upload_id: row.id });
+            await loadUploads();
+          } catch (error) {
+            retry.disabled = false;
+            retry.textContent = error.message;
+          }
+        });
+        article.append(retry);
+      }
       box.append(article);
     }
   }
