@@ -49,6 +49,12 @@ export function searchConsoleFixture(options = {}) {
         accounts.get(a[1]).encrypted_credentials = a[0];
         return [{ affectedRows: 1 }];
       }
+      if (sql.startsWith('SELECT encrypted_payload FROM search_console_previews')) {
+        const rows = [...previews.values()]
+          .filter(x => x.status === 'done')
+          .map(x => ({ encrypted_payload: x.encrypted_payload }));
+        return [rows];
+      }
       if (sql.startsWith('INSERT INTO search_console_states')) {
         states.set(a[0], { encrypted_payload: a[1], expires_at: a[2] });
         return [{ affectedRows: 1 }];
@@ -72,6 +78,14 @@ export function searchConsoleFixture(options = {}) {
         return [{ affectedRows: 1 }];
       }
       if (sql.startsWith('SELECT * FROM search_console_sites')) return [[linkage].filter(Boolean)];
+      if (sql.startsWith('SELECT sc.site_id'))
+        return [
+          [
+            linkage && accounts.get(linkage.account_id)?.subject === a[0]
+              ? { ...linkage, current_domain: site.domain, site_enabled: site.enabled }
+              : null
+          ].filter(Boolean)
+        ];
       if (sql.startsWith('SELECT * FROM sites')) return [[{ ...site }]];
       if (sql.startsWith('SELECT g.site_id'))
         return [[linkage?.live_approved_at ? { site_id: site.id } : null].filter(Boolean)];

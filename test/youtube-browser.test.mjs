@@ -5,11 +5,14 @@ import { promises as fs } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderYouTube } from '../lib/youtube-ui.mjs';
 import { publicYouTubeCatalog } from '../lib/youtube-contract.mjs';
+import { renderWorkspaceShell } from '../lib/workspace-shell.mjs';
 
 test('YouTube CSS and JavaScript share the deployment version to invalidate old browser assets', () => {
   const html = renderYouTube('build-123');
   assert.match(html, /href="\/assets\/youtube\.css\?v=build-123"/);
   assert.match(html, /src="\/assets\/youtube\.js\?v=build-123"/);
+  assert.match(html, /href="\/assets\/analytics\.css\?v=build-123"/);
+  assert.match(html, /src="\/assets\/analytics\.js\?v=build-123"/);
 });
 
 test(
@@ -17,7 +20,10 @@ test(
   { skip: process.env.RUN_VIDEO_BROWSER_TESTS !== '1', timeout: 30000 },
   async t => {
     const { chromium } = await import('../runner/node_modules/playwright/index.mjs');
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: process.env.SUITE_CHROMIUM_EXECUTABLE || undefined
+    });
     t.after(() => browser.close());
     const page = await browser.newPage();
     page.setDefaultTimeout(2000);
@@ -25,7 +31,10 @@ test(
     await page.route('https://siteops.test/**', route =>
       route.fulfill({
         contentType: 'text/html; charset=utf-8',
-        body: '<body class="ops-mode"><nav class="topnav"><a href="/youtube">YouTube</a></nav><main>Workspace</main></body>'
+        body:
+          '<body class="ops-mode siteops-workspace">' +
+          renderWorkspaceShell('<h1>Workspace</h1>', 'Workspace') +
+          '</body>'
       })
     );
     await page.goto('https://siteops.test/video-studio');
@@ -33,10 +42,14 @@ test(
     const link = page.getByRole('navigation', { name: 'SiteOps-Navigation' }).locator('a[href="/youtube"]');
     assert.equal(await link.getAttribute('href'), '/youtube');
     assert.equal(await link.getAttribute('aria-current'), null);
+    await page
+      .getByRole('navigation', { name: 'SiteOps-Navigation' })
+      .getByText('Integrationen', { exact: true })
+      .click();
     await link.click();
     await page.addScriptTag({ content: script });
     assert.equal(await link.getAttribute('aria-current'), 'page');
-    assert.equal(await page.locator('.ops-workspace-bar strong').textContent(), 'Video Suite / YouTube & Kanäle');
+    assert.equal(await page.locator('.ops-workspace-bar strong').textContent(), 'Integrationen / YouTube & Kanäle');
     assert.equal(await page.locator('.ops-side-links [aria-current="page"]').count(), 1);
   }
 );
@@ -46,7 +59,10 @@ test(
   { skip: process.env.RUN_VIDEO_BROWSER_TESTS !== '1', timeout: 30000 },
   async t => {
     const { chromium } = await import('../runner/node_modules/playwright/index.mjs');
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: process.env.SUITE_CHROMIUM_EXECUTABLE || undefined
+    });
     t.after(() => browser.close());
     const context = await browser.newContext({ viewport: { width: 1300, height: 1000 } });
     t.after(() => context.close());
@@ -67,14 +83,14 @@ test(
         return route.fulfill({
           contentType: 'text/html; charset=utf-8',
           body:
-            '<meta charset="utf-8"><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/ops-workspace.css"><link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-shell.css"><body class="ops-mode"><main class="ops-main">' +
+            '<meta charset="utf-8"><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/ops-workspace.css"><link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-shell.css"><body class="ops-mode siteops-workspace"><main class="ops-main">' +
             renderYouTube() +
             '</main></body>'
         });
-      if (url.pathname === '/assets/youtube.js')
+      if (['/assets/youtube.js', '/assets/analytics.js'].includes(url.pathname))
         return route.fulfill({
           contentType: 'text/javascript',
-          body: await fs.readFile(new URL('../public/youtube.js', import.meta.url), 'utf8')
+          body: await fs.readFile(new URL('../public/' + url.pathname.split('/').pop(), import.meta.url), 'utf8')
         });
       if (url.pathname === '/assets/youtube.css')
         return route.fulfill({
@@ -83,6 +99,7 @@ test(
         });
       if (
         [
+          '/assets/analytics.css',
           '/assets/app.css',
           '/assets/ops-workspace.css',
           '/assets/siteops-theme.css',

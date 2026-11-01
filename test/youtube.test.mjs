@@ -1,4 +1,5 @@
 import test from 'node:test';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import { createYouTubeService, boundedYouTubeBody } from '../lib/youtube.mjs';
@@ -126,7 +127,7 @@ test('verified catalog validates method/query/body types, bounds and fixed Googl
 test('Google OAuth credentials are encrypted, state is PKCE/session-bound, single-use and never returned', async () => {
   let exchanges = 0;
   const h = harness(async (url, options) => {
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     if (String(url).includes('/token')) {
       exchanges++;
       assert.equal(options.body.get('code_verifier').length, 43);
@@ -203,7 +204,7 @@ test('YouTube changes are immutable expiring approvals; execute is replay-safe a
 test('YouTube transport rejects redirects, quota failures, stale edits and malformed confirmations', async () => {
   let mode = 'quota';
   const h = harness(async (_url, options) => {
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     if (mode === 'network') throw Error('redirect or network failure');
     if (mode === 'quota') return Response.json({ error: { errors: [{ reason: 'quotaExceeded' }] } }, { status: 403 });
     if (mode === 'stale') return Response.json({}, { status: 412 });
@@ -371,7 +372,9 @@ test('MCP exposes channel capabilities but never credentials, and cannot execute
     },
     x => ({ content: [{ type: 'text', text: JSON.stringify(x) }] })
   );
-  assert.equal(definitions.size, 9);
+  assert.equal(definitions.size, 11);
+  assert.ok(definitions.has('youtube_upload_retry'));
+  assert.equal(definitions.has('youtube_analytics'), true);
   assert.equal(definitions.has('youtube_configure'), false);
   const result = await definitions
     .get('youtube_change_execute')
@@ -539,7 +542,8 @@ test('YouTube settings/OAuth use dashboard sessions and reject unauthenticated, 
   );
 });
 
-test('upload approval freezes the selected publication thumbnail with the reviewed title and description', async () => {
+test('upload approval freezes final source and thumbnail with the reviewed title and description', async () => {
+  let selectedSource = { type: 'final', asset_id: id, sha256: '1'.repeat(64) };
   let image = Buffer.from([255, 216, 255, 1]);
   const h = harness(
     async () => Response.json({}),
@@ -557,6 +561,7 @@ test('upload approval freezes the selected publication thumbnail with the review
         render_settings: { language: 'en' }
       }),
       capabilities: async () => ({ artifactRanges: true }),
+      mediaSource: async () => selectedSource,
       publication: { read: async () => ({ has_thumbnail: true }), thumbnail: async () => image }
     })
   );
@@ -569,10 +574,123 @@ test('upload approval freezes the selected publication thumbnail with the review
   assert.equal(preview.body.has_thumbnail, true);
   assert.equal(preview.body.thumbnail, undefined);
   const expected = image.toString('base64');
+  const expectedSource = { ...selectedSource };
+  selectedSource = { ...selectedSource, sha256: '2'.repeat(64) };
   image = Buffer.from([255, 216, 255, 2]);
   await h.service.execute({ preview_token: preview.preview_token, approved: true });
   const snapshot = JSON.parse(h.uploads[0][4]);
   assert.equal(snapshot.thumbnail, expected);
+  assert.deepEqual(snapshot.source, expectedSource);
   assert.equal(snapshot.title, 'Reviewed title');
   assert.equal(snapshot.description, 'Reviewed description');
+});
+
+test('YouTube Analytics requires explicit scope and returns bounded read-only reports', async () => {
+  const requested = [];
+  const h = harness(async (url, options) => {
+    requested.push({ url: String(url), method: options.method || 'GET' });
+    return Response.json({
+      columnHeaders: [{ name: 'views' }, { name: 'estimatedMinutesWatched' }, { name: 'averageViewDuration' }],
+      rows: [[120, 45, 32]]
+    });
+  });
+  await assert.rejects(h.service.analytics({ account_id: id, days: 28, dimension: 'summary' }), {
+    statusCode: 403
+  });
+  const row = h.accounts.get(id);
+  const credentials = decrypt(row.encrypted_credentials);
+  row.encrypted_credentials = encrypt({
+    ...credentials,
+    scope: 'https://www.googleapis.com/auth/yt-analytics.readonly'
+  });
+  const report = await h.service.analytics({ account_id: id, days: 28, dimension: 'summary' });
+  assert.equal(report.rows[0].views, 120);
+  assert.equal(report.rows[0].estimatedMinutesWatched, 45);
+  assert.equal(requested.length, 1);
+  assert.equal(requested[0].method, 'GET');
+  assert.equal(new URL(requested[0].url).hostname, 'youtubeanalytics.googleapis.com');
+  await assert.rejects(h.service.analytics({ account_id: id, days: 365, dimension: 'summary' }), {
+    statusCode: 422
+  });
+});
+
+test('YouTube Analytics retains every day of a 90-day report while bounding video selection', async () => {
+  const requested = [];
+  const h = harness(async url => {
+    const query = new URL(url).searchParams;
+    requested.push(query);
+    return Response.json({
+      columnHeaders: [{ name: query.get('dimensions') }, { name: 'views' }],
+      rows: Array.from({ length: 95 }, (_, i) => [String(i), i])
+    });
+  });
+  const row = h.accounts.get(id);
+  row.encrypted_credentials = encrypt({
+    ...decrypt(row.encrypted_credentials),
+    scope: 'https://www.googleapis.com/auth/yt-analytics.readonly'
+  });
+  const daily = await h.service.analytics({ account_id: id, days: 90, dimension: 'day' });
+  assert.equal(daily.rows.length, 90);
+  assert.equal(daily.rows[89].views, 89);
+  assert.equal(requested[0].get('maxResults'), '90');
+  assert.equal(requested[0].get('sort'), 'day');
+  const videos = await h.service.analytics({ account_id: id, days: 90, dimension: 'video' });
+  assert.equal(videos.rows.length, 50);
+  assert.equal(requested[1].get('maxResults'), '50');
+});
+
+test('real fetch exposes resumable 308 progress without following Location or forwarding credentials', async () => {
+  let requests = 0;
+  const server = http.createServer((_req, res) => {
+    requests++;
+    res.writeHead(308, { location: '/must-not-follow', range: 'bytes=0-4' });
+    res.end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const h = harness((...args) => fetch(...args));
+    const response = await h.service.google('http://127.0.0.1:' + server.address().port + '/session', {
+      method: 'PUT',
+      headers: { 'content-length': '0', 'content-range': 'bytes */10', authorization: 'Bearer test' }
+    });
+    assert.equal(response.status, 308);
+    assert.equal(confirmedUploadOffset(response, 10), 5);
+    assert.equal(requests, 1);
+    await response.body.cancel();
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('retry resumes only the same failed upload with a saved session and matching account', async () => {
+  const calls = [];
+  const row = { id, account_id: id, status: 'failed', encrypted_session: encrypt({ url: 'session' }) };
+  let affected = 1;
+  const service = createYouTubeService({
+    db: {
+      query: async (query, args) => {
+        calls.push({ query, args });
+        if (query.startsWith('SELECT * FROM youtube_accounts')) return [[{ id }]];
+        if (query.startsWith('SELECT * FROM youtube_uploads')) return [[row].filter(x => x.account_id === args[1])];
+        return [{ affectedRows: affected }];
+      }
+    },
+    encrypt,
+    decrypt,
+    publicBaseUrl: () => 'https://siteops.test',
+    studio: () => ({})
+  });
+  assert.equal((await service.retryUpload({ account_id: id, upload_id: id })).status, 'retry');
+  assert.ok(calls.some(x => x.query.includes("status='failed' AND (lease_until IS NULL")));
+  assert.ok(!calls.some(x => x.query.startsWith('INSERT')));
+  row.status = 'uploading';
+  await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 409 });
+  row.status = 'failed';
+  row.encrypted_session = null;
+  await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 409 });
+  row.remote_video_id = 'existing-video';
+  affected = 0;
+  await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 409 });
+  row.account_id = 'other-account';
+  await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 404 });
 });

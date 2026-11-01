@@ -1,7 +1,7 @@
 /* global document, location, innerWidth */
 import test from 'node:test';
 import * as fs from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 test(
   'Video Suite: agent adoption, scene editing, draft reload and responsive navigation',
@@ -9,20 +9,10 @@ test(
   async t => {
     const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
     const { chromium } = await import('../runner/node_modules/playwright/index.mjs');
-    const { renderVideoStudio } = await import(root + '/lib/video-studio-ui.mjs');
-    const { renderYouTube } = await import(root + '/lib/youtube-ui.mjs');
+    const { renderVideoStudio } = await import(pathToFileURL(root + '/lib/video-studio-ui.mjs').href);
+    const { renderYouTube } = await import(pathToFileURL(root + '/lib/youtube-ui.mjs').href);
     const browser = await chromium.launch({
       executablePath: process.env.SUITE_CHROMIUM_EXECUTABLE || undefined,
-      args: [
-        '--no-sandbox',
-        '--disable-gpu',
-        '--disable-dev-shm-usage',
-        '--no-zygote',
-        '--single-process',
-        '--use-gl=angle',
-        '--use-angle=swiftshader',
-        '--enable-unsafe-swiftshader'
-      ],
       headless: true
     });
     t.after(() => browser.close());
@@ -185,7 +175,7 @@ test(
     await page.goto('https://suite.test/video-suite');
     await page.waitForFunction(() => document.querySelector('#suite-draft-state').textContent === 'Neuer Entwurf');
 
-    await page.locator('[data-suite-nav=ideas]').click();
+    await page.locator('[data-journey=ideas]').click();
     await page.getByLabel('Screenshots oder Bilder anhängen', { exact: true }).setInputFiles({
       name: 'screenshot.png',
       mimeType: 'image/png',
@@ -207,7 +197,7 @@ test(
     await page.getByText('Vorschlag ansehen & übernehmen').click();
     await page.getByText('In aktuellen Entwurf übernehmen', { exact: true }).click();
     await page.waitForFunction(() => location.hash === '#storyboard');
-    await page.locator('[data-suite-nav=script]').click();
+    await page.locator('[data-journey=script]').click();
     if ((await page.locator('#suite-scene-list .suite-scene-card').count()) !== 1) throw Error('Scene adoption failed');
     await page.locator('#suite-add-scene').click();
     const last = page.locator('#suite-scene-list .suite-scene-card').last();

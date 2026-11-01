@@ -25,25 +25,36 @@ test(
       getSite: async () => f.site
     });
     app.get('/api/hosting/allinkl/accounts', async () => []);
-    app.get('/assets/search-console.js', async (_req, reply) =>
+    app.get('/assets/:file', async (req, reply) =>
       reply
-        .type('text/javascript')
-        .send(await readFile(new URL('../public/search-console.js', import.meta.url), 'utf8'))
+        .type(req.params.file.endsWith('.css') ? 'text/css' : 'text/javascript')
+        .send(await readFile(new URL('../public/' + req.params.file, import.meta.url), 'utf8'))
     );
     await app.listen({ host: '127.0.0.1', port: 0 });
     t.after(() => app.close());
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: process.env.SUITE_CHROMIUM_EXECUTABLE || undefined
+    });
     t.after(() => browser.close());
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(app.listeningOrigin + '/sites/demo/search-console');
     await page.getByText('Verbindung geladen.', { exact: true }).waitFor();
+    await page.locator('[data-gsc-tab=settings]').click();
+    await page.locator('#gsc-link-settings').evaluate(el => (el.open = true));
+    await page.locator('#gsc-choice').selectOption('custom');
     await page.locator('#gsc-link input[name="property"]').fill('sc-domain:example.com');
-    await page.getByRole('button', { name: 'Lokal verknüpfen', exact: true }).click();
-    await page.locator('#gsc-states').getByText('sc-domain:example.com', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Website zuordnen', exact: true }).click();
+    await page.waitForTimeout(1200);
+    assert.match(
+      await page.locator('#gsc-states').textContent(),
+      /sc-domain:example.com/,
+      'Link did not save: ' + (await page.locator('#gsc-message').textContent()) + '; errors=' + JSON.stringify(errors)
+    );
     assert.equal(f.linkage.live_approved_at, null);
-    await page.getByRole('button', { name: 'Livegang-Freigabe vorbereiten' }).click();
+    await page.locator('#gsc-next-step').getByRole('button', { name: 'Freigabe vorbereiten', exact: true }).click();
     await page.locator('#gsc-preview:not([hidden])').waitFor();
     const preview = JSON.parse(await page.locator('#gsc-preview-text').textContent());
     assert.equal(preview.domain, f.site.domain);
@@ -55,12 +66,13 @@ test(
       globalThis.document.getElementById('gsc-preview-text').textContent.includes('live_approved')
     );
     assert.ok(f.linkage.live_approved_at);
-    await page.getByRole('button', { name: 'Jetzt synchronisieren', exact: true }).click();
+    await page.locator('#gsc-next-step').getByRole('button', { name: 'Suchdaten abrufen', exact: true }).click();
     await page.locator('#gsc-rows tr').first().waitFor();
     assert.match(await page.locator('#gsc-metrics').textContent(), /Impressionen/);
     assert.match(await page.locator('#gsc-range').textContent(), /Sync:/);
-    await page.locator('#gsc-dimension').selectOption('page');
-    await page.locator('#gsc-rows').getByText('https://example.com/', { exact: true }).waitFor();
+    await page.locator('[data-dimension=page]').click();
+    await page.locator('#gsc-rows').getByRole('link', { name: '/', exact: true }).waitFor();
+    await page.locator('[data-gsc-tab=inspection]').click();
     await page.locator('#gsc-inspect input[name="url"]').fill('https://example.com/page');
     await page.getByRole('button', { name: 'URL prüfen', exact: true }).click();
     await page.waitForFunction(() => globalThis.document.getElementById('gsc-inspection').textContent.includes('PASS'));
@@ -69,6 +81,7 @@ test(
     assert.deepEqual(errors, []);
     // The same view must remain usable on a narrow phone viewport.
     await page.setViewportSize({ width: 390, height: 844 });
-    assert.ok(await page.getByRole('heading', { name: 'Suchleistung', exact: true }).isVisible());
+    await page.locator('[data-gsc-tab=performance]').click();
+    assert.ok(await page.getByRole('heading', { name: 'Klicks im Zeitverlauf', exact: true }).isVisible());
   }
 );

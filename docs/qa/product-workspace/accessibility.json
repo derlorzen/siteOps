@@ -1,0 +1,332 @@
+[
+  {
+    "path": "/",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/websites",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/setup",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht/files",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht/seo",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht/tests",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/billing",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/billing/projects/11111111-1111-4111-8111-111111111111",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/billing/customers",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/billing/time",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/billing/invoices",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/lorzcms",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/lorzcms/installations/11111111-1111-4111-8111-111111111111",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/hosting",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/coolify",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/youtube",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht/search-console",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/tools",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/settings",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/mcp-info",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/ai",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/websites",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/setup",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht/files",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht/seo",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht/tests",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/billing",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/billing/projects/11111111-1111-4111-8111-111111111111",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/billing/customers",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/billing/time",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/billing/invoices",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/lorzcms",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/lorzcms/installations/11111111-1111-4111-8111-111111111111",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/hosting",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/coolify",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/youtube",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/sites/nordlicht/search-console",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/tools",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/settings",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/mcp-info",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/ai",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#ideas",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#storyboard",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#editing",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#script",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#production",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#assets",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#review",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#publish",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#repurpose",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#ideas",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#storyboard",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#editing",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#script",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#production",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#assets",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#review",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#publish",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/video-suite#repurpose",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/files#approval",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/settings#yellow-accent",
+    "width": 1440,
+    "violations": []
+  }
+]

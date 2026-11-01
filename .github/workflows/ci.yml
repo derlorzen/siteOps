@@ -16,6 +16,8 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      SITEOPS_APPROVAL_MODE: required
     services:
       mysql:
         image: mysql:8
@@ -37,7 +39,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
       - name: Install CMS PHP runtime
         run: sudo apt-get update && sudo apt-get install -y php-cli php-sqlite3 php-mbstring php-xml php-mysql
       - name: CMS PHP syntax and release build
@@ -50,7 +52,7 @@ jobs:
         run: npm run format:check
       - name: Install browser runner dependencies
         working-directory: runner
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
       - name: Browser runner syntax check
         working-directory: runner
         run: npm run check
@@ -68,6 +70,28 @@ jobs:
         env:
           RUN_CRM_BROWSER_TESTS: '1'
         run: node --test test/billing-crm-browser.test.mjs
+      - name: UI and MCP coverage registry
+        run: npm run capabilities && git diff --exit-code -- docs/UI-MCP-COVERAGE.md
+      - name: Product workflows, responsive layout and accessibility
+        timeout-minutes: 4
+        env:
+          RUN_PRODUCT_BROWSER_TESTS: '1'
+          RUN_SUITE_BROWSER_TESTS: '1'
+          RUN_ANALYTICS_BROWSER_TESTS: '1'
+          RUN_VIDEO_BROWSER_TESTS: '1'
+        run: node --test test/product-browser.test.mjs test/video-suite-browser.test.mjs test/video-workflow-browser.test.mjs test/analytics-browser.test.mjs test/search-console-guidance-browser.test.mjs test/youtube-browser.test.mjs
+      - name: Product QA screenshots and accessibility findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteops-product-qa
+          path: |
+            .test-runtime/product-ui/
+            .test-runtime/analytics-after/
+            .test-runtime/gsc-guidance/
+            /tmp/siteops-qa/screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Runtime import check
         env:
           SITEOPS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

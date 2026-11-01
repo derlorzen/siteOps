@@ -122,9 +122,13 @@ test('all shared workspace browser assets parse and the site assignment UI is pr
   const shell = await readFile(new URL(paths[0], import.meta.url), 'utf8');
   const crm = await readFile(new URL(paths[1], import.meta.url), 'utf8');
   assert.match(shell, /\/api\/sites\/.*\/project/);
-  assert.match(shell, /ops-website-grid/);
+  const list = await readFile(new URL('../lib/product-ui.mjs', import.meta.url), 'utf8');
+  assert.match(list, /ui-data-table/);
+  assert.doesNotMatch(shell, /dashboardFocus/);
   assert.match(crm, /crm-project-websites/);
-  assert.match(crm, /crm-standalone-site/);
+  assert.match(crm, /crmProjectTable/);
+  assert.match(crm, /Websites zuordnen/);
+  assert.doesNotMatch(crm, /crm-standalone-site/);
 });
 
 test('schema allows multiple sites in one project but a site has only one project', async () => {

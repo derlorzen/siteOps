@@ -33,6 +33,43 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
   const { checkBillingDraftsMysql } = await import('./billing-drafts-mysql.mjs');
   await checkBillingDraftsMysql(db);
 
+  // Serialize this check with migrations and other database fixtures. It exercises
+  // the real policy row lock, so mocks cannot hide overspending under concurrency.
+  const { createAiUsage } = await import('../lib/ai-usage.mjs');
+  const budgetModel = 'budget-test-' + (await import('node:crypto')).randomUUID();
+  const [budgetPolicy] = await db.query('SELECT * FROM ai_usage_policy WHERE id=1');
+  const [budgetSummary] = await db.query(
+    "SELECT COUNT(*) calls,COALESCE(SUM(accounted_tokens),0) tokens FROM ai_usage_ledger WHERE created_at>=DATE_FORMAT(UTC_TIMESTAMP(),'%Y-%m-01')"
+  );
+  try {
+    await db.query('UPDATE ai_usage_policy SET monthly_calls=?,monthly_tokens=?,monthly_usd=NULL WHERE id=1', [
+      Number(budgetSummary[0].calls) + 1,
+      Number(budgetSummary[0].tokens) + 100000
+    ]);
+    let calls = 0;
+    const usage = createAiUsage({ db });
+    const run = () =>
+      usage.run({ operation: 'responses', body: { model: budgetModel, max_output_tokens: 100 } }, async () => {
+        calls++;
+        return { usage: { input_tokens: 10, output_tokens: 10 } };
+      });
+    const results = await Promise.allSettled([run(), run()]);
+    assert.equal(results.filter(row => row.status === 'fulfilled').length, 1);
+    assert.equal(calls, 1);
+  } finally {
+    await db.query('DELETE FROM ai_usage_ledger WHERE model=?', [budgetModel]);
+    const policy = budgetPolicy[0];
+    await db.query(
+      'UPDATE ai_usage_policy SET monthly_calls=?,monthly_tokens=?,monthly_usd=?,prices_json=? WHERE id=1',
+      [
+        policy.monthly_calls,
+        policy.monthly_tokens,
+        policy.monthly_usd,
+        typeof policy.prices_json === 'string' ? policy.prices_json : JSON.stringify(policy.prices_json)
+      ]
+    );
+  }
+
   // Video additions must preserve existing rows and execute real MySQL queries.
   const { createVideoStudio } = await import('../lib/video-studio.mjs');
   const videoStudio = createVideoStudio({ db });
@@ -160,6 +197,44 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
     assert.deepEqual(overview.sites, []);
     const activity = await createWorkspaceActivity(db).list({ projectId, limit: 20 });
     assert.ok(activity.entries.some(entry => entry.kind === 'task'));
+
+    const { createWorkspaceOverview } = await import('../lib/workspace-overview.mjs');
+    const portfolio = await createWorkspaceOverview({
+      db,
+      activity: { list: async () => ({ entries: [] }) },
+      dueTasks: async () => []
+    }).portfolio();
+    assert.ok(Array.isArray(portfolio.items));
+    assert.equal(typeof portfolio.counts.unknown, 'number');
+    const { createActionApprovals } = await import('../lib/action-approvals.mjs');
+    const { encryptWithKey: approvalEncrypt, decryptWithKey: approvalDecrypt } = await import('../lib/crypto.mjs');
+    const approvalKey = Buffer.alloc(32, 7),
+      actor = { type: 'oauth', subject: 'ci-' + projectId, clientId: 'client', scope: 'siteops:access siteops:write' };
+    const approvals = createActionApprovals({
+      db,
+      encrypt: value => approvalEncrypt(value, approvalKey),
+      decrypt: value => approvalDecrypt(value, approvalKey)
+    });
+    const proposal = { tool: 'ci-only-no-provider', args: { project_id: projectId }, state: { revision: 1 }, actor };
+    const prepared = await approvals.prepare(proposal);
+    try {
+      assert.equal((await approvals.pending({ type: 'dashboard_session', subject: actor.subject })).length, 1);
+      assert.equal((await approvals.pending({ type: 'dashboard_session', subject: 'other' })).length, 0);
+      await assert.rejects(approvals.approve(prepared.id, { type: 'dashboard_session', subject: 'other' }), {
+        statusCode: 409
+      });
+      await approvals.approve(prepared.id, { type: 'dashboard_session', subject: actor.subject });
+      await assert.rejects(approvals.consume({ ...proposal, id: prepared.id, state: { revision: 2 } }), {
+        statusCode: 409
+      });
+      const attempts = await Promise.allSettled([
+        approvals.consume({ ...proposal, id: prepared.id }),
+        approvals.consume({ ...proposal, id: prepared.id })
+      ]);
+      assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1);
+    } finally {
+      await db.query('DELETE FROM action_approvals WHERE id=?', [prepared.id]);
+    }
 
     // A stored server profile can be created, listed, resolved and removed
     // without exposing credentials in the public response.
