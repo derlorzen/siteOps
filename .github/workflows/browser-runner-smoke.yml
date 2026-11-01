@@ -23,6 +23,8 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    env:
+      SITEOPS_APPROVAL_MODE: required
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

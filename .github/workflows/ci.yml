@@ -16,6 +16,8 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      SITEOPS_APPROVAL_MODE: required
     services:
       mysql:
         image: mysql:8
