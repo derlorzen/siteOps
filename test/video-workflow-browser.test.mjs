@@ -50,6 +50,16 @@ test(
         captures: [{ scene: 1, mode: 'recording', status: 'captured' }]
       }
     };
+    let finalVideo = null,
+      productionRules = null;
+    const policy = projectId => ({
+      project_id: projectId,
+      source_scope: projectId && productionRules ? 'project' : 'global',
+      inherited: Boolean(projectId && !productionRules),
+      revision: productionRules ? 1 : 0,
+      global_revision: 0,
+      guidelines: productionRules || ['Record one continuous browser session.']
+    });
     let selectedImage,
       revision = 0,
       approved = false,
@@ -60,6 +70,10 @@ test(
     const publication = () => ({
       job_id: id,
       project_id: id,
+      final_video: finalVideo,
+      media_source: finalVideo
+        ? { type: 'final', asset_id: finalVideo.id, sha256: finalVideo.sha256 }
+        : { type: 'runner' },
       youtube: job.youtube,
       resolution: job.result.resolution,
       captures: job.result.captures,
@@ -92,7 +106,23 @@ test(
         data = [
           { id, name: 'Tutorials', language: 'en', voice_provider: 'kokoro', voice: 'am_adam', channel: 'Lorzen' }
         ];
-      else if (url.pathname === '/api/video-studio/jobs') data = [job];
+      else if (url.pathname === '/api/video-suite/production-guidelines') {
+        if (request.method() === 'POST') {
+          const payload = request.postDataJSON();
+          assert.equal(payload.project_id, id);
+          productionRules = payload.inherit ? null : payload.guidelines;
+        }
+        data = policy(request.method() === 'POST' ? id : url.searchParams.get('project_id'));
+      } else if (url.pathname.endsWith('/final-video')) {
+        const payload = request.postDataJSON();
+        finalVideo = {
+          id: '33333333-3333-4333-8333-333333333333',
+          filename: payload.filename,
+          sha256: payload.sha256,
+          duration_seconds: 56
+        };
+        data = finalVideo;
+      } else if (url.pathname === '/api/video-studio/jobs') data = [job];
       else if (url.pathname === '/api/video-studio/jobs/' + id) data = job;
       else if (url.pathname.endsWith('/publication')) {
         if (request.method() === 'POST') {
@@ -158,6 +188,14 @@ test(
     );
     await mkdir('/tmp/siteops-qa/screenshots', { recursive: true });
     await page.screenshot({ path: '/tmp/siteops-qa/screenshots/video-review-desktop.png', fullPage: true });
+    await page
+      .locator('#suite-final-file')
+      .setInputFiles({ name: 'edited.mp4', mimeType: 'video/mp4', buffer: Buffer.from('mock final video bytes') });
+    await page.locator('#suite-final-import').click();
+    await page.waitForFunction(() => document.querySelector('#suite-final-state').textContent.includes('edited.mp4'));
+    assert.ok(finalVideo.sha256);
+    assert.equal(await page.locator('#suite-final-original').isVisible(), true);
+    assert.match(await page.locator('#suite-review-video').getAttribute('src'), /version=33333333/);
     await page.getByRole('button', { name: 'Alles geprüft · weiter zu YouTube →', exact: true }).click();
     await page.getByRole('button', { name: 'Upload mit diesen Angaben prüfen', exact: true }).click();
     await page.locator('#suite-upload-confirm').waitFor({ state: 'visible' });
@@ -177,8 +215,18 @@ test(
           { ideas: 'strategy', storyboard: 'script', editing: 'edit' }[step]
         );
     }
+    await page.goto('https://workflow.test/video-suite#settings');
+    await page.locator('#suite-guidelines-text').waitFor({ state: 'visible' });
+    await page.waitForFunction(() => document.querySelector('#suite-guidelines-text').value.includes('continuous'));
+    await page.locator('#suite-guidelines-text').fill('Use English narration in this project only.');
+    await page.locator('#suite-guidelines-save').click();
+    await page.waitForFunction(() =>
+      document.querySelector('#suite-guidelines-source').textContent.includes('eigene Projektregeln')
+    );
+    assert.deepEqual(productionRules, ['Use English narration in this project only.']);
+    await page.screenshot({ path: '/tmp/siteops-qa/screenshots/video-project-guidelines.png', fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
-    for (const step of ['overview', 'ideas', 'script', 'assets', 'review', 'publish', 'repurpose']) {
+    for (const step of ['overview', 'ideas', 'script', 'assets', 'review', 'publish', 'repurpose', 'settings']) {
       await page.goto('https://workflow.test/video-suite#' + step);
       await page.waitForTimeout(150);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, step);

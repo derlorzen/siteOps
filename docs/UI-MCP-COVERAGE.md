@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 268 API-Funktionen, 237 MCP-Tools, 41 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 271 API-Funktionen, 240 MCP-Tools, 41 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -191,6 +191,7 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | video | /video-suite#script | video.intros.list | GET /api/video-studio/intro-assets | video_intros_list | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite | video_studio_downloads | GET /api/video-studio/jobs/:id/downloads | video_studio_downloads | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite | video_studio_downloads | GET /api/video-studio/jobs/:id/file | video_studio_downloads | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite | video_studio_import_final | POST /api/video-studio/jobs/:id/final-video | video_studio_import_final | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite | video_studio_update_metadata | POST /api/video-studio/jobs/:id/metadata | video_studio_update_metadata | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#review | video.publication.read | GET /api/video-studio/jobs/:id/publication/thumbnail | video_publication_get | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#review | video.publication.read | GET /api/video-studio/jobs/:id/publication | video_publication_get | Lesen | Keine zusätzliche | Zugeordnet |  |
@@ -217,6 +218,8 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | video | /video-suite#settings | video.saveKnowledge | POST /api/video-suite/knowledge | video_knowledge_save | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.models | GET /api/video-suite/models | video_models_list | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite | video_studio_downloads | GET /api/video-suite/preview/:id | video_studio_downloads | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#settings | video.productionGuidelines | GET /api/video-suite/production-guidelines | video_production_guidelines_get | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#settings | video.saveProductionGuidelines | POST /api/video-suite/production-guidelines | video_production_guidelines_save | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.status | GET /api/video-suite/settings | video_workspace_status | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.testConnection | POST /api/video-suite/test-connection | video_connection_test | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | video | /video-suite#assets | video.thumbnail | POST /api/video-suite/thumbnails | video_thumbnail_generate | Ändern | Gebundene Freigabe | Zugeordnet |  |

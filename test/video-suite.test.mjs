@@ -270,6 +270,13 @@ test('encrypted private plugin knowledge is validated and included in every agen
   await service.chat({ project_id: project, message: 'Plan a Bagisto tutorial', context });
   const payload = JSON.parse(calls[0][1].body);
   assert.deepEqual(JSON.parse(payload.input[0].content).product_knowledge, knowledge);
+  assert.equal(JSON.parse(payload.input[0].content).production_guidelines.project_id, project);
+  assert.ok(
+    JSON.parse(payload.input[0].content).production_guidelines.guidelines.some(rule =>
+      rule.includes('durchgehende Browsersitzung')
+    )
+  );
+  assert.match(payload.instructions, /effective editorial policy for the selected project/);
   assert.match(payload.instructions, /must not be advertised as publicly available/);
 });
 test('connection test uses saved model and same output schema as the agent', async () => {
