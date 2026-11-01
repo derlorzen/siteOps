@@ -258,6 +258,9 @@
   "GET /api/youtube/uploads": {
     "tools": ["youtube_uploads"]
   },
+  "POST /api/youtube/uploads/retry": {
+    "tools": ["youtube_upload_retry"]
+  },
   "POST /api/youtube/analytics": {
     "tools": ["youtube_analytics"]
   },
