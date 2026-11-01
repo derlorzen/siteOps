@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import Fastify from 'fastify';
 import { registerHttpActionGuard } from '../lib/http-action-guard.mjs';
+import { renderDraftPreview } from '../lib/billing-numbering.mjs';
 
 test(
   'CRM filters and editable invoice drafts work on desktop and mobile',
@@ -67,6 +68,7 @@ test(
       ]
     };
     const saves = [];
+    const previews = [];
     let settings = {};
     let resets = 0;
     const issued = { id: 'i2', customer_id: 'c1', invoice_number: 'RE-2026-00002', status: 'issued', paid_at: null };
@@ -118,6 +120,20 @@ test(
       return draft;
     });
     app.get('/api/billing/invoices/i1', async () => draft);
+    app.post('/api/billing/invoices/i1/preview', async (req, reply) => {
+      previews.push(req.body);
+      return reply
+        .type('application/pdf')
+        .send(
+          renderDraftPreview(
+            { ...draft, ...req.body },
+            { name: 'Sender' },
+            { name: 'Customer' },
+            '2026-11-02',
+            '2026-11-16'
+          )
+        );
+    });
     app.post('/api/billing/settings', async req => {
       settings = req.body;
       return settings;
@@ -173,6 +189,23 @@ test(
     await rows.nth(0).getByLabel('Einzelpreis netto €', { exact: true }).fill('80');
     assert.equal(await rows.nth(0).getByLabel('Betrag netto €', { exact: true }).inputValue(), '160.00');
     await rows.nth(0).getByLabel('Betrag netto €', { exact: true }).fill('150');
+    await page.evaluate(() => {
+      const create = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = blob => {
+        globalThis.testPreviewBlob = blob;
+        return create(blob);
+      };
+    });
+    const [previewWindow] = await Promise.all([
+      page.waitForEvent('popup'),
+      page.getByRole('button', { name: 'Vorschau', exact: true }).click()
+    ]);
+    await page.waitForFunction(() => globalThis.testPreviewBlob?.size > 500);
+    assert.match(await page.evaluate(() => globalThis.testPreviewBlob.text()), /Vorschau/);
+    assert.equal(previews.length, 1);
+    assert.equal(previews[0].items[0].description, 'Geänderter Text');
+    assert.equal(saves.length, 0, 'preview does not save the draft');
+    await previewWindow.close();
     await page.getByRole('button', { name: '+ Eigene Position', exact: true }).click();
     await rows.nth(1).getByLabel('Beschreibung', { exact: true }).fill('Eigene Pauschale');
     await rows.nth(1).getByLabel('Menge', { exact: true }).fill('1');
@@ -213,11 +246,15 @@ test(
     await page.getByLabel('Name der Bank', { exact: true }).fill('Meine Bank');
     assert.equal(await page.getByLabel('Zahlungsziel', { exact: true }).inputValue(), '14');
     await page.getByLabel('Zahlungsziel', { exact: true }).selectOption('7');
+    await page.getByLabel('Nummernkreis / Präfix', { exact: true }).fill('CUSTOM');
+    await page.getByLabel('Startnummer', { exact: true }).fill('42');
     await page.getByRole('button', { name: 'Einstellungen speichern', exact: true }).click();
     await page.getByText('Einstellungen gespeichert.', { exact: true }).waitFor();
     await page.reload();
     assert.equal(await page.getByLabel('Zahlungsziel', { exact: true }).inputValue(), '7');
     assert.equal(await page.getByLabel('Name der Bank', { exact: true }).inputValue(), 'Meine Bank');
+    assert.equal(await page.getByLabel('Nummernkreis / Präfix', { exact: true }).inputValue(), 'CUSTOM');
+    assert.equal(await page.getByLabel('Startnummer', { exact: true }).inputValue(), '42');
     assert.deepEqual(errors, []);
   }
 );

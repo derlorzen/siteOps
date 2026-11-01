@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createBillingController } from '../lib/billing.mjs';
+import { allocateInvoiceNumber } from '../lib/billing-numbering.mjs';
 
 export async function checkBillingDraftsMysql(db) {
   const customerId = randomUUID(),
@@ -17,7 +18,25 @@ export async function checkBillingDraftsMysql(db) {
   });
   const period = { service_from: '2026-09-01', service_to: '2026-09-30' };
   const drafts = [];
+  const prefix = 'CI-' + customerId.slice(0, 8).toUpperCase();
   try {
+    const first = await db.getConnection(),
+      second = await db.getConnection();
+    try {
+      await first.beginTransaction();
+      await second.beginTransaction();
+      const settings = { invoice_prefix: prefix, invoice_start_number: '800' };
+      assert.equal(await allocateInvoiceNumber(first, settings, 2026), prefix + '-2026-00800');
+      const pending = allocateInvoiceNumber(second, settings, 2026);
+      await first.commit();
+      assert.equal(await pending, prefix + '-2026-00801');
+      await second.commit();
+    } finally {
+      await first.rollback();
+      await second.rollback();
+      first.release();
+      second.release();
+    }
     await db.query('INSERT INTO customers(id,name) VALUES(?,?)', [customerId, 'Invoice draft CI']);
     await db.query('INSERT INTO customer_projects(id,customer_id,name) VALUES(?,?,?)', [
       projectId,
@@ -117,6 +136,7 @@ export async function checkBillingDraftsMysql(db) {
     await db.query("UPDATE invoices SET status='issued' WHERE id=?", [manual.id]);
     await assert.rejects(api.updateDraft(manual.id, { ...period, items: [] }), error => error.statusCode === 409);
   } finally {
+    await db.query('DELETE FROM invoice_number_sequences WHERE prefix=?', [prefix]);
     await db.query(
       'DELETE FROM invoice_draft_resets WHERE original_invoice_id IN (SELECT id FROM invoices WHERE customer_id=?)',
       [customerId]

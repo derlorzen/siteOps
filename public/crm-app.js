@@ -507,6 +507,7 @@
       badge({draft:'Entwurf',archiving:'Archivierung',issued:'Offen',paid:'Bezahlt',cancelled:'Storniert'}[i.status]||i.status,
         i.status==='paid'?'positive':i.status==='issued'?'warning':'')+'</td><td class="crm-actions">'+
       (i.status==='draft'?button('Bearbeiten','edit-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
+      (i.status==='draft'?'<a class="crm-btn crm-btn-ghost" href="/api/billing/invoices/'+i.id+'/preview" target="_blank" rel="noopener">Vorschau</a>':'')+
       (['draft','archiving'].includes(i.status)?button(i.status==='archiving'?'Archivierung erneut versuchen':'Ausstellen','issue-invoice','data-id="'+i.id+'"','crm-btn-primary'):'')+
       (['issued','paid','cancelled'].includes(i.status)?'<a class="crm-btn crm-btn-ghost" href="/api/billing/invoices/'+i.id+'/pdf">PDF</a>':'')+
       (['issued','paid'].includes(i.status)?button('E-Mail','send-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
@@ -531,10 +532,12 @@
     return heading('VERWALTUNG','Rechnungseinstellungen','Absenderdaten, Bankverbindung und Rechnungsangaben.')+
       '<section class="crm-panel"><form data-form="settings"><div class="crm-form-cols">'+
       keys.map(([name,label])=>field(label,name,state.settings[name]||'','maxlength="500"')).join('')+
+      field('Nummernkreis / Präfix','invoice_prefix',state.settings.invoice_prefix||'RE','pattern="[A-Z0-9][A-Z0-9_-]{0,19}" maxlength="20" required')+
+      field('Startnummer','invoice_start_number',state.settings.invoice_start_number||'1','type="number" min="1" max="999999999" step="1" required')+
       '<label class="crm-field"><span>Zahlungsziel</span>'+select('payment_terms_days',[
         ['0','Sofort fällig, ohne Abzug'],['7','7 Tage ohne Abzug'],['14','14 Tage ohne Abzug (Standard)'],['30','30 Tage ohne Abzug']
       ],state.settings.payment_terms_days||'14','aria-label="Zahlungsziel"')+'</label>'+
-      '</div><p class="crm-muted">Das Zahlungsziel berechnet die Fälligkeit ab Rechnungsdatum. Diese Angaben gelten für künftig ausgestellte Rechnungen.</p><div class="crm-form-footer"><button class="crm-btn crm-btn-primary">Einstellungen speichern</button></div></form></section>'+
+      '</div><p class="crm-muted">Nummernformat: PRÄFIX-JAHR-00001. Die Startnummer gilt als Untergrenze; bereits vergebene Nummern werden nicht erneut vergeben. Jeder Nummernkreis zählt pro Kalenderjahr separat. Rechnungen und Stornobelege teilen den gewählten Kreis.</p><p class="crm-muted">Das Zahlungsziel berechnet die Fälligkeit ab Rechnungsdatum. Diese Angaben gelten für künftig ausgestellte Rechnungen.</p><div class="crm-form-footer"><button class="crm-btn crm-btn-primary">Einstellungen speichern</button></div></form></section>'+
       '<section class="crm-panel"><h2>Archivierung</h2><p>Ausgestellte Rechnungen werden in SiteOps und im GitHub-Rechnungsarchiv gespeichert. Für die langfristige revisionssichere Aufbewahrung wird ein zusätzliches externes Archiv benötigt.</p></section>'+
       '<section class="crm-panel siteops-appearance-section"><h2>Design & Farben</h2>'+
       '<p>Die Akzentfarbe gilt für die Kundenverwaltung und alle weiteren SiteOps-Bereiche.</p>'+
@@ -660,6 +663,14 @@
       '<button class="crm-btn crm-btn-primary">Zeit speichern</button></form>'),'time');
   }
 
+  function invoiceFormPayload(form){
+    const items=[...form.querySelectorAll('[data-invoice-row]')].map(row=>{
+          const value=name=>row.querySelector('[name="'+name+'"]').value;
+          return {...(row.dataset.itemId?{id:row.dataset.itemId}:{}),entry_date:value('entry_date'),description:value('description'),
+            quantity:Number(value('quantity')),unit:value('unit'),hourly_cents:Math.round(Number(value('rate_eur'))*100),amount_cents:Math.round(Number(value('amount_eur'))*100)};
+        });
+    return {service_from:formVal(form,'service_from'),service_to:formVal(form,'service_to'),items};
+  }
   function invoiceRow(item={},position=1){
     const quantity=Number(item.quantity??Number(item.duration_seconds||0)/3600);
     return '<fieldset class="crm-invoice-row" data-invoice-row data-item-id="'+esc(item.id||'')+'"><legend>Position '+position+'</legend>'+
@@ -696,7 +707,7 @@
       button('+ Eigene Position','add-invoice-row','','crm-btn-ghost')+
       '<p id="crmDraftError" class="crm-error" role="alert"></p>'+
       '<footer class="crm-invoice-footer"><p id="crmDraftTotals" class="crm-draft-totals" role="status" aria-live="polite"></p>'+
-      '<button type="submit" class="crm-btn crm-btn-primary">Entwurf speichern</button></footer></form>'),'invoice');
+      '<div class="crm-invoice-row-actions">'+button('Vorschau','preview-invoice','','crm-btn-ghost')+'<button type="submit" class="crm-btn crm-btn-primary">Entwurf speichern</button></div></footer></form>'),'invoice');
     state.invoiceDirty=false;
     updateInvoiceTotals();
   }
@@ -806,6 +817,20 @@
       case 'close-modal':closeModal();break;
       case 'reset-time-filters':state.timeCustomerFilter='';state.timeProjectFilter='';syncTimeFilters();render();break;
       case 'edit-invoice':await invoiceModal(id);break;
+      case 'preview-invoice':{
+        const form=source.closest('form');
+        if(!form.reportValidity())break;
+        const previewWindow=window.open('about:blank','_blank');
+        if(!previewWindow)throw Error('Bitte Pop-ups für die Rechnungsvorschau erlauben.');
+        try{
+          previewWindow.opener=null;
+          const response=await fetch('/api/billing/invoices/'+form.dataset.id+'/preview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(invoiceFormPayload(form))});
+          if(!response.ok){const error=await response.json();throw Error(error.error||error.message||'Vorschau fehlgeschlagen.');}
+          const url=URL.createObjectURL(await response.blob());previewWindow.location.href=url;
+          setTimeout(()=>URL.revokeObjectURL(url),60000);
+        }catch(error){previewWindow.close();throw error;}
+        break;
+      }
       case 'reset-invoice':
         modal(modalFrame('Auf Entwurf zurücksetzen','Nur ohne verbuchten Zahlungseingang möglich.',
           '<form class="crm-stack" data-form="invoice-reset" data-id="'+esc(id)+'">'+
@@ -930,13 +955,8 @@
         notice('Originalrechnung storniert. Folgeentwurf ist angelegt.');break;
       }
       case 'invoice-draft':{
-        const items=[...form.querySelectorAll('[data-invoice-row]')].map(row=>{
-          const value=name=>row.querySelector('[name="'+name+'"]').value;
-          return {...(row.dataset.itemId?{id:row.dataset.itemId}:{}),entry_date:value('entry_date'),description:value('description'),
-            quantity:Number(value('quantity')),unit:value('unit'),hourly_cents:Math.round(Number(value('rate_eur'))*100),amount_cents:Math.round(Number(value('amount_eur'))*100)};
-        });
         try{
-          await api('/api/billing/invoices/'+id,'PATCH',{service_from:formVal(form,'service_from'),service_to:formVal(form,'service_to'),items});
+          await api('/api/billing/invoices/'+id,'PATCH',invoiceFormPayload(form));
         }catch(error){$('crmDraftError').textContent=userError(error);throw error;}
         state.invoiceDirty=false;closeModal();await reload();notice('Rechnungsentwurf gespeichert.');break;
       }

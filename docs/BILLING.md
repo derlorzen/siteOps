@@ -315,3 +315,9 @@ Quellen: [§ 14 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html), [
 ## Bankname und Zahlungsziel
 
 `bank_name` ergänzt den frei gepflegten Banknamen. `payment_terms_days` bietet `0` (sofort), `7`, `14` (Standard) und `30` Tage, jeweils ohne Abzug. Ohne bisherige Einstellung gelten weiter 14 Tage. Beim Ausstellen wird das Fälligkeitsdatum ab dem Rechnungsdatum berechnet und zusammen mit Bankname und Zahlungsziel im bestehenden Absendersnapshot festgehalten. Einstellungen ändern keine bereits ausgestellten Belege. Freie Zahlungshinweise werden ergänzend ausgegeben und sollten zum gewählten Zahlungsziel passen.
+
+## Vorschau und Nummernkreise
+
+Entwürfe bieten eine PDF-Vorschau in der Übersicht (gespeicherter Stand) und im Editor (einschließlich ungespeicherter Werte). `GET /api/billing/invoices/:id/preview` und `POST` desselben Pfads liefern eine nicht gespeicherte PDF mit diagonalem Wasserzeichen `Vorschau` und Entwurfskennzeichnung auf jeder Seite. Die Vorschau reserviert keine Nummer, verändert keinen Zustand und schreibt nicht ins Archiv. Ausgestellte Rechnungen werden weiterhin als archiviertes Original angezeigt.
+
+`invoice_prefix` (Standard `RE`, bis zu 20 Großbuchstaben/Ziffern/Bindestriche/Unterstriche) und `invoice_start_number` (Standard `1`, maximal `999999999`) bestimmen den eigenen Nummernkreis. Format: `PRÄFIX-JAHR-00001`. Der Startwert ist eine Untergrenze für die nächste Nummer; niedrigere Werte setzen keinen laufenden Zähler zurück. Jeder Präfix zählt je Kalenderjahr getrennt. Rechnungen und Stornobelege verwenden gemeinsam denselben aktiven Kreis. Die Migration übernimmt bisherige Jahreszähler in den Standardkreis `RE`. Die Vergabe sperrt den Jahreszähler innerhalb der Ausstellungstransaktion und prüft bestehende Rechnungs- und Stornonummern zusätzlich auf Kollisionen. Bereits ausgestellte Belege bleiben unverändert.

@@ -114,6 +114,14 @@
   "PATCH /api/billing/invoices/:id": {
     "tools": ["invoice_draft_update"]
   },
+  "GET /api/billing/invoices/:id/preview": {
+    "tools": ["invoice_preview"]
+  },
+  "POST /api/billing/invoices/:id/preview": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Vorschau ungespeicherter Formularwerte im Dashboard; gespeicherte Entwürfe sind über invoice_preview verfügbar."
+  },
   "DELETE /api/billing/invoices/:id": {
     "tools": ["invoice_draft_discard"]
   },
