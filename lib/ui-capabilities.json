@@ -886,5 +886,14 @@
     "tools": [],
     "status": "ui_only",
     "reason": "Persönliche Wiederherstellung: Das neue temporäre Passwort wird ausschließlich im geschützten Dashboard angezeigt. cms_admin_recovery liefert den Einstieg, setzt aber kein Passwort zurück und gibt keine Zugangsdaten an Agenten aus."
+  },
+  "POST /api/video-studio/jobs/:id/final-video": {
+    "tools": ["video_studio_import_final"]
+  },
+  "GET /api/video-suite/production-guidelines": {
+    "tools": ["video_production_guidelines_get"]
+  },
+  "POST /api/video-suite/production-guidelines": {
+    "tools": ["video_production_guidelines_save"]
   }
 }

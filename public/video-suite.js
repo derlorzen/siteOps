@@ -188,6 +188,8 @@
   async function selectProject() {
     const next = $('vs-project').value;
     if (!next || next === projectId || loading || sending || uploadingImages) return;
+    if(guidelinesDirty && !window.confirm('Ungespeicherte Produktionsregeln verwerfen und Projekt wechseln?')){$('vs-project').value=projectId;return;}
+    guidelinesDirty=false;
     try { await saveCurrent(); }
     catch { $('vs-project').value = projectId; return; }
     const previous = projectId; projectId = next; loading = true;
@@ -200,7 +202,7 @@
       $('suite-thumbnail-canvas').hidden = true; $('suite-thumbnail-download').hidden = true;
       $('suite-thumbnail-prompt').value = ''; $('suite-social-posts').textContent = 'Lass den Creative Agent passende Posts erstellen.';
       dirty = false; $('suite-draft-state').textContent = draft ? 'Entwurf online geladen' : 'Neuer Entwurf';
-      await loadConversations(); await loadAssets();
+      await loadConversations(); await loadAssets(); await loadGuidelines();
     } catch (e) { projectId = previous; $('vs-project').value = previous; $('suite-draft-state').textContent = e.message; }
     finally { loading = false; $('vs-project').disabled = false; }
   }
@@ -417,6 +419,33 @@
       $('suite-settings-status').textContent = result.models.length + ' Modelle geladen. Die Auswahl bleibt unverändert. Der Verbindungstest prüft die konkrete Responses-Anfrage.';
     } catch(e) { $('suite-settings-status').textContent = e.message; } finally { button.disabled = false; }
   });
+  let guidelineState=null,guidelinesDirty=false,guidelineRequest=0;
+  async function loadGuidelines(){
+    const ticket=++guidelineRequest,scope=$('suite-guidelines-scope').value;
+    const selected=scope==='project'?projectId:null;
+    if(scope==='project' && !selected){$('suite-guidelines-source').textContent='Bitte zuerst ein Videoprojekt auswählen.';$('suite-guidelines-save').disabled=true;return;}
+    try{
+      const p=await api('production-guidelines'+(selected?'?project_id='+encodeURIComponent(selected):''));
+      if(ticket!==guidelineRequest)return;
+      guidelineState=p;guidelinesDirty=false;$('suite-guidelines-text').value=p.guidelines.join('\n');
+      $('suite-guidelines-source').textContent=p.project_id?('Projekt: '+($('vs-project').selectedOptions[0]?.textContent || p.project_id)+' · '+(p.inherited?'übernimmt die globale Grundlage':'eigene Projektregeln')):'Globale Grundlage für Projekte ohne eigene Regeln.';
+      $('suite-guidelines-inherit').disabled=!p.project_id || p.inherited;$('suite-guidelines-save').disabled=false;
+    }catch(e){$('suite-guidelines-source').textContent=e.message;$('suite-guidelines-save').disabled=true;}
+  }
+  $('suite-guidelines-text').addEventListener('input',()=>{guidelinesDirty=true;});
+  $('suite-guidelines-scope').addEventListener('change',()=>{
+    if(guidelinesDirty && !window.confirm('Ungespeicherte Regeln verwerfen und Bereich wechseln?')){$('suite-guidelines-scope').value=guidelineState?.project_id?'project':'global';return;}
+    loadGuidelines();
+  });
+  async function saveGuidelines(inherit=false){
+    const p=guidelineState;if(!p)throw Error('Regeln zuerst laden.');
+    const currentScope=$('suite-guidelines-scope').value==='project'?projectId:null;
+    if(currentScope!==p.project_id)throw Error('Projekt wurde gewechselt. Regeln neu laden.');
+    if(inherit && !window.confirm('Eigene Projektregeln durch die globale Grundlage ersetzen?'))return;
+    const input={...(p.project_id?{project_id:p.project_id}:{}),expected_revision:p.revision,expected_global_revision:p.global_revision,inherit,...(inherit?{}:{guidelines:$('suite-guidelines-text').value.split('\n').map(x=>x.trim()).filter(Boolean)})};
+    await api('production-guidelines',input);guidelinesDirty=false;await loadGuidelines();$('suite-guidelines-status').textContent='Gespeichert. MCP und Videoassistent verwenden ab jetzt dieselben wirksamen Projektregeln.';
+  }
+  for(const [id,inherit] of [['suite-guidelines-save',false],['suite-guidelines-inherit',true]])$(id).addEventListener('click',async event=>{const b=event.currentTarget;b.disabled=true;try{await saveGuidelines(inherit);}catch(e){$('suite-guidelines-status').textContent=e.message;}finally{b.disabled=false;}});
   function showKnowledge(data) {
     const plugins = data.plugins || [];
     $('suite-knowledge-json').value = JSON.stringify({plugins}, null, 2);
@@ -494,7 +523,7 @@
     const r=await fetch(path,{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:data===undefined?{}:{'content-type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});
     const result=await r.json().catch(()=>({}));if(!r.ok)throw Error(result.message || result.error || 'Die Anfrage konnte nicht abgeschlossen werden.');return result;
   };
-  const signature=p=>JSON.stringify({id:p?.job_id,youtube:p?.youtube,thumbnail:p?.thumbnail_url,resolution:p?.resolution});
+  const signature=p=>JSON.stringify({id:p?.job_id,youtube:p?.youtube,thumbnail:p?.thumbnail_url,resolution:p?.resolution,media_source:p?.media_source});
   const stage=()=>location.hash.slice(1) || 'overview';
   const status=message=>{$('suite-package-state').textContent=message;};
   function invalidate(){pending=null;reviewed=null;$('suite-upload-confirm').hidden=true;}
@@ -541,7 +570,9 @@
   function drawReview(){
     const p=publication,ready=Boolean(job && p);$('suite-review-empty').hidden=ready;$('suite-review-content').hidden=!ready;
     if(!ready)return;
-    const source='/api/video-suite/preview/'+encodeURIComponent(job.id),video=$('suite-review-video');if(video.getAttribute('src')!==source)video.src=source;
+    const source='/api/video-suite/preview/'+encodeURIComponent(job.id)+'?version='+encodeURIComponent(p.final_video?.id || 'runner'),video=$('suite-review-video');if(video.getAttribute('src')!==source)video.src=source;
+    $('suite-final-state').textContent=p.final_video?'Gespeicherte Endfassung: '+p.final_video.filename+' · '+Number(p.final_video.duration_seconds).toFixed(1)+' Sekunden':'Quelle: ursprüngliche Runner-Aufnahme';
+    $('suite-final-original').hidden=!p.final_video;$('suite-final-original').href='/api/video-studio/jobs/'+encodeURIComponent(job.id)+'/file?kind=original';
     $('suite-review-title').textContent=p.youtube?.title || 'Titel fehlt';$('suite-review-description').textContent=p.description || 'Beschreibung fehlt';
     $('suite-review-keywords').textContent=(p.youtube?.keywords || []).join(', ') || 'Keine Keywords hinterlegt';
     $('suite-review-format').textContent=(job.render_settings?.language==='de'?'Deutsch':'Englisch')+' · '+(job.format==='portrait'?'9:16 Hochformat':'16:9 YouTube');
@@ -585,6 +616,22 @@
   document.addEventListener('suite-thumbnail-selected',event=>{thumbnail=event.detail;packageDirty=true;packageVersion++;invalidate();status('Titelbild ausgewählt. Mit „Gesamtvorschau öffnen“ für diese Produktion speichern.');});
   document.addEventListener('suite-save-package',()=>{if(job?.status==='done')savePackage().then(()=>$('suite-seo-status').textContent='Texte an der fertigen Produktion gespeichert. Kein erneutes Rendern erforderlich.').catch(e=>$('suite-seo-status').textContent=e.message);});
   ['suite-seo-title','suite-seo-description','suite-seo-keywords','suite-seo-hashtags','suite-seo-chapters','suite-thumbnail-prompt'].forEach(id=>$(id).addEventListener('input',()=>{packageDirty=true;packageVersion++;invalidate();}));
+  $('suite-final-import').addEventListener('click',async event=>{
+    const button=event.currentTarget,file=$('suite-final-file').files[0],selectedId=job?.id;
+    button.disabled=true;
+    try{
+      if(!selectedId || !file)throw Error('Eine fertige Produktion und eine MP4 auswählen.');
+      if(file.size>5*1024*1024)throw Error('Die MP4 darf maximal 5 MiB groß sein. Bitte kompakter exportieren.');
+      if(packageDirty)await savePackage();
+      const bytes=await file.arrayBuffer(),digest=await crypto.subtle.digest('SHA-256',bytes);
+      const sha256=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+      const data_base64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(Error('Datei konnte nicht gelesen werden.'));r.readAsDataURL(file);});
+      $('suite-final-state').textContent='Endfassung wird geprüft und gespeichert …';
+      await api('/api/video-studio/jobs/'+encodeURIComponent(selectedId)+'/final-video',{filename:file.name,sha256,data_base64});
+      if(job?.id!==selectedId)return;
+      invalidate();publication=await api(endpoint(selectedId));drawReview();$('suite-final-file').value='';status('Endfassung gespeichert. Bitte die neue Gesamtvorschau prüfen.');
+    }catch(e){$('suite-final-state').textContent=e.message;}finally{button.disabled=false;}
+  });
   $('suite-review-continue').addEventListener('click',()=>{reviewed=signature(publication);location.hash='publish';});
   const packageNext=document.createElement('button');packageNext.type='button';packageNext.className='suite-package-next';packageNext.textContent='Speichern & Gesamtvorschau öffnen →';packageNext.addEventListener('click',async()=>{packageNext.disabled=true;try{await savePackage();invalidate();location.hash='review';}catch(e){status(e.message);}finally{packageNext.disabled=false;}});document.querySelector('[data-suite-pane="assets"]').append(packageNext);
   $('suite-thumbnail-file').addEventListener('change',async event=>{
@@ -610,7 +657,10 @@
       if(!$('suite-upload-account').value)throw Error('YouTube-Kanal auswählen.');
       const fresh=await api(endpoint(job.id));if(signature(fresh)!==reviewed)throw Error('Das Paket wurde geändert. Gesamtvorschau erneut prüfen.');
       if((await uploads()).length)throw Error('Für diese Produktion existiert bereits ein Upload. Prüfe dessen Fortschritt, bevor du ein weiteres Video anlegst.');
-      const settings=uploadSettings(),result=await api('/api/youtube/upload-preview',settings);pending={result,settings:JSON.stringify(settings),signature:reviewed};
+      const settings=uploadSettings(),result=await api('/api/youtube/upload-preview',settings);
+      const sourceKey=s=>JSON.stringify({type:s?.type || 'runner',asset_id:s?.asset_id,sha256:s?.sha256});
+      if(sourceKey(result.body.source)!==sourceKey(fresh.media_source))throw Error('Die Videofassung wurde inzwischen geändert. Gesamtvorschau erneut prüfen.');
+      pending={result,settings:JSON.stringify(settings),signature:reviewed};
       $('suite-upload-confirm-title').textContent=result.body.title;$('suite-upload-confirm-channel').textContent='Kanal: '+result.channel.title+' · Privat · Titelbild '+(result.body.has_thumbnail?'enthalten':'fehlt');$('suite-upload-confirm').hidden=false;$('suite-upload-status').textContent='Geprüft. Mit dem nächsten Klick startet der private Upload.';
     }catch(e){$('suite-upload-status').textContent=e.message;}finally{b.disabled=false;}
   });

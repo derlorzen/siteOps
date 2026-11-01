@@ -540,7 +540,8 @@ test('YouTube settings/OAuth use dashboard sessions and reject unauthenticated, 
   );
 });
 
-test('upload approval freezes the selected publication thumbnail with the reviewed title and description', async () => {
+test('upload approval freezes final source and thumbnail with the reviewed title and description', async () => {
+  let selectedSource = { type: 'final', asset_id: id, sha256: '1'.repeat(64) };
   let image = Buffer.from([255, 216, 255, 1]);
   const h = harness(
     async () => Response.json({}),
@@ -558,6 +559,7 @@ test('upload approval freezes the selected publication thumbnail with the review
         render_settings: { language: 'en' }
       }),
       capabilities: async () => ({ artifactRanges: true }),
+      mediaSource: async () => selectedSource,
       publication: { read: async () => ({ has_thumbnail: true }), thumbnail: async () => image }
     })
   );
@@ -570,10 +572,13 @@ test('upload approval freezes the selected publication thumbnail with the review
   assert.equal(preview.body.has_thumbnail, true);
   assert.equal(preview.body.thumbnail, undefined);
   const expected = image.toString('base64');
+  const expectedSource = { ...selectedSource };
+  selectedSource = { ...selectedSource, sha256: '2'.repeat(64) };
   image = Buffer.from([255, 216, 255, 2]);
   await h.service.execute({ preview_token: preview.preview_token, approved: true });
   const snapshot = JSON.parse(h.uploads[0][4]);
   assert.equal(snapshot.thumbnail, expected);
+  assert.deepEqual(snapshot.source, expectedSource);
   assert.equal(snapshot.title, 'Reviewed title');
   assert.equal(snapshot.description, 'Reviewed description');
 });

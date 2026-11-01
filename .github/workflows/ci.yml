@@ -73,7 +73,7 @@ jobs:
           RUN_SUITE_BROWSER_TESTS: '1'
           RUN_ANALYTICS_BROWSER_TESTS: '1'
           RUN_VIDEO_BROWSER_TESTS: '1'
-        run: node --test test/product-browser.test.mjs test/video-suite-browser.test.mjs test/analytics-browser.test.mjs test/search-console-guidance-browser.test.mjs test/youtube-browser.test.mjs
+        run: node --test test/product-browser.test.mjs test/video-suite-browser.test.mjs test/video-workflow-browser.test.mjs test/analytics-browser.test.mjs test/search-console-guidance-browser.test.mjs test/youtube-browser.test.mjs
       - name: Product QA screenshots and accessibility findings
         if: always()
         uses: actions/upload-artifact@v4
@@ -83,6 +83,7 @@ jobs:
             .test-runtime/product-ui/
             .test-runtime/analytics-after/
             .test-runtime/gsc-guidance/
+            /tmp/siteops-qa/screenshots/
           if-no-files-found: ignore
           retention-days: 14
       - name: Runtime import check
