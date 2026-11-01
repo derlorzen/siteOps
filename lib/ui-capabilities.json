@@ -123,6 +123,9 @@
   "POST /api/billing/invoices/:id/pay": {
     "tools": ["invoice_mark_paid"]
   },
+  "POST /api/billing/invoices/:id/reset-draft": {
+    "tools": ["invoice_reset_to_draft"]
+  },
   "POST /api/billing/invoices/:id/cancel": {
     "tools": ["invoice_cancel"]
   },

@@ -511,6 +511,7 @@
       (['issued','paid','cancelled'].includes(i.status)?'<a class="crm-btn crm-btn-ghost" href="/api/billing/invoices/'+i.id+'/pdf">PDF</a>':'')+
       (['issued','paid'].includes(i.status)?button('E-Mail','send-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
       (i.status==='issued'?button('Bezahlt','pay-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
+      (!i.paid_at&&(i.status==='issued'||(i.status==='cancelled'&&i.cancellation_reason?.startsWith('Zurücksetzen auf Entwurf: ')))?button('Auf Entwurf zurücksetzen','reset-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
       (i.status==='issued'&&day(i.due_at)<today()?button('Erinnern','remind-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
       (['issued','paid'].includes(i.status)?button('Storno','cancel-invoice','data-id="'+i.id+'"','crm-btn-text'):'')+
       (i.cancellation_status==='issued'?'<a class="crm-btn crm-btn-ghost" href="/api/billing/invoices/'+i.id+'/cancellation-pdf">Stornobeleg</a>':'')+
@@ -802,6 +803,13 @@
       case 'close-modal':closeModal();break;
       case 'reset-time-filters':state.timeCustomerFilter='';state.timeProjectFilter='';syncTimeFilters();render();break;
       case 'edit-invoice':await invoiceModal(id);break;
+      case 'reset-invoice':
+        modal(modalFrame('Auf Entwurf zurücksetzen','Nur ohne verbuchten Zahlungseingang möglich.',
+          '<form class="crm-stack" data-form="invoice-reset" data-id="'+esc(id)+'">'+
+          '<p>Die Originalrechnung bleibt archiviert. Sie wird mit einem eigenen Stornobeleg ausgeglichen. Die Positionen werden in einen neuen Entwurf übernommen; beim erneuten Ausstellen erhält er eine neue Rechnungsnummer.</p>'+
+          field('Grund für die Korrektur','reason','','minlength="5" maxlength="1800" required')+
+          '<p class="crm-muted">Im nächsten Schritt musst du genau diesen Vorgang ausdrücklich freigeben.</p>'+
+          '<button type="submit" class="crm-btn crm-btn-primary">Rücksetzen zur Freigabe vorbereiten</button></form>'),'invoice-reset');break;
       case 'add-invoice-row':{
         const rows=$('crmInvoiceRows');
         if(rows.children.length>=500)throw Error('Maximal 500 Positionen.');
@@ -912,6 +920,12 @@
     const kind=form.dataset.form;
     const id=form.dataset.id||'';
     switch(kind){
+      case 'invoice-reset':{
+        const draft=await api('/api/billing/invoices/'+id+'/reset-draft','POST',{reason:formVal(form,'reason')});
+        closeModal();await reload();
+        if(draft.status==='draft')await invoiceModal(draft.id);
+        notice('Originalrechnung storniert. Folgeentwurf ist angelegt.');break;
+      }
       case 'invoice-draft':{
         const items=[...form.querySelectorAll('[data-invoice-row]')].map(row=>{
           const value=name=>row.querySelector('[name="'+name+'"]').value;

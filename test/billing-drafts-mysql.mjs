@@ -7,7 +7,14 @@ export async function checkBillingDraftsMysql(db) {
     projectId = randomUUID(),
     taskId = randomUUID(),
     entryId = randomUUID();
-  const api = createBillingController({ db, archive: async () => ({}) });
+  let archived = 0;
+  const api = createBillingController({
+    db,
+    archive: async () => {
+      archived++;
+      return { commit: 'a'.repeat(40), path: 'test/invoice.pdf' };
+    }
+  });
   const period = { service_from: '2026-09-01', service_to: '2026-09-30' };
   const drafts = [];
   try {
@@ -71,12 +78,53 @@ export async function checkBillingDraftsMysql(db) {
     const reused = await api.createDraft({ customer_id: customerId, ...period, entry_ids: [entryId] });
     drafts.push(reused.id);
     assert.equal(reused.items.length, 1);
+    const snapshot = {
+      sender: { name: 'CI sender', street: 'Testweg 1', postal_code: '12345', city: 'Berlin', tax_id: '12345' },
+      customer: { name: 'CI customer' },
+      number: 'CI-RESET-' + reused.id,
+      issued_at: '2026-11-01',
+      due_at: '2026-11-15',
+      ...period,
+      items: reused.items,
+      net_cents: 11250,
+      tax_cents: 2138,
+      gross_cents: 13388,
+      vat_percent: 19
+    };
+    await db.query("UPDATE invoices SET status='issued',invoice_number=?,snapshot_json=?,pdf_base64=? WHERE id=?", [
+      snapshot.number,
+      JSON.stringify(snapshot),
+      Buffer.from('original archived PDF').toString('base64'),
+      reused.id
+    ]);
+    const correction = await api.resetDraft(reused.id, { reason: 'Leistung korrigieren' });
+    drafts.push(correction.id);
+    assert.equal(correction.status, 'draft');
+    assert.equal(correction.invoice_number, null);
+    assert.equal(correction.items.length, 1);
+    assert.equal(correction.items[0].entry_id, null);
+    const preserved = await api.details(reused.id);
+    assert.equal(preserved.status, 'cancelled');
+    assert.equal(preserved.pdf_base64, Buffer.from('original archived PDF').toString('base64'));
+    assert.equal(preserved.items[0].entry_id, entryId);
+    assert.equal((await api.resetDraft(reused.id, { reason: 'Leistung korrigieren' })).id, correction.id);
+    assert.equal(archived, 1, 'retry must not create another cancellation');
+    await assert.rejects(api.paid(reused.id), error => error.statusCode === 409);
+    await api.updateDraft(correction.id, { ...period, items: [] });
     const manual = await api.createDraft({ customer_id: customerId, ...period, entry_ids: [] });
     drafts.push(manual.id);
     assert.equal(manual.items.length, 0);
     await db.query("UPDATE invoices SET status='issued' WHERE id=?", [manual.id]);
     await assert.rejects(api.updateDraft(manual.id, { ...period, items: [] }), error => error.statusCode === 409);
   } finally {
+    await db.query(
+      'DELETE FROM invoice_draft_resets WHERE original_invoice_id IN (SELECT id FROM invoices WHERE customer_id=?)',
+      [customerId]
+    );
+    await db.query(
+      'DELETE FROM invoice_cancellations WHERE invoice_id IN (SELECT id FROM invoices WHERE customer_id=?)',
+      [customerId]
+    );
     for (const invoiceId of drafts) {
       await db.query('DELETE FROM invoice_items WHERE invoice_id=?', [invoiceId]);
       await db.query('DELETE FROM invoices WHERE id=?', [invoiceId]);

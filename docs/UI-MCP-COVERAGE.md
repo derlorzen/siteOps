@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 273 API-Funktionen, 242 MCP-Tools, 41 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 274 API-Funktionen, 243 MCP-Tools, 41 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -28,6 +28,7 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | billing | /billing/invoices | billing.mailHistory | GET /api/billing/invoices/:id/mail-history | invoice_mail_history | Lesen | Keine zusätzliche | Zugeordnet |  |
 | billing | /billing/invoices | billing.paid | POST /api/billing/invoices/:id/pay | invoice_mark_paid | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | billing | /billing/invoices | billing.pdf | GET /api/billing/invoices/:id/pdf | invoice_document | Lesen | Keine zusätzliche | Zugeordnet |  |
+| billing | /billing/invoices | billing.resetDraft | POST /api/billing/invoices/:id/reset-draft | invoice_reset_to_draft | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | billing | /billing/invoices | billing.deliver | POST /api/billing/invoices/:id/send | invoice_send | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | billing | /billing/invoices | billing.discard | DELETE /api/billing/invoices/:id | invoice_draft_discard | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | billing | /billing/invoices | billing.details | GET /api/billing/invoices/:id | invoice_get | Lesen | Keine zusätzliche | Zugeordnet |  |

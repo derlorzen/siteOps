@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import Fastify from 'fastify';
+import { registerHttpActionGuard } from '../lib/http-action-guard.mjs';
 
 test(
   'CRM filters and editable invoice drafts work on desktop and mobile',
@@ -66,12 +67,32 @@ test(
       ]
     };
     const saves = [];
+    let resets = 0;
+    const issued = { id: 'i2', customer_id: 'c1', invoice_number: 'RE-2026-00002', status: 'issued', paid_at: null };
     const app = Fastify();
+    app.addHook('onRequest', async req => {
+      req.siteopsAuth = { type: 'dashboard_session', subject: 'owner' };
+    });
+    registerHttpActionGuard(app, {
+      approvalMode: 'direct',
+      state: async () => ({ status: issued.status }),
+      approvals: {
+        prepare: async input => ({
+          id: 'approval-reset',
+          tool: input.tool,
+          arguments: input.args,
+          effect: 'Originalrechnung stornieren und Folgeentwurf anlegen.'
+        }),
+        consume: async ({ id }) => {
+          assert.equal(id, 'approval-reset');
+        }
+      }
+    });
     app.get('/billing/:section', async (_req, reply) =>
       reply
         .type('text/html')
         .send(
-          '<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/crm.css"><div id="crmRoot"></div><script src="/crm.js"></script></html>'
+          '<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/crm.css"><div id="crmRoot"></div><script src="/approval.js"></script><script src="/crm.js"></script></html>'
         )
     );
     app.get('/crm.js', async (_req, reply) =>
@@ -83,6 +104,18 @@ test(
     app.get('/crm.css', async (_req, reply) =>
       reply.type('text/css').send(await readFile(new URL('../public/crm-app.css', import.meta.url), 'utf8'))
     );
+    app.get('/approval.js', async (_req, reply) =>
+      reply
+        .type('text/javascript')
+        .send(await readFile(new URL('../public/action-approval.js', import.meta.url), 'utf8'))
+    );
+    app.post('/api/mcp/approvals/approval-reset/approve', async () => ({ ok: true }));
+    app.post('/api/billing/invoices/i2/reset-draft', async req => {
+      assert.equal(req.body.reason, 'Leistungsumfang korrigieren');
+      resets++;
+      issued.status = 'cancelled';
+      return draft;
+    });
     app.get('/api/billing/invoices/i1', async () => draft);
     app.patch('/api/billing/invoices/i1', async req => {
       saves.push(req.body);
@@ -93,7 +126,7 @@ test(
       if (req.url.endsWith('/customers')) return customers;
       if (req.url.endsWith('/projects')) return projects;
       if (req.url.endsWith('/entries')) return entries;
-      if (req.url.endsWith('/invoices')) return [draft];
+      if (req.url.endsWith('/invoices')) return [draft, issued];
       if (req.url.endsWith('/settings')) return {};
       return [];
     });
@@ -161,6 +194,16 @@ test(
     await rows.nth(0).getByRole('button', { name: 'Entfernen', exact: true }).click();
     assert.equal(await rows.count(), 1);
     if (process.env.CRM_SCREENSHOT) await page.screenshot({ path: process.env.CRM_SCREENSHOT, fullPage: false });
+    page.once('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name: 'Schließen', exact: true }).click();
+    await page.getByRole('button', { name: 'Auf Entwurf zurücksetzen', exact: true }).click();
+    await page.getByLabel('Grund für die Korrektur', { exact: true }).fill('Leistungsumfang korrigieren');
+    await page.getByRole('button', { name: 'Rücksetzen zur Freigabe vorbereiten', exact: true }).click();
+    await page.getByRole('heading', { name: 'Änderung prüfen und freigeben' }).waitFor();
+    assert.equal(resets, 0);
+    await page.getByRole('button', { name: 'Diese Änderung ausführen', exact: true }).click();
+    await page.getByRole('heading', { name: 'Rechnungsentwurf bearbeiten', exact: true }).waitFor();
+    assert.equal(resets, 1);
     assert.deepEqual(errors, []);
   }
 );

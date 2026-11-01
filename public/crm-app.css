@@ -171,6 +171,7 @@ body:has(#crmRoot) .navinner{max-width:1620px}
  #crmRoot .crm-invoice-row input[type="number"]{text-align:right;font-variant-numeric:tabular-nums}
 }
 @media(max-width:720px){
+ #crmRoot .crm-panel-foot .crm-btn,#crmRoot .crm-form-footer .crm-btn{max-width:100%;white-space:normal;overflow-wrap:anywhere}
  #crmRoot .crm-dialog:has([data-form="invoice-draft"]){inset:0;width:100%;height:100dvh;max-height:100dvh;margin:0;border:0;border-radius:0}
  #crmRoot .crm-dialog:has([data-form="invoice-draft"]) .crm-modal-main{padding:16px 16px 0}
  #crmRoot .crm-invoice-footer{flex-direction:column;align-items:stretch;gap:10px;padding-top:12px}

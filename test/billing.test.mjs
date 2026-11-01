@@ -130,5 +130,36 @@ test('manual invoice positions retain their quantity and unit in the PDF', () =>
     gross_cents: 11900,
     vat_percent: 19
   });
-  assert.match(pdf.toString('latin1'), /2 Paket x 50,00 EUR\/Paket = 100,00 EUR/);
+  const content = pdf.toString('latin1');
+  for (const value of ['Paket', '50,00 EUR', '100,00 EUR', 'Menge', 'Einheit', 'Einzelpreis', 'Betrag'])
+    assert.ok(content.includes('(' + value + ')'), value);
+  assert.match(content, /\(2\) Tj/);
+});
+
+test('long descriptions and units paginate without losing rows and repeat table headings', () => {
+  const pdf = renderInvoicePdf({
+    sender: { name: 'Sender', tax_id: '12/345/67890' },
+    customer: { name: 'Customer' },
+    number: 'RE-LONG',
+    issued_at: '2026-11-01',
+    due_at: '2026-11-15',
+    service_from: '2026-09-01',
+    service_to: '2026-09-30',
+    items: Array.from({ length: 30 }, (_, i) => ({
+      entry_date: '2026-09-17',
+      description: ('Lange Leistungsbeschreibung ' + i + ' ').repeat(20) + 'ENDE-' + i,
+      quantity: 12345.123456,
+      unit: 'LangeEinheitMitVierzigZeichenZumUmbrechen',
+      hourly_cents: 9900,
+      amount_cents: 10000
+    })),
+    net_cents: 300000,
+    tax_cents: 57000,
+    gross_cents: 357000,
+    vat_percent: 19
+  }).toString('latin1');
+  assert.ok((pdf.match(/\(Leistung \/ Leistungsdatum\)/g) || []).length > 2);
+  for (let i = 0; i < 30; i++) assert.ok(pdf.includes('ENDE-' + i), 'description ' + i + ' retained');
+  assert.match(pdf, /3.570,00 EUR/);
+  assert.match(pdf, /Seite 1 von/);
 });

@@ -83,7 +83,7 @@ test('application wires direct mode to the real MCP catalog and still rejects an
     const catalog=mcpServer().siteopsCapabilities();
     const app=await buildApplication({initialize:false});
     const response=await app.inject({method:'POST',url:'/api/coolify/applications/example/deploy',payload:{}});
-    console.log('RESULT:'+JSON.stringify({count:catalog.length,approvals:catalog.filter(x=>x.approval).length,status:response.statusCode}));
+    console.log('RESULT:'+JSON.stringify({count:catalog.length,approvals:catalog.filter(x=>x.approval).map(x=>x.name),status:response.statusCode}));
     await app.close();await db.end();
   `;
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], {
@@ -104,6 +104,6 @@ test('application wires direct mode to the real MCP catalog and still rejects an
   assert.ok(line, result.stdout);
   const actual = JSON.parse(line.slice(7));
   assert.ok(actual.count > 200);
-  assert.equal(actual.approvals, 0);
+  assert.deepEqual(actual.approvals, ['invoice_reset_to_draft']);
   assert.ok([401, 403].includes(actual.status));
 });

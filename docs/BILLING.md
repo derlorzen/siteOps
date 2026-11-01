@@ -301,3 +301,13 @@ müssen separat eingerichtet und geprüft werden.
 - https://www.gesetze-im-internet.de/ustg_1980/__14.html
 - https://www.gesetze-im-internet.de/ustg_1980/__14b.html
 - https://www.bundesfinanzministerium.de/Content/DE/FAQ/e-rechnung.html
+
+## Rechnungsformular und Korrekturen
+
+Die A4-Ausgabe enthält Empfänger und Absender, eindeutige Rechnungsnummer, Ausstellungsdatum, Leistungszeitraum, nummerierte Positionen mit Leistungsdatum, Umfang, Einheit, Nettopreis und Nettobetrag sowie Netto-, Umsatzsteuer- und Bruttosumme. Tabellenüberschriften werden auf Folgeseiten wiederholt; Seiten erhalten Nummerierung und steuerliche Absenderdaten. Vor dem Ausstellen werden vollständige inländische Anschriften und Steuernummer oder USt-IdNr. geprüft. Unterstützter Steuerfall bleibt eine inländische, regulär mit 19 % besteuerte Dienstleistungsrechnung. Kleinunternehmer, Reverse Charge und andere Steuersätze sind damit nicht abgebildet.
+
+`POST /api/billing/invoices/:id/reset-draft` und MCP `invoice_reset_to_draft` verlangen einen Korrekturgrund und immer eine servergebundene persönliche Freigabe, auch bei `SITEOPS_APPROVAL_MODE=direct`. Ein verbuchtes `paid_at`, bezahlte Rechnungen und noch laufende Ausstellungen sperren den Vorgang. Die Originalrechnung wird über den vorhandenen Stornobeleg ausgeglichen und bleibt mit PDF, Snapshot, Nummer und Zeitverknüpfungen erhalten. Erst nach erfolgreicher Archivierung des Stornos werden die Positionen in einen neuen Entwurf ohne Rechnungsnummer kopiert. Das erneute Ausstellen vergibt eine neue Nummer. Die Zuordnung wird in `invoice_draft_resets` gespeichert; Wiederholung desselben Vorgangs liefert den vorhandenen Folgeentwurf. Bei fehlgeschlagener Archivierung kann der gleiche Vorgang erneut freigegeben werden. Ein begonnener Stornovorgang sperrt parallel das Verbuchen eines Zahlungseingangs.
+
+Die PDF-Ausgabe ist eine sonstige Rechnung, keine strukturierte E-Rechnung (XRechnung/ZUGFeRD). Die Übergangsregelung erlaubt bis Ende 2026 weiterhin sonstige Rechnungen; bei elektronischer PDF-Übermittlung ist die Zustimmung des Empfängers erforderlich. Die passende Rechtsformbezeichnung und tatsächlich zutreffende Stammdaten müssen vom Betreiber gepflegt werden. Die Layoutänderung ersetzt keine bereits archivierten PDFs. Die erzeugte Layoutvorschau ist kein erneut ausgestellter Beleg.
+
+Quellen: [§ 14 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html), [BMF: FAQ zur E-Rechnung](https://www.bundesfinanzministerium.de/Content/DE/FAQ/e-rechnung.html), [BMF: Pflichtangaben](https://usth.bundesfinanzministerium.de/usth/2024/A-Umsatzsteuergesetz/IV-Steuer-und-Vorsteuer/Paragraf-14/ae-14-5.html).
