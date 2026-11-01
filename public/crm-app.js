@@ -526,12 +526,15 @@
   function settingsPage(){
     const keys=[
       ['name','Firma / Name'],['street','Straße'],['postal_code','PLZ'],['city','Ort'],['email','E-Mail'],
-      ['tax_id','Steuernummer'],['vat_id','USt-ID'],['iban','IBAN'],['bic','BIC'],['payment_note','Zahlungshinweise']
+      ['tax_id','Steuernummer'],['vat_id','USt-ID'],['bank_name','Name der Bank'],['iban','IBAN'],['bic','BIC'],['payment_note','Zusätzliche Zahlungshinweise']
     ];
     return heading('VERWALTUNG','Rechnungseinstellungen','Absenderdaten, Bankverbindung und Rechnungsangaben.')+
       '<section class="crm-panel"><form data-form="settings"><div class="crm-form-cols">'+
       keys.map(([name,label])=>field(label,name,state.settings[name]||'','maxlength="500"')).join('')+
-      '</div><div class="crm-form-footer"><button class="crm-btn crm-btn-primary">Einstellungen speichern</button></div></form></section>'+
+      '<label class="crm-field"><span>Zahlungsziel</span>'+select('payment_terms_days',[
+        ['0','Sofort fällig, ohne Abzug'],['7','7 Tage ohne Abzug'],['14','14 Tage ohne Abzug (Standard)'],['30','30 Tage ohne Abzug']
+      ],state.settings.payment_terms_days||'14','aria-label="Zahlungsziel"')+'</label>'+
+      '</div><p class="crm-muted">Das Zahlungsziel berechnet die Fälligkeit ab Rechnungsdatum. Diese Angaben gelten für künftig ausgestellte Rechnungen.</p><div class="crm-form-footer"><button class="crm-btn crm-btn-primary">Einstellungen speichern</button></div></form></section>'+
       '<section class="crm-panel"><h2>Archivierung</h2><p>Ausgestellte Rechnungen werden in SiteOps und im GitHub-Rechnungsarchiv gespeichert. Für die langfristige revisionssichere Aufbewahrung wird ein zusätzliches externes Archiv benötigt.</p></section>'+
       '<section class="crm-panel siteops-appearance-section"><h2>Design & Farben</h2>'+
       '<p>Die Akzentfarbe gilt für die Kundenverwaltung und alle weiteren SiteOps-Bereiche.</p>'+

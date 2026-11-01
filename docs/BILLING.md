@@ -311,3 +311,7 @@ Die A4-Ausgabe enthält Empfänger und Absender, eindeutige Rechnungsnummer, Aus
 Die PDF-Ausgabe ist eine sonstige Rechnung, keine strukturierte E-Rechnung (XRechnung/ZUGFeRD). Die Übergangsregelung erlaubt bis Ende 2026 weiterhin sonstige Rechnungen; bei elektronischer PDF-Übermittlung ist die Zustimmung des Empfängers erforderlich. Die passende Rechtsformbezeichnung und tatsächlich zutreffende Stammdaten müssen vom Betreiber gepflegt werden. Die Layoutänderung ersetzt keine bereits archivierten PDFs. Die erzeugte Layoutvorschau ist kein erneut ausgestellter Beleg.
 
 Quellen: [§ 14 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html), [BMF: FAQ zur E-Rechnung](https://www.bundesfinanzministerium.de/Content/DE/FAQ/e-rechnung.html), [BMF: Pflichtangaben](https://usth.bundesfinanzministerium.de/usth/2024/A-Umsatzsteuergesetz/IV-Steuer-und-Vorsteuer/Paragraf-14/ae-14-5.html).
+
+## Bankname und Zahlungsziel
+
+`bank_name` ergänzt den frei gepflegten Banknamen. `payment_terms_days` bietet `0` (sofort), `7`, `14` (Standard) und `30` Tage, jeweils ohne Abzug. Ohne bisherige Einstellung gelten weiter 14 Tage. Beim Ausstellen wird das Fälligkeitsdatum ab dem Rechnungsdatum berechnet und zusammen mit Bankname und Zahlungsziel im bestehenden Absendersnapshot festgehalten. Einstellungen ändern keine bereits ausgestellten Belege. Freie Zahlungshinweise werden ergänzend ausgegeben und sollten zum gewählten Zahlungsziel passen.

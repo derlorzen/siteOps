@@ -108,7 +108,7 @@ test('cancellation renders a separate negative service invoice', () => {
 
 test('manual invoice positions retain their quantity and unit in the PDF', () => {
   const pdf = renderInvoicePdf({
-    sender: { name: 'Sender' },
+    sender: { name: 'Sender', bank_name: 'Meine Bank', iban: 'DE1234', payment_terms_days: '0' },
     customer: { name: 'Customer' },
     number: 'RE-TEST',
     issued_at: '2026-11-01',
@@ -134,6 +134,8 @@ test('manual invoice positions retain their quantity and unit in the PDF', () =>
   for (const value of ['Paket', '50,00 EUR', '100,00 EUR', 'Menge', 'Einheit', 'Einzelpreis', 'Betrag'])
     assert.ok(content.includes('(' + value + ')'), value);
   assert.match(content, /\(2\) Tj/);
+  assert.match(content, /Bank: Meine Bank/);
+  assert.match(content, /sofort ohne Abzug/);
 });
 
 test('long descriptions and units paginate without losing rows and repeat table headings', () => {

@@ -67,6 +67,7 @@ test(
       ]
     };
     const saves = [];
+    let settings = {};
     let resets = 0;
     const issued = { id: 'i2', customer_id: 'c1', invoice_number: 'RE-2026-00002', status: 'issued', paid_at: null };
     const app = Fastify();
@@ -117,6 +118,10 @@ test(
       return draft;
     });
     app.get('/api/billing/invoices/i1', async () => draft);
+    app.post('/api/billing/settings', async req => {
+      settings = req.body;
+      return settings;
+    });
     app.patch('/api/billing/invoices/i1', async req => {
       saves.push(req.body);
       draft = { ...draft, ...req.body };
@@ -127,7 +132,7 @@ test(
       if (req.url.endsWith('/projects')) return projects;
       if (req.url.endsWith('/entries')) return entries;
       if (req.url.endsWith('/invoices')) return [draft, issued];
-      if (req.url.endsWith('/settings')) return {};
+      if (req.url.endsWith('/settings')) return settings;
       return [];
     });
     await app.listen({ host: '127.0.0.1', port: 0 });
@@ -204,6 +209,15 @@ test(
     await page.getByRole('button', { name: 'Diese Änderung ausführen', exact: true }).click();
     await page.getByRole('heading', { name: 'Rechnungsentwurf bearbeiten', exact: true }).waitFor();
     assert.equal(resets, 1);
+    await page.goto(app.listeningOrigin + '/billing/settings');
+    await page.getByLabel('Name der Bank', { exact: true }).fill('Meine Bank');
+    assert.equal(await page.getByLabel('Zahlungsziel', { exact: true }).inputValue(), '14');
+    await page.getByLabel('Zahlungsziel', { exact: true }).selectOption('7');
+    await page.getByRole('button', { name: 'Einstellungen speichern', exact: true }).click();
+    await page.getByText('Einstellungen gespeichert.', { exact: true }).waitFor();
+    await page.reload();
+    assert.equal(await page.getByLabel('Zahlungsziel', { exact: true }).inputValue(), '7');
+    assert.equal(await page.getByLabel('Name der Bank', { exact: true }).inputValue(), 'Meine Bank');
     assert.deepEqual(errors, []);
   }
 );
