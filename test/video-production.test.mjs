@@ -198,10 +198,12 @@ test('reusable demo scenes validate test-only domains and snapshot actions into 
   assert.equal((await studio.getJob(draft.id)).scenes[0].demoSteps.length, 1);
 });
 
-
 test('video tickets fit the router default parameter limit for every file type', () => {
   let now = 1793544000000;
-  const tickets = createVideoDownloadTickets(() => 'test-key-only', () => now);
+  const tickets = createVideoDownloadTickets(
+    () => 'test-key-only',
+    () => now
+  );
   const id = 'c9b2f259-9a55-4ffc-aa7e-7b6aae508924';
   for (const kind of ['video', 'short', 'subtitles', 'thumbnail', 'metadata']) {
     const token = tickets.issue(id, kind);
