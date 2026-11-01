@@ -140,7 +140,7 @@ test(
         data = {
           preview_token: 'x'.repeat(43),
           channel: { title: 'Lorzen Software' },
-          body: { title: job.youtube.title, has_thumbnail: !!selectedImage }
+          body: { title: job.youtube.title, has_thumbnail: !!selectedImage, source: publication().media_source }
         };
       else if (url.pathname === '/api/youtube/execute') {
         approved = request.postDataJSON().approved;

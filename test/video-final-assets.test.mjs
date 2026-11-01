@@ -100,6 +100,8 @@ test('final import preserves versions, verifies hash and job state, supports ran
   await service.importFile(jobId, input(second));
   assert.equal(rows.length, 2);
   assert.notEqual((await service.source(jobId, 'video')).asset_id, source.asset_id);
+  assert.equal((await service.source(jobId, 'video', one.id)).sha256, source.sha256);
+  await assert.rejects(service.source(jobId, 'video', '33333333-3333-4333-8333-333333333333'), /nicht verfügbar/);
   const full = await service.response(jobId, source);
   assert.deepEqual(Buffer.from(await full.arrayBuffer()), first);
   const part = await service.response(jobId, source, { start: 3, end: 9 });

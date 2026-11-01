@@ -657,7 +657,10 @@
       if(!$('suite-upload-account').value)throw Error('YouTube-Kanal auswählen.');
       const fresh=await api(endpoint(job.id));if(signature(fresh)!==reviewed)throw Error('Das Paket wurde geändert. Gesamtvorschau erneut prüfen.');
       if((await uploads()).length)throw Error('Für diese Produktion existiert bereits ein Upload. Prüfe dessen Fortschritt, bevor du ein weiteres Video anlegst.');
-      const settings=uploadSettings(),result=await api('/api/youtube/upload-preview',settings);pending={result,settings:JSON.stringify(settings),signature:reviewed};
+      const settings=uploadSettings(),result=await api('/api/youtube/upload-preview',settings);
+      const sourceKey=s=>JSON.stringify({type:s?.type || 'runner',asset_id:s?.asset_id,sha256:s?.sha256});
+      if(sourceKey(result.body.source)!==sourceKey(fresh.media_source))throw Error('Die Videofassung wurde inzwischen geändert. Gesamtvorschau erneut prüfen.');
+      pending={result,settings:JSON.stringify(settings),signature:reviewed};
       $('suite-upload-confirm-title').textContent=result.body.title;$('suite-upload-confirm-channel').textContent='Kanal: '+result.channel.title+' · Privat · Titelbild '+(result.body.has_thumbnail?'enthalten':'fehlt');$('suite-upload-confirm').hidden=false;$('suite-upload-status').textContent='Geprüft. Mit dem nächsten Klick startet der private Upload.';
     }catch(e){$('suite-upload-status').textContent=e.message;}finally{b.disabled=false;}
   });
