@@ -197,3 +197,22 @@ test('reusable demo scenes validate test-only domains and snapshot actions into 
   template.scene = JSON.stringify({ ...scene, demoSteps: [] });
   assert.equal((await studio.getJob(draft.id)).scenes[0].demoSteps.length, 1);
 });
+
+
+test('video tickets fit the router default parameter limit for every file type', () => {
+  let now = 1793544000000;
+  const tickets = createVideoDownloadTickets(() => 'test-key-only', () => now);
+  const id = 'c9b2f259-9a55-4ffc-aa7e-7b6aae508924';
+  for (const kind of ['video', 'short', 'subtitles', 'thumbnail', 'metadata']) {
+    const token = tickets.issue(id, kind);
+    assert.ok(token.length <= 100, 'signed ticket must fit Fastify default maxParamLength');
+    const result = tickets.verify(token);
+    assert.equal(result.id, id);
+    assert.equal(result.kind, kind);
+    assert.equal(result.nonce.length, 32);
+    assert.throws(() => tickets.verify(token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A')));
+  }
+  const token = tickets.issue(id, 'video');
+  now += 300000;
+  assert.throws(() => tickets.verify(token));
+});
