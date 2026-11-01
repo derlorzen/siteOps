@@ -158,7 +158,23 @@ body:has(#crmRoot) .navinner{max-width:1620px}
 #crmRoot .crm-invoice-description textarea{width:100%;resize:vertical}
 #crmRoot .crm-invoice-row-actions{display:flex;gap:8px;flex-wrap:wrap}
 #crmRoot .crm-draft-totals{font-weight:750;font-variant-numeric:tabular-nums;line-height:1.8}
-#crmRoot .crm-dialog:has([data-form="invoice-draft"]){overscroll-behavior:contain}
+#crmRoot .crm-dialog:has([data-form="invoice-draft"]){position:fixed;inset:24px;margin:0 auto;width:min(90rem,calc(100vw - 48px));max-width:none;height:calc(100dvh - 48px);max-height:none;overscroll-behavior:contain}
+#crmRoot .crm-dialog:has([data-form="invoice-draft"]) .crm-modal-main{padding:24px 32px 0}
+#crmRoot [data-form="invoice-draft"]>.crm-form-cols{max-width:42rem}
+#crmRoot .crm-invoice-footer{position:sticky;bottom:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 0 calc(18px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid var(--crm-line)}
+#crmRoot .crm-invoice-footer .crm-draft-totals{margin:0}
+#crmRoot .crm-invoice-footer button{flex-shrink:0;background:var(--crm-purple,#6655c9);color:#fff}
+@media(min-width:1000px){
+ #crmRoot .crm-invoice-row{grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;padding:20px 24px}
+ #crmRoot .crm-invoice-description{grid-column:2/-1}
+ #crmRoot .crm-invoice-row-actions{justify-content:flex-end}
+ #crmRoot .crm-invoice-row input[type="number"]{text-align:right;font-variant-numeric:tabular-nums}
+}
+@media(max-width:720px){
+ #crmRoot .crm-dialog:has([data-form="invoice-draft"]){inset:0;width:100%;height:100dvh;max-height:100dvh;margin:0;border:0;border-radius:0}
+ #crmRoot .crm-dialog:has([data-form="invoice-draft"]) .crm-modal-main{padding:16px 16px 0}
+ #crmRoot .crm-invoice-footer{flex-direction:column;align-items:stretch;gap:10px;padding-top:12px}
+}
 @media(max-width:420px){#crmRoot .crm-invoice-row{grid-template-columns:minmax(0,1fr)}}
 #crmRoot .crm-candidate{display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid var(--crm-line)}
 #crmRoot .crm-candidate:last-child{border:0}

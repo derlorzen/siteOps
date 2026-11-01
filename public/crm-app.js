@@ -690,9 +690,9 @@
       '<p class="crm-muted">Menge und Einzelpreis berechnen den Betrag. Der Betrag kann zusätzlich direkt angepasst werden. Änderungen gelten nur für diesen Entwurf.</p>'+
       '<div id="crmInvoiceRows">'+invoice.items.map((item,index)=>invoiceRow(item,index+1)).join('')+'</div>'+
       button('+ Eigene Position','add-invoice-row','','crm-btn-ghost')+
-      '<p id="crmDraftTotals" class="crm-draft-totals" role="status" aria-live="polite"></p>'+
       '<p id="crmDraftError" class="crm-error" role="alert"></p>'+
-      '<button type="submit" class="crm-btn crm-btn-primary">Entwurf speichern</button></form>'),'invoice');
+      '<footer class="crm-invoice-footer"><p id="crmDraftTotals" class="crm-draft-totals" role="status" aria-live="polite"></p>'+
+      '<button type="submit" class="crm-btn crm-btn-primary">Entwurf speichern</button></footer></form>'),'invoice');
     state.invoiceDirty=false;
     updateInvoiceTotals();
   }

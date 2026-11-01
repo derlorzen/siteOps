@@ -125,6 +125,10 @@ test(
     await page.getByRole('button', { name: 'Bearbeiten', exact: true }).click();
     const rows = page.locator('[data-invoice-row]');
     await rows.first().waitFor();
+    const editor = await page.getByRole('dialog').boundingBox();
+    assert.ok(editor.width >= 1100, 'Desktop invoice editor provides a wide working area');
+    if (process.env.CRM_DESKTOP_SCREENSHOT)
+      await page.screenshot({ path: process.env.CRM_DESKTOP_SCREENSHOT, fullPage: false });
     await rows.nth(0).getByLabel('Beschreibung', { exact: true }).fill('Geänderter Text');
     await rows.nth(0).getByLabel('Leistungsdatum', { exact: true }).fill('2026-09-18');
     await rows.nth(0).getByLabel('Menge', { exact: true }).fill('2');
@@ -150,12 +154,13 @@ test(
     await page.getByRole('button', { name: 'Bearbeiten', exact: true }).click();
     assert.equal(await rows.nth(1).getByLabel('Beschreibung', { exact: true }).inputValue(), 'Geänderter Text');
     await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(Math.round((await page.getByRole('dialog').boundingBox()).width), 390);
     assert.ok(await rows.nth(0).getByLabel('Beschreibung', { exact: true }).isVisible());
     assert.ok(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth));
     page.once('dialog', dialog => dialog.accept());
     await rows.nth(0).getByRole('button', { name: 'Entfernen', exact: true }).click();
     assert.equal(await rows.count(), 1);
-    if (process.env.CRM_SCREENSHOT) await page.screenshot({ path: process.env.CRM_SCREENSHOT, fullPage: true });
+    if (process.env.CRM_SCREENSHOT) await page.screenshot({ path: process.env.CRM_SCREENSHOT, fullPage: false });
     assert.deepEqual(errors, []);
   }
 );
