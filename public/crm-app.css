@@ -152,6 +152,14 @@ body:has(#crmRoot) .navinner{max-width:1620px}
 #crmRoot .crm-checkbox input{width:18px;margin:0}
 #crmRoot .crm-panel-foot,#crmRoot .crm-form-footer{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:16px;flex-wrap:wrap}
 #crmRoot .crm-invoice-candidates{max-height:270px;overflow-y:auto;border:1px solid var(--crm-line);border-radius:10px}
+#crmRoot .crm-invoice-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;border:1px solid var(--crm-line);border-radius:10px;padding:16px;margin:0 0 16px;min-width:0}
+#crmRoot .crm-invoice-row legend{font-size:13px;font-weight:750;padding:0 6px}
+#crmRoot .crm-invoice-description,#crmRoot .crm-invoice-row-actions{grid-column:1/-1}
+#crmRoot .crm-invoice-description textarea{width:100%;resize:vertical}
+#crmRoot .crm-invoice-row-actions{display:flex;gap:8px;flex-wrap:wrap}
+#crmRoot .crm-draft-totals{font-weight:750;font-variant-numeric:tabular-nums;line-height:1.8}
+#crmRoot .crm-dialog:has([data-form="invoice-draft"]){overscroll-behavior:contain}
+@media(max-width:420px){#crmRoot .crm-invoice-row{grid-template-columns:minmax(0,1fr)}}
 #crmRoot .crm-candidate{display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid var(--crm-line)}
 #crmRoot .crm-candidate:last-child{border:0}
 #crmRoot .crm-candidate input{margin:0;width:18px;flex:none}

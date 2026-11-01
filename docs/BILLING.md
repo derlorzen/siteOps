@@ -137,6 +137,27 @@ das projektspezifische Board selbst nicht geladen werden kann.
 
 # Kundenverwaltung, Zeiterfassung und Rechnungen
 
+## Zeiten filtern und Rechnungsentwürfe bearbeiten
+
+Unter **Meine Zeiten** lassen sich Kunden und Projekte einzeln oder zusammen
+filtern. Die Projektliste passt sich an den gewählten Kunden an. Filter stehen
+in der URL, bleiben beim Neuladen erhalten und lassen sich zurücksetzen.
+Der laufende Timer bleibt unabhängig vom Filter erreichbar.
+
+Rechnungsentwürfe haben die Aktion **Bearbeiten**. Leistungsdatum, Beschreibung,
+Menge, Einheit, Netto-Einzelpreis und Netto-Betrag jeder Position sind änderbar.
+Menge und Einzelpreis berechnen den Betrag neu; dieser lässt sich auch direkt
+anpassen. Eigene Positionen lassen sich hinzufügen, entfernen und über die
+Pfeile sortieren. Ein leerer Entwurf kann auch ohne Zeitbuchungen angelegt
+werden. Netto, 19 % Umsatzsteuer und Brutto werden beim Speichern neu berechnet.
+
+Übernommene Zeitbuchungen bleiben unverändert. Wird eine verknüpfte Position
+entfernt, steht ihre Zeitbuchung wieder zur Abrechnung zur Verfügung.
+Nur der Status `draft` ist bearbeitbar; bereits ausgestellte, bezahlte,
+stornierte oder in Archivierung befindliche Rechnungen bleiben gesperrt.
+Die Migration `20261101_invoice_draft_items.mjs` ergänzt freie Mengen, Einheiten
+und Reihenfolge und erlaubt eigene Positionen ohne Zeiteintragsverknüpfung.
+
 Der neue Bereich ist unter /billing verfügbar und verwendet die bestehende
 SiteOps-Anmeldung. Die Daten werden über Migration 0004 in MySQL angelegt.
 

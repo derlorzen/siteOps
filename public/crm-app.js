@@ -21,7 +21,7 @@
     customers:[],projects:[],tasks:[],entries:[],invoices:[],sites:[],siteLinks:[],cmsInstallations:{installations:[]},settings:{},
     board:null,boardLoading:false,boardError:'',projectId:'',token:0,saving:false,
     search:'',customerFilter:'',statusFilter:'all',view:'board',mobileColumn:'open',
-    dialog:'',taskId:'',taskDetail:null,loading:true,recurring:[],
+    dialog:'',taskId:'',taskDetail:null,loading:true,recurring:[],timeCustomerFilter:'',timeProjectFilter:'',invoiceDirty:false,
     overview:null,activityEntries:[],activityLoading:false,activityError:'',activityFilter:'all'
   };
   let noticeTimer = 0;
@@ -475,9 +475,16 @@
       }).join('')+'</div>';
   }
   function timePage(){
-    const entries=state.entries;
+    const projects=state.projects.filter(p=>!state.timeCustomerFilter||p.customer_id===state.timeCustomerFilter);
+    const entries=state.entries.filter(e=>(!state.timeCustomerFilter||e.customer_id===state.timeCustomerFilter)&&
+      (!state.timeProjectFilter||e.project_id===state.timeProjectFilter));
     return heading('ZEITERFASSUNG','Meine Zeiten','Alle Zeitbuchungen und der aktuell laufende Timer.',
       button('+ Zeit erfassen','manual-time','','crm-btn-primary'))+
+      '<div class="crm-filters" role="group" aria-label="Zeiten filtern">'+
+      '<label class="crm-filter-label">Kunde '+select('time_customer_id',[['','Alle Kunden'],...customerOptions()],state.timeCustomerFilter,'id="crmTimeCustomerFilter" aria-label="Kunde"')+'</label>'+
+      '<label class="crm-filter-label">Projekt '+select('time_project_id',[['','Alle Projekte'],...projects.map(p=>[p.id,p.name])],state.timeProjectFilter,'id="crmTimeProjectFilter" aria-label="Projekt"')+'</label>'+
+      button('Filter zurücksetzen','reset-time-filters','','crm-btn-ghost')+'</div>'+
+      '<p class="crm-muted" role="status">'+entries.length+' von '+state.entries.length+' Zeitbuchungen · '+hour(entries.reduce((sum,e)=>sum+Number(e.duration_seconds||0),0))+'</p>'+
       '<div class="crm-table-wrap"><table class="crm-table"><thead><tr><th>Datum</th><th>Kunde / Projekt</th><th>Task & Leistung</th><th>Dauer</th><th>Status</th><th></th></tr></thead><tbody>'+
       entries.map(e=>'<tr><td>'+day(e.entry_date)+'</td><td><strong>'+esc(e.customer_name)+'</strong><small>'+esc(e.project_name)+'</small></td>'+
         '<td>'+esc(e.task_name)+'<small>'+esc(e.description)+'</small></td><td>'+hour(e.duration_seconds)+
@@ -485,7 +492,7 @@
         badge(e.invoice_id?'Abgerechnet':e.billable?'Abrechenbar':'Intern',e.invoice_id?'positive':'')+'</td><td>'+
         (!e.invoice_id&&!e.started_at?button('Bearbeiten','edit-time','data-id="'+e.id+'"','crm-btn-ghost'):'' )+
         (!e.invoice_id&&!e.started_at?button('✕','delete-time','data-id="'+e.id+'" aria-label="Eintrag löschen"','crm-btn-text'):'')+'</td></tr>').join('')+
-      '</tbody></table></div>'+(entries.length?'':'<div class="crm-empty">Noch keine Zeitbuchungen.</div>');
+      '</tbody></table></div>'+(entries.length?'':'<div class="crm-empty">'+(state.timeCustomerFilter||state.timeProjectFilter?'Keine Zeitbuchungen für diese Auswahl.':'Noch keine Zeitbuchungen.')+'</div>');
   }
   function invoicePage(){
     const customerId=state.invoiceCustomer||state.customers[0]?.id||'';
@@ -505,13 +512,14 @@
         '<b>'+eur(Math.round(Number(e.duration_seconds)*Number(e.hourly_cents)/3600))+'</b></label>'
       ).join(''):'<p class="crm-muted">Keine offenen abrechenbaren Zeiten in diesem Zeitraum.</p>')+'</div>'+
       '<div class="crm-panel-foot"><span id="crmInvoiceDraftTotal">'+available.length+' Einträge</span>'+
-      button('Entwurf erstellen','draft-invoice',available.length?'':'disabled','crm-btn-primary')+'</div></section>'+
+      button(available.length?'Entwurf erstellen':'Entwurf mit eigenen Positionen erstellen','draft-invoice',customerId?'':'disabled','crm-btn-primary')+'</div></section>'+
       '<section class="crm-panel"><div class="crm-panel-head"><h2>Rechnungsübersicht</h2><p>Bereits ausgestellte Rechnungen bleiben unverändert archiviert.</p></div>'+
       '<div class="crm-table-wrap"><table class="crm-table"><thead><tr><th>Rechnung</th><th>Kunde</th><th>Brutto</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>'+
       invoices.map(i=>'<tr><td><strong>'+esc(i.invoice_number||'Entwurf')+'</strong><small>'+day(i.service_from)+' – '+day(i.service_to)+'</small></td>'+
       '<td>'+esc(i.customer_name)+'</td><td>'+eur(i.gross_cents)+'</td><td>'+
       badge({draft:'Entwurf',archiving:'Archivierung',issued:'Offen',paid:'Bezahlt',cancelled:'Storniert'}[i.status]||i.status,
         i.status==='paid'?'positive':i.status==='issued'?'warning':'')+'</td><td class="crm-actions">'+
+      (i.status==='draft'?button('Bearbeiten','edit-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
       (['draft','archiving'].includes(i.status)?button(i.status==='archiving'?'Archivierung erneut versuchen':'Ausstellen','issue-invoice','data-id="'+i.id+'"','crm-btn-primary'):'')+
       (['issued','paid','cancelled'].includes(i.status)?'<a class="crm-btn crm-btn-ghost" href="/api/billing/invoices/'+i.id+'/pdf">PDF</a>':'')+
       (['issued','paid'].includes(i.status)?button('E-Mail','send-invoice','data-id="'+i.id+'"','crm-btn-ghost'):'')+
@@ -550,8 +558,9 @@
     dialog.querySelector('input:not([type=hidden]),select,textarea')?.focus();
   }
   function closeModal(){
+    if(state.invoiceDirty&&!confirm('Ungespeicherte Änderungen am Rechnungsentwurf verwerfen?'))return;
     if($('crmDialog').open)$('crmDialog').close();
-    state.dialog='';state.taskId='';state.taskDetail=null;
+    state.dialog='';state.taskId='';state.taskDetail=null;state.invoiceDirty=false;
   }
   function modalFrame(title,sub,content,buttonText='Speichern'){
     return '<div class="crm-modal-top"><div><h2>'+esc(title)+'</h2><p>'+esc(sub||'')+'</p></div>'+
@@ -660,6 +669,47 @@
       '<button class="crm-btn crm-btn-primary">Zeit speichern</button></form>'),'time');
   }
 
+  function invoiceRow(item={},position=1){
+    const quantity=Number(item.quantity??Number(item.duration_seconds||0)/3600);
+    return '<fieldset class="crm-invoice-row" data-invoice-row data-item-id="'+esc(item.id||'')+'"><legend>Position '+position+'</legend>'+
+      field('Leistungsdatum','entry_date',day(item.entry_date)||today(),'type="date" required')+
+      '<label class="crm-field crm-invoice-description"><span>Beschreibung</span><textarea name="description" aria-label="Beschreibung" rows="2" maxlength="1000" required>'+esc(item.description||'')+'</textarea></label>'+
+      field('Menge','quantity',Number(quantity.toFixed(6)),'type="number" min="0" max="100000" step="0.000001" required')+
+      field('Einheit','unit',item.unit||'Std.','maxlength="40" required autocomplete="off"')+
+      field('Einzelpreis netto €','rate_eur',Number(item.hourly_cents||0)/100,'type="number" min="0" max="100000" step="0.01" required')+
+      field('Betrag netto €','amount_eur',Number(item.amount_cents||0)/100,'type="number" min="0" max="10000000000" step="0.01" required')+
+      '<div class="crm-invoice-row-actions">'+button('↑','invoice-row-up','aria-label="Position nach oben"','crm-btn-ghost')+
+      button('↓','invoice-row-down','aria-label="Position nach unten"','crm-btn-ghost')+
+      button('Entfernen','remove-invoice-row','','crm-btn-text')+'</div></fieldset>';
+  }
+  function updateInvoiceTotals(){
+    const form=document.querySelector('form[data-form="invoice-draft"]');
+    if(!form)return;
+    let net=0;
+    form.querySelectorAll('[data-invoice-row]').forEach((row,index)=>{
+      row.querySelector('legend').textContent='Position '+(index+1);
+      net+=Math.round(Number(row.querySelector('[name="amount_eur"]').value||0)*100);
+    });
+    const tax=Math.round(net*0.19);
+    $('crmDraftTotals').textContent='Netto '+eur(net)+' · Umsatzsteuer (19 %) '+eur(tax)+' · Gesamt '+eur(net+tax);
+  }
+  async function invoiceModal(invoiceId){
+    const invoice=await api('/api/billing/invoices/'+invoiceId);
+    if(invoice.status!=='draft')throw Error('Nur Entwürfe können bearbeitet werden.');
+    modal(modalFrame('Rechnungsentwurf bearbeiten',findCustomer(invoice.customer_id)?.name||'Rechnung',
+      '<form class="crm-stack" data-form="invoice-draft" data-id="'+esc(invoice.id)+'">'+
+      '<div class="crm-form-cols">'+field('Leistungszeitraum von','service_from',day(invoice.service_from),'type="date" required')+
+      field('Leistungszeitraum bis','service_to',day(invoice.service_to),'type="date" required')+'</div>'+
+      '<p class="crm-muted">Menge und Einzelpreis berechnen den Betrag. Der Betrag kann zusätzlich direkt angepasst werden. Änderungen gelten nur für diesen Entwurf.</p>'+
+      '<div id="crmInvoiceRows">'+invoice.items.map((item,index)=>invoiceRow(item,index+1)).join('')+'</div>'+
+      button('+ Eigene Position','add-invoice-row','','crm-btn-ghost')+
+      '<p id="crmDraftTotals" class="crm-draft-totals" role="status" aria-live="polite"></p>'+
+      '<p id="crmDraftError" class="crm-error" role="alert"></p>'+
+      '<button type="submit" class="crm-btn crm-btn-primary">Entwurf speichern</button></form>'),'invoice');
+    state.invoiceDirty=false;
+    updateInvoiceTotals();
+  }
+
   async function startOrStop(taskId=''){
     const active=timer();
     if(active&&taskId&&active.task_id!==taskId)
@@ -763,6 +813,24 @@
       case 'manual-time':manualTimeModal();break;
       case 'edit-time':manualTimeModal(id);break;
       case 'close-modal':closeModal();break;
+      case 'reset-time-filters':state.timeCustomerFilter='';state.timeProjectFilter='';syncTimeFilters();render();break;
+      case 'edit-invoice':await invoiceModal(id);break;
+      case 'add-invoice-row':{
+        const rows=$('crmInvoiceRows');
+        if(rows.children.length>=500)throw Error('Maximal 500 Positionen.');
+        rows.insertAdjacentHTML('beforeend',invoiceRow({entry_date:formVal(rows.closest('form'),'service_to')},rows.children.length+1));
+        state.invoiceDirty=true;updateInvoiceTotals();rows.lastElementChild.querySelector('[name="description"]').focus();break;
+      }
+      case 'remove-invoice-row':{
+        if(!confirm('Diese Position aus dem Entwurf entfernen?'))return;
+        source.closest('[data-invoice-row]').remove();state.invoiceDirty=true;updateInvoiceTotals();break;
+      }
+      case 'invoice-row-up':case 'invoice-row-down':{
+        const row=source.closest('[data-invoice-row]');
+        const adjacent=actionName==='invoice-row-up'?row.previousElementSibling:row.nextElementSibling;
+        if(adjacent){if(actionName==='invoice-row-up')adjacent.before(row);else adjacent.after(row);
+          state.invoiceDirty=true;updateInvoiceTotals();source.focus();}break;
+      }
       case 'task-timer':case 'stop-timer':await startOrStop(taskId);break;
       case 'view-board':state.view='board';render();break;
       case 'view-list':state.view='list';render();break;
@@ -800,13 +868,12 @@
       }
       case 'draft-invoice':{
         const ids=[...document.querySelectorAll('[data-bill-entry]:checked')].map(i=>i.dataset.billEntry);
-        if(!ids.length)throw Error('Bitte mindestens eine abrechenbare Zeit auswählen.');
         const customerId=state.invoiceCustomer||state.customers[0]?.id;
-        await api('/api/billing/invoices','POST',{
+        const draft=await api('/api/billing/invoices','POST',{
           customer_id:customerId,service_from:state.invoiceFrom||today().slice(0,8)+'01',
           service_to:state.invoiceTo||today(),entry_ids:ids
         });
-        await reload();notice('Rechnungsentwurf erstellt.');break;
+        await reload();await invoiceModal(draft.id);notice('Rechnungsentwurf erstellt.');break;
       }
       case 'issue-invoice':{
         if(!confirm('Rechnung verbindlich ausstellen und im GitHub-Archiv ablegen?'))return;
@@ -858,6 +925,17 @@
     const kind=form.dataset.form;
     const id=form.dataset.id||'';
     switch(kind){
+      case 'invoice-draft':{
+        const items=[...form.querySelectorAll('[data-invoice-row]')].map(row=>{
+          const value=name=>row.querySelector('[name="'+name+'"]').value;
+          return {...(row.dataset.itemId?{id:row.dataset.itemId}:{}),entry_date:value('entry_date'),description:value('description'),
+            quantity:Number(value('quantity')),unit:value('unit'),hourly_cents:Math.round(Number(value('rate_eur'))*100),amount_cents:Math.round(Number(value('amount_eur'))*100)};
+        });
+        try{
+          await api('/api/billing/invoices/'+id,'PATCH',{service_from:formVal(form,'service_from'),service_to:formVal(form,'service_to'),items});
+        }catch(error){$('crmDraftError').textContent=userError(error);throw error;}
+        state.invoiceDirty=false;closeModal();await reload();notice('Rechnungsentwurf gespeichert.');break;
+      }
       case 'customer':{
         const payload={
           name:formVal(form,'name'),contact_name:formVal(form,'contact_name'),
@@ -978,6 +1056,12 @@
       void action('toggle-check',target).catch(error=>notice(userError(error),true));return;
     }
     if(target.id==='crmCustomerFilter'){state.customerFilter=target.value;render();}
+    if(target.id==='crmTimeCustomerFilter'){
+      state.timeCustomerFilter=target.value;
+      if(state.timeProjectFilter&&findProject(state.timeProjectFilter)?.customer_id!==target.value&&target.value)state.timeProjectFilter='';
+      syncTimeFilters();render();
+    }
+    if(target.id==='crmTimeProjectFilter'){state.timeProjectFilter=target.value;syncTimeFilters();render();}
     if(target.id==='crmStatusFilter'){state.statusFilter=target.value;render();}
     if(target.id==='crmActivityFilter'){state.activityFilter=target.value;render();}
     if(target.id==='crmInvoiceCustomer'){state.invoiceCustomer=target.value;render();}
@@ -989,6 +1073,16 @@
     }
   });
   root.addEventListener('input',event=>{
+    const row=event.target.closest('[data-invoice-row]');
+    if(event.target.closest('form[data-form="invoice-draft"]'))state.invoiceDirty=true;
+    if(row){
+      if(['quantity','rate_eur'].includes(event.target.name)){
+        const quantity=Number(row.querySelector('[name="quantity"]').value);
+        const cents=Math.round(Number(row.querySelector('[name="rate_eur"]').value)*100);
+        row.querySelector('[name="amount_eur"]').value=(Math.round(quantity*cents)/100).toFixed(2);
+      }
+      updateInvoiceTotals();
+    }
     if(event.target.id==='crmProjectSearch'){
       const cursor=event.target.selectionStart;
       state.search=event.target.value;render();
@@ -1026,14 +1120,34 @@
     }else void persistMove(moved,lane.dataset.lane);
   });
   $('crmDialog').addEventListener('close',()=>{
-    state.dialog='';state.taskId='';state.taskDetail=null;
+    state.dialog='';state.taskId='';state.taskDetail=null;state.invoiceDirty=false;
   });
+  $('crmDialog').addEventListener('cancel',event=>{
+    if(state.invoiceDirty){event.preventDefault();closeModal();}
+  });
+  window.addEventListener('beforeunload',event=>{
+    if(state.invoiceDirty){event.preventDefault();event.returnValue='';}
+  });
+  function readTimeFilters(){
+    const params=new URLSearchParams(window.location.search);
+    state.timeCustomerFilter=params.get('customer_id')||'';
+    state.timeProjectFilter=params.get('project_id')||'';
+  }
+  function syncTimeFilters(){
+    const url=new URL(window.location.href);
+    for(const [key,value] of [['customer_id',state.timeCustomerFilter],['project_id',state.timeProjectFilter]]){
+      if(value)url.searchParams.set(key,value);else url.searchParams.delete(key);
+    }
+    window.history.replaceState(null,'',url);
+  }
   window.addEventListener('popstate',()=>{
+    if(currentRoute().section==='time')readTimeFilters();
     render();const route=currentRoute();
     if(route.section==='project'&&route.id!==state.projectId)void loadBoard(route.id);
     if(route.section==='activity')void loadWorkspaceActivity();
   });
   const route=currentRoute();
+  if(route.section==='time')readTimeFilters();
   void reload().then(async()=>{
     if(route.section==='project')await loadBoard(route.id);
     if(route.section==='activity')await loadWorkspaceActivity();

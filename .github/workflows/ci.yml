@@ -64,6 +64,10 @@ jobs:
         env:
           RUN_GSC_BROWSER_TESTS: '1'
         run: node --test test/search-console-browser.test.mjs
+      - name: CRM filters and invoice draft browser workflow
+        env:
+          RUN_CRM_BROWSER_TESTS: '1'
+        run: node --test test/billing-crm-browser.test.mjs
       - name: Runtime import check
         env:
           SITEOPS_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

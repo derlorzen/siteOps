@@ -30,6 +30,8 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
   assert.deepEqual(appliedAgain, applied);
   const { checkSearchConsoleMysql } = await import('./search-console-mysql.mjs');
   await checkSearchConsoleMysql(db, migrate);
+  const { checkBillingDraftsMysql } = await import('./billing-drafts-mysql.mjs');
+  await checkBillingDraftsMysql(db);
 
   // Video additions must preserve existing rows and execute real MySQL queries.
   const { createVideoStudio } = await import('../lib/video-studio.mjs');

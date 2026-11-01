@@ -105,3 +105,30 @@ test('cancellation renders a separate negative service invoice', () => {
   assert.match(pdf.toString('latin1'), /-133,88 EUR/);
   assert.match(pdf.toString('latin1'), /RE-2026-00001/);
 });
+
+test('manual invoice positions retain their quantity and unit in the PDF', () => {
+  const pdf = renderInvoicePdf({
+    sender: { name: 'Sender' },
+    customer: { name: 'Customer' },
+    number: 'RE-TEST',
+    issued_at: '2026-11-01',
+    service_from: '2026-09-01',
+    service_to: '2026-09-30',
+    due_at: '2026-11-15',
+    items: [
+      {
+        entry_date: '2026-09-17',
+        description: 'Pauschale',
+        quantity: 2,
+        unit: 'Paket',
+        hourly_cents: 5000,
+        amount_cents: 10000
+      }
+    ],
+    net_cents: 10000,
+    tax_cents: 1900,
+    gross_cents: 11900,
+    vat_percent: 19
+  });
+  assert.match(pdf.toString('latin1'), /2 Paket x 50,00 EUR\/Paket = 100,00 EUR/);
+});
