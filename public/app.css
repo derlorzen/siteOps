@@ -135,7 +135,9 @@ section+section{margin-top:20px}
 .oauth-shell{min-height:100vh;display:grid;place-items:center;padding:32px}
 .oauth-consent{width:min(680px,100%);margin:0}
 .oauth-actions{display:flex;flex-direction:row;gap:10px;max-width:none;padding:0;margin-top:22px;background:transparent}
-.oauth-actions button{flex:1}
+.oauth-actions{flex-wrap:wrap}.oauth-actions button{flex:1}
+.oauth-scope-choice{flex:1 0 100%;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line,#d6dee3);border-radius:8px;font-weight:600;line-height:1.45}
+.oauth-scope-choice input{margin-top:3px;flex:none}
 .oauth-connections{display:grid;gap:10px}
 .oauth-connection{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid #edf0f2}
 .oauth-connection:last-child{border-bottom:0}

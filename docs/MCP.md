@@ -4,7 +4,7 @@
 
 The [generated UI/MCP matrix](UI-MCP-COVERAGE.md) is the complete inventory. The lists below document selected established workflows. [Implementation and verification](PRODUCT-TRANSFORMATION.md) distinguish local protocol checks from external client acceptance.
 
-OAuth connections receive `siteops:access` for reads. Request and consent to `siteops:write` for business changes. Existing read grants must reconnect before writing. This is the existing single-owner SiteOps account; project filters are context, not multi-tenant authorization.
+OAuth connections receive `siteops:access` for reads. `siteops:write` for business changes is granted by the owner on the consent page ("Änderungen erlauben", preselected); this choice is authoritative even when a client such as Claude requests no scope. The 401 challenge announces `siteops:access siteops:write offline_access`. Refreshed tokens keep their scope, so existing read-only grants must reconnect before writing. The MCP page and `mcp_connections_list` show per connection whether it may write (`canWrite`). This is the existing single-owner SiteOps account; project filters are context, not multi-tenant authorization.
 
 Critical mutations require a server-bound approval, including calls made with the legacy bearer:
 

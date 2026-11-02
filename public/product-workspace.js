@@ -62,7 +62,7 @@
       const box = $('oauthConnections');
       try {
         const rows = await api('/api/oauth/connections');
-        box.innerHTML = rows.length ? rows.map(row => '<div class="oauth-connection"><div><strong>'+esc(row.clientName || 'MCP-Client')+'</strong><small>'+esc(row.clientId)+'</small></div><span>'+Number(row.activeAccess || 0)+' Zugriffsrechte · '+Number(row.activeRefresh || 0)+' Erneuerungen</span><button type="button" class="ghost" data-revoke="'+esc(row.clientId)+'">Zugriff widerrufen</button></div>').join('') : '<p>Noch keine OAuth-Verbindung. Verbinde ChatGPT oder Claude mit dem MCP-Endpunkt.</p>';
+        box.innerHTML = rows.length ? rows.map(row => '<div class="oauth-connection"><div><strong>'+esc(row.clientName || 'MCP-Client')+'</strong><small>'+esc(row.clientId)+'</small></div><span>'+(row.canWrite?'<strong>Lesen &amp; Ändern</strong>':(row.activeAccess||row.activeRefresh)?'<strong>Nur Lesen</strong> – zum Ändern neu verbinden und „Änderungen erlauben“ wählen':'Kein aktiver Zugriff')+'<br>'+Number(row.activeAccess || 0)+' Zugriffsrechte · '+Number(row.activeRefresh || 0)+' Erneuerungen</span><button type="button" class="ghost" data-revoke="'+esc(row.clientId)+'">Zugriff widerrufen</button></div>').join('') : '<p>Noch keine OAuth-Verbindung. Verbinde ChatGPT oder Claude mit dem MCP-Endpunkt.</p>';
         box.querySelectorAll('[data-revoke]').forEach(button => button.onclick = async () => {
           button.disabled = true;
           try { await api('/api/oauth/revoke-client', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({clientId:button.dataset.revoke})}); await loadConnections(); }

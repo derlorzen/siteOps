@@ -172,9 +172,17 @@ test(
     assert.equal(siteList.json()[0].remote_root, '/public');
     assert.equal(siteList.json()[0].deployment_mode, 'webspace');
     assert.doesNotMatch(siteList.body, /do-not-return|encrypted_credentials|git_credentials/);
-    for (const [name, redirect] of [
-      ['ChatGPT protocol fixture', 'https://chatgpt.com/connector_platform/oauth_redirect'],
-      ['Claude protocol fixture', 'https://claude.ai/api/mcp/auth_callback']
+    // Claude requests no scope (or only the challenged one); the owner's consent choice
+    // decides about siteops:write. The read-only run must be rejected for writes.
+    for (const [name, redirect, requestedScope, allowWrite] of [
+      [
+        'ChatGPT protocol fixture',
+        'https://chatgpt.com/connector_platform/oauth_redirect',
+        'siteops:access siteops:write offline_access',
+        true
+      ],
+      ['Claude protocol fixture', 'https://claude.ai/api/mcp/auth_callback', null, true],
+      ['Claude read-only fixture', 'https://claude.ai/api/mcp/auth_callback', null, false]
     ]) {
       const registered = await app.inject({
         method: 'POST',
@@ -191,7 +199,7 @@ test(
         code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
         code_challenge_method: 'S256',
         resource: 'http://localhost:3000/mcp',
-        scope: 'siteops:access siteops:write offline_access',
+        ...(requestedScope ? { scope: requestedScope } : {}),
         state: 'fixture-state'
       };
       const consent = await app.inject({
@@ -200,11 +208,12 @@ test(
         headers: { cookie: dashboardCookie }
       });
       assert.equal(consent.statusCode, 200);
+      assert.match(consent.body, /name="allow_write" value="1" checked/);
       const authorized = await app.inject({
         method: 'POST',
         url: '/oauth/authorize',
         headers: { cookie: dashboardCookie, origin: 'http://localhost:3000' },
-        payload: { ...fields(consent.body), decision: 'allow' }
+        payload: { ...fields(consent.body), ...(allowWrite ? { allow_write: '1' } : {}), decision: 'allow' }
       });
       assert.equal(authorized.statusCode, 302);
       const callback = new URL(authorized.headers.location);
@@ -230,6 +239,9 @@ test(
       const token = await app.inject({ method: 'POST', url: '/oauth/token', payload: exchange });
       assert.equal(token.statusCode, 200);
       const credentials = token.json();
+      const grantedScope = tokens.get(hash(credentials.access_token)).scope;
+      assert.equal(grantedScope.split(' ').includes('siteops:write'), allowWrite);
+      assert.ok(grantedScope.split(' ').includes('siteops:access'));
       assert.equal((await app.inject({ method: 'POST', url: '/oauth/token', payload: exchange })).statusCode, 400);
       const rpc = async (method, params) =>
         app.inject({
@@ -254,6 +266,15 @@ test(
       const called = await rpc('tools/call', { name: 'capabilities_list', arguments: { limit: 1 } });
       assert.equal(rpcResult(called.body).result.isError, undefined);
       assert.equal(rpcResult(called.body).result.structuredContent.data.items.length, 1);
+      if (!allowWrite) {
+        const denied = rpcResult(
+          (await rpc('tools/call', { name: 'customer_create', arguments: { name: 'Read only ' + name } })).body
+        ).result;
+        assert.equal(denied.isError, true);
+        assert.equal(denied.structuredContent.error.code, 'PERMISSION_DENIED');
+        assert.equal(customers.size, 4);
+        continue;
+      }
       // Cross-adapter workflow: a real REST controller writes, MCP edits the same
       // record, REST reads it, and MCP can create another record. Only SQL is a fixture.
       const headers = { cookie: dashboardCookie, origin: 'http://localhost:3000', 'content-type': 'application/json' };
@@ -287,7 +308,9 @@ test(
       assert.equal(agentCreated.isError, undefined);
       assert.ok(customers.has(agentCreated.structuredContent.data.id));
       tokens.get(hash(credentials.access_token)).expires_at = new Date(0);
-      assert.equal((await rpc('tools/list', {})).statusCode, 401);
+      const expired = await rpc('tools/list', {});
+      assert.equal(expired.statusCode, 401);
+      assert.match(String(expired.headers['www-authenticate']), /scope="siteops:access siteops:write offline_access"/);
       const refresh = {
         grant_type: 'refresh_token',
         client_id: client.client_id,
@@ -297,6 +320,7 @@ test(
       const renewed = await app.inject({ method: 'POST', url: '/oauth/token', payload: refresh });
       assert.equal(renewed.statusCode, 200);
       assert.notEqual(renewed.json().refresh_token, credentials.refresh_token);
+      assert.ok(tokens.get(hash(renewed.json().access_token)).scope.split(' ').includes('siteops:write'));
       assert.equal((await app.inject({ method: 'POST', url: '/oauth/token', payload: refresh })).statusCode, 400);
     }
   }

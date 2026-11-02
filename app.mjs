@@ -4403,7 +4403,7 @@ function mcpServer(principal) {
     'mcp_connections_list',
     {
       description:
-        'Autorisierte MCP-Verbindungen und serverseitige Tokenzustände ohne Tokenwerte lesen. Bestätigt keine gerade aktive externe Sitzung.',
+        'Autorisierte MCP-Verbindungen und serverseitige Tokenzustände ohne Tokenwerte lesen, inklusive gewährter Scopes (canWrite = siteops:write). Bestätigt keine gerade aktive externe Sitzung.',
       inputSchema: z.object({}),
       _siteops: { module: 'mcp', service: 'oauth.connections', ui: '/mcp-info', access: 'read', approval: false }
     },
@@ -5517,6 +5517,7 @@ function mcpServer(principal) {
 }
 
 const OAUTH_ACCESS_SCOPE = 'siteops:access',
+  OAUTH_WRITE_SCOPE = 'siteops:write',
   OAUTH_OFFLINE_SCOPE = 'offline_access';
 function oauthBase() {
   return String(cfg.publicBaseUrl || '').replace(/\/$/, '');
@@ -5579,6 +5580,16 @@ function oauthScopeHas(scope, value) {
     .split(/\s+/)
     .includes(value);
 }
+// The owner decides on the consent page whether a client may change data. Clients such as
+// Claude request no scope or only the scope announced in the 401 challenge, so the explicit
+// consent choice is authoritative for siteops:write in both directions.
+function oauthConsentScope(requested, allowWrite) {
+  const items = String(oauthScope(requested))
+    .split(/\s+/)
+    .filter(item => item !== OAUTH_WRITE_SCOPE);
+  if (allowWrite) items.splice(1, 0, OAUTH_WRITE_SCOPE);
+  return items.join(' ');
+}
 function oauthFail(reply, status, error, description) {
   return reply.code(status).type('application/json').send({ error, error_description: description });
 }
@@ -5587,7 +5598,7 @@ function oauthChallenge(reply, withError = false) {
     'Bearer resource_metadata="' +
     oauthBase() +
     '/.well-known/oauth-protected-resource", scope="' +
-    OAUTH_ACCESS_SCOPE +
+    [OAUTH_ACCESS_SCOPE, OAUTH_WRITE_SCOPE, OAUTH_OFFLINE_SCOPE].join(' ') +
     '"';
   if (withError) value += ', error="invalid_token"';
   reply.header('WWW-Authenticate', value);
@@ -5797,11 +5808,15 @@ async function oauthAuthorizePage(req, reply) {
       .send(
         '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SiteOps verbinden</title><link rel="stylesheet" href="/assets/app.css?v=1.1.0"></head><body><main class="oauth-shell"><section class="oauth-consent"><span class="eyebrow">SITEOPS OAUTH</span><h1>' +
           esc(x.client.clientName) +
-          ' verbinden?</h1><p>Die Anwendung erhält Zugriff auf den SiteOps-MCP-Server und damit auf die dort verfügbaren Lese- und Änderungswerkzeuge. Änderungen bleiben weiterhin durch den SiteOps-Preview/Apply-Workflow geschützt.</p><dl class="facts compact-facts"><div><dt>Client</dt><dd>' +
+          ' verbinden?</h1><p>Die Anwendung erhält Lesezugriff auf den SiteOps-MCP-Server. Ob sie auch Änderungen ausführen darf, legst du hier fest. Änderungen bleiben weiterhin durch den SiteOps-Preview/Apply-Workflow geschützt.</p><dl class="facts compact-facts"><div><dt>Client</dt><dd>' +
           esc(x.client.clientName) +
-          '</dd></div><div><dt>Berechtigung</dt><dd>SiteOps MCP Zugriff</dd></div><div><dt>Ressource</dt><dd><code>' +
+          '</dd></div><div><dt>Angefragt</dt><dd><code>' +
+          esc(x.scope) +
+          '</code></dd></div><div><dt>Ressource</dt><dd><code>' +
           esc(x.resource) +
-          '</code></dd></div></dl><form method="post" action="/oauth/authorize" class="oauth-actions">' +
+          '</code></dd></div></dl><form method="post" action="/oauth/authorize" class="oauth-actions"><label class="oauth-scope-choice"><input type="checkbox" name="allow_write" value="1" checked> Änderungen erlauben (<code>' +
+          OAUTH_WRITE_SCOPE +
+          '</code>): Dateien, Backups, Projekte und weitere Daten über MCP ändern</label>' +
           hidden('client_id', x.clientId) +
           hidden('redirect_uri', x.redirectUri) +
           hidden('response_type', 'code') +
@@ -5828,6 +5843,9 @@ async function oauthAuthorizeSubmit(req, reply) {
       return oauthFail(reply, 400, 'invalid_request', 'Consent request expired or invalid');
     if (String(b.decision) !== 'allow')
       return oauthRedirect(reply, x.redirectUri, { error: 'access_denied', state: x.state, iss: oauthIssuer() });
+    // The signature binds the requested parameters; the write grant is the owner's own
+    // consent choice on this authenticated dashboard page.
+    x.scope = oauthConsentScope(x.scope, String(b.allow_write || '') === '1');
     const code = oauthRandomToken(32);
     await q(
       'insert into oauth_authorization_codes(id,code_hash,client_id,redirect_uri,code_challenge,code_challenge_method,scope,resource,subject,expires_at) values(?,?,?,?,?,?,?,?,?,?)',
@@ -6074,6 +6092,8 @@ async function oauthConnections() {
         subject: r.subject,
         activeAccess: 0,
         activeRefresh: 0,
+        canWrite: false,
+        scopes: new Set(),
         lastIssuedAt: r.created_at
       };
       clients.set(r.client_id, x);
@@ -6081,10 +6101,18 @@ async function oauthConnections() {
     const active = !r.revoked_at && new Date(r.expires_at) > new Date();
     if (active && r.token_type === 'access') x.activeAccess++;
     if (active && r.token_type === 'refresh') x.activeRefresh++;
+    if (active) {
+      for (const item of String(r.scope || '')
+        .split(/\s+/)
+        .filter(Boolean))
+        x.scopes.add(item);
+      if (oauthScopeHas(r.scope, OAUTH_WRITE_SCOPE)) x.canWrite = true;
+    }
   }
   for (const x of clients.values()) {
     const c = await oauthRegisteredClient(x.clientId);
     if (c) x.clientName = c.clientName;
+    x.scopes = [...x.scopes];
   }
   return [...clients.values()];
 }
