@@ -590,6 +590,9 @@
   "POST /api/previews/:id/apply": {
     "tools": ["change_apply"]
   },
+  "GET /api/previews/:id/status": {
+    "tools": ["change_status"]
+  },
   "GET /api/sites/:site/files": {
     "tools": ["files_list"]
   },

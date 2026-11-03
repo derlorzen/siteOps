@@ -21,6 +21,8 @@ import * as cheerio from 'cheerio';
 import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/crypto.mjs';
 import { siteFilePath, normalizeChangeFiles } from './lib/site-paths.mjs';
 import { websiteToolResult } from './lib/website-tool-result.mjs';
+import { createSerialLock } from './lib/serial-lock.mjs';
+import { createChangeApplyJobs } from './lib/change-apply-jobs.mjs';
 import { createCmsController, cmsInstallRequestSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
 import { renderCmsWorkspace } from './lib/lorzcms-workspace.mjs';
 import { billingDashboardBody } from './lib/billing-ui.mjs';
@@ -1262,12 +1264,15 @@ async function readRemoteText(siteId, path) {
   }
 }
 
-let backupLock = Promise.resolve();
-function withBackupLock(fn) {
-  const next = backupLock.then(fn, fn);
-  backupLock = next.catch(() => {});
-  return next;
-}
+// All writes to the shared backup repository are serialised. Each holder gets a bounded hold
+// time so one hung FTP/GitHub call can no longer block every later change_apply and backup
+// (see lib/serial-lock.mjs). Snapshots of a few files finish in seconds; full backups get more.
+const BACKUP_LOCK_SNAPSHOT_MS = Number(process.env.SITEOPS_SNAPSHOT_LOCK_MS || 3 * 60 * 1000);
+const BACKUP_LOCK_FULL_MS = Number(process.env.SITEOPS_FULL_BACKUP_LOCK_MS || 20 * 60 * 1000);
+const withBackupLock = createSerialLock({
+  maxHoldMs: BACKUP_LOCK_SNAPSHOT_MS,
+  onTimeout: ({ label, maxHoldMs }) => console.error('backup lock released after timeout', label, maxHoldMs)
+});
 function backupRepoPath(path = '') {
   return '/repos/' + cfg.githubBackupRepo + path;
 }
@@ -1488,46 +1493,49 @@ function applyTreeMapUpdates(treeMap, updates) {
 // window between that prior call and this one (see the comment on branchHeadMatches);
 // always safe to omit, or to pass a now-stale one - branchState() is fetched fresh instead.
 async function commitPaths(site, paths, message, knownState = null) {
-  return withBackupLock(async () => {
-    const state =
-        (knownState && (await branchHeadMatches(knownState.branch, knownState.headSha)) && knownState) ||
-        (await branchState()),
-      remote = await connectSite(site),
-      changes = [],
-      treeUpdates = [];
-    try {
-      for (const inputPath of paths) {
-        const path = siteFilePath(inputPath);
-        await assertNoRemoteLinks(remote, site.remote_root, path);
-        const repoPath = 'sites/' + site.slug + '/public/' + path,
-          rp = joinRemote(site.remote_root, path),
-          existing = state.treeMap.get(repoPath);
-        if (await remote.exists(rp)) {
-          const content = await remote.read(rp),
-            sha = gitBlobSha(content);
-          if (existing?.sha !== sha) {
-            changes.push(await gitTreeChangeFor(repoPath, content));
-            treeUpdates.push({ path: repoPath, mode: '100644', type: 'blob', sha });
+  return withBackupLock(
+    async () => {
+      const state =
+          (knownState && (await branchHeadMatches(knownState.branch, knownState.headSha)) && knownState) ||
+          (await branchState()),
+        remote = await connectSite(site),
+        changes = [],
+        treeUpdates = [];
+      try {
+        for (const inputPath of paths) {
+          const path = siteFilePath(inputPath);
+          await assertNoRemoteLinks(remote, site.remote_root, path);
+          const repoPath = 'sites/' + site.slug + '/public/' + path,
+            rp = joinRemote(site.remote_root, path),
+            existing = state.treeMap.get(repoPath);
+          if (await remote.exists(rp)) {
+            const content = await remote.read(rp),
+              sha = gitBlobSha(content);
+            if (existing?.sha !== sha) {
+              changes.push(await gitTreeChangeFor(repoPath, content));
+              treeUpdates.push({ path: repoPath, mode: '100644', type: 'blob', sha });
+            }
+          } else if (existing) {
+            changes.push({ path: repoPath, mode: '100644', type: 'blob', sha: null });
+            treeUpdates.push({ path: repoPath, sha: null });
           }
-        } else if (existing) {
-          changes.push({ path: repoPath, mode: '100644', type: 'blob', sha: null });
-          treeUpdates.push({ path: repoPath, sha: null });
         }
+      } finally {
+        await remote.close();
       }
-    } finally {
-      await remote.close();
-    }
-    const { sha, treeSha } = await commitTreeChanges(state, changes, '[' + site.domain + '] ' + message);
-    return {
-      sha,
-      state: {
-        headSha: sha,
-        rootTreeSha: treeSha,
-        treeMap: applyTreeMapUpdates(state.treeMap, treeUpdates),
-        branch: state.branch
-      }
-    };
-  });
+      const { sha, treeSha } = await commitTreeChanges(state, changes, '[' + site.domain + '] ' + message);
+      return {
+        sha,
+        state: {
+          headSha: sha,
+          rootTreeSha: treeSha,
+          treeMap: applyTreeMapUpdates(state.treeMap, treeUpdates),
+          branch: state.branch
+        }
+      };
+    },
+    { maxHoldMs: BACKUP_LOCK_SNAPSHOT_MS, label: 'snapshot ' + site.domain }
+  );
 }
 const commitTreeCache = new Map();
 async function treeForCommit(commit) {
@@ -1572,59 +1580,62 @@ async function changedFiles(site, before, after) {
     .sort();
 }
 async function fullBackup(site, maxFiles = 10000) {
-  return withBackupLock(async () => {
-    const state = await branchState(),
-      remote = await connectSite(site),
-      prefix = 'sites/' + site.slug + '/',
-      publicPrefix = prefix + 'public/',
-      changes = [],
-      seen = new Set();
-    let count = 0;
-    const patterns = Array.isArray(site.exclude_patterns) ? site.exclude_patterns : [],
-      excluded = p => patterns.some(x => p.includes(x));
-    async function addFile(rel) {
-      if (++count > maxFiles) throw new Error('Backup stopped after ' + maxFiles + ' files');
-      const repoPath = publicPrefix + rel,
-        content = await remote.read(joinRemote(site.remote_root, rel)),
-        existing = state.treeMap.get(repoPath);
-      seen.add(repoPath);
-      if (existing?.sha !== gitBlobSha(content)) changes.push(await gitTreeChangeFor(repoPath, content));
-    }
-    async function walk(rel = '') {
-      for (const e of await remote.list(joinRemote(site.remote_root, rel))) {
-        const child = rel ? rel + '/' + e.name : e.name;
-        if (excluded(child) || !websitePathAllowed(child)) continue;
-        if (e.type === 'directory') await walk(child);
-        else if (e.type === 'file') await addFile(child);
+  return withBackupLock(
+    async () => {
+      const state = await branchState(),
+        remote = await connectSite(site),
+        prefix = 'sites/' + site.slug + '/',
+        publicPrefix = prefix + 'public/',
+        changes = [],
+        seen = new Set();
+      let count = 0;
+      const patterns = Array.isArray(site.exclude_patterns) ? site.exclude_patterns : [],
+        excluded = p => patterns.some(x => p.includes(x));
+      async function addFile(rel) {
+        if (++count > maxFiles) throw new Error('Backup stopped after ' + maxFiles + ' files');
+        const repoPath = publicPrefix + rel,
+          content = await remote.read(joinRemote(site.remote_root, rel)),
+          existing = state.treeMap.get(repoPath);
+        seen.add(repoPath);
+        if (existing?.sha !== gitBlobSha(content)) changes.push(await gitTreeChangeFor(repoPath, content));
       }
-    }
-    try {
-      await walk();
-      const metaPath = prefix + '.siteops.json',
-        meta = Buffer.from(JSON.stringify({ domain: site.domain, fileCount: count }, null, 2) + '\n'),
-        metaExisting = state.treeMap.get(metaPath);
-      seen.add(metaPath);
-      if (metaExisting?.sha !== gitBlobSha(meta)) changes.push(await gitTreeChangeFor(metaPath, meta));
-      for (const p of state.treeMap.keys())
-        if (p.startsWith(prefix) && !seen.has(p)) changes.push({ path: p, mode: '100644', type: 'blob', sha: null });
-      const { sha: commit } = await commitTreeChanges(state, changes, '[' + site.domain + '] Full backup'),
-        changed = commit !== state.headSha;
-      const backupId = crypto.randomUUID();
-      await q('insert into backups(id,site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?,?)', [
-        backupId,
-        site.id,
-        commit,
-        'full',
-        count,
-        changed
-      ]);
-      return { commit, files: count, changed };
-    } finally {
+      async function walk(rel = '') {
+        for (const e of await remote.list(joinRemote(site.remote_root, rel))) {
+          const child = rel ? rel + '/' + e.name : e.name;
+          if (excluded(child) || !websitePathAllowed(child)) continue;
+          if (e.type === 'directory') await walk(child);
+          else if (e.type === 'file') await addFile(child);
+        }
+      }
       try {
-        await remote.close();
-      } catch {}
-    }
-  });
+        await walk();
+        const metaPath = prefix + '.siteops.json',
+          meta = Buffer.from(JSON.stringify({ domain: site.domain, fileCount: count }, null, 2) + '\n'),
+          metaExisting = state.treeMap.get(metaPath);
+        seen.add(metaPath);
+        if (metaExisting?.sha !== gitBlobSha(meta)) changes.push(await gitTreeChangeFor(metaPath, meta));
+        for (const p of state.treeMap.keys())
+          if (p.startsWith(prefix) && !seen.has(p)) changes.push({ path: p, mode: '100644', type: 'blob', sha: null });
+        const { sha: commit } = await commitTreeChanges(state, changes, '[' + site.domain + '] Full backup'),
+          changed = commit !== state.headSha;
+        const backupId = crypto.randomUUID();
+        await q('insert into backups(id,site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?,?)', [
+          backupId,
+          site.id,
+          commit,
+          'full',
+          count,
+          changed
+        ]);
+        return { commit, files: count, changed };
+      } finally {
+        try {
+          await remote.close();
+        } catch {}
+      }
+    },
+    { maxHoldMs: BACKUP_LOCK_FULL_MS, label: 'full backup ' + site.domain }
+  );
 }
 async function listBackups(site, limit = 30) {
   return (
@@ -1751,40 +1762,52 @@ async function restoreRemoteSnapshot(site, paths, commit) {
     await remote.close();
   }
 }
-async function applyPreview(previewId) {
-  const p = await q(`select * from change_previews where id=? and status='pending' and expires_at>now()`, [previewId]),
-    preview = p.rows[0];
+// Executes one claimed preview (status 'applying'); driven by changeApplyJobs, which makes
+// it durable and resumable. Idempotent on purpose: an attempt may have been interrupted at
+// any point (proxy timeout, recycled process), so every step checks what is already done:
+// - the pre-change snapshot commit is stored on the preview and reused,
+// - files that already have the target content are not written again,
+// - an existing changes row for this preview is reused instead of inserting a second one.
+async function runPreviewApply(previewId, { stage = async () => {} } = {}) {
+  const preview = (await q(`select * from change_previews where id=? and status='applying'`, [previewId])).rows[0];
   if (!preview) throw new Error('Preview not found or expired');
   const site = await getSite(preview.site_id),
     changes = normalizeChangeFiles(preview.changes),
-    paths = changes.map(c => c.path),
-    { sha: preCommit, state: preCommitState } = await commitPaths(site, paths, 'Pre-change snapshot').catch(error => {
+    paths = changes.map(c => c.path);
+  let preCommit = preview.apply_pre_commit || null,
+    preCommitState = null;
+  if (!preCommit) {
+    await stage('pre_snapshot');
+    ({ sha: preCommit, state: preCommitState } = await commitPaths(site, paths, 'Pre-change snapshot').catch(error => {
       error.siteopsStage = 'pre_snapshot';
       throw error;
-    }),
-    remote = await connectSite(site),
+    }));
+    await q('update change_previews set apply_pre_commit=? where id=?', [preCommit, preview.id]);
+  }
+  await stage('write');
+  const remote = await connectSite(site),
     touched = [];
   let writeError = null;
   try {
     for (const c of changes) {
       await assertNoRemoteLinks(remote, site.remote_root, c.path);
       const rp = joinRemote(site.remote_root, c.path),
-        exists = await remote.exists(rp);
-      if (exists !== c.beforeExists) throw new Error(`Remote existence changed: ${c.path}`);
-      if (exists && hash(await remote.read(rp)) !== c.beforeHash)
-        throw new Error(`Remote file changed since preview: ${c.path}`);
-      if (c.after === null) {
-        touched.push(c.path);
-        await remote.remove(rp);
-      } else {
-        let payload;
+        exists = await remote.exists(rp),
+        current = exists ? hash(await remote.read(rp)) : null;
+      let payload = null;
+      if (c.after !== null) {
         if (c.afterEncoding === 'git') {
           payload = await readCommitMaybe(site, c.path, c.after);
           if (payload === null) throw new Error(`File missing in source commit during apply: ${c.path}`);
         } else payload = c.afterEncoding === 'base64' ? Buffer.from(c.after, 'base64') : Buffer.from(c.after);
-        touched.push(c.path);
-        await remote.write(rp, payload);
       }
+      // Already in the target state (written by an interrupted earlier attempt): nothing to do.
+      if (payload === null ? !exists : exists && current === hash(payload)) continue;
+      if (exists !== c.beforeExists) throw new Error(`Remote existence changed: ${c.path}`);
+      if (exists && current !== c.beforeHash) throw new Error(`Remote file changed since preview: ${c.path}`);
+      touched.push(c.path);
+      if (payload === null) await remote.remove(rp);
+      else await remote.write(rp, payload);
     }
   } catch (e) {
     writeError = e;
@@ -1801,8 +1824,10 @@ async function applyPreview(previewId) {
         console.error('restore after transfer failure', site.domain, restoreError);
       }
     }
+    writeError.siteopsStage ||= 'write';
     throw writeError;
   }
+  await stage('post_snapshot');
   let postCommit;
   try {
     ({ sha: postCommit } = await commitPaths(site, paths, preview.description, preCommitState));
@@ -1812,34 +1837,55 @@ async function applyPreview(previewId) {
     } catch (restoreError) {
       console.error('restore after Git snapshot failure', site.domain, restoreError);
     }
-    throw new Error(`Live files restored after Git snapshot failure: ${e.message || e}`);
+    throw Object.assign(new Error(`Live files restored after Git snapshot failure: ${e.message || e}`), {
+      siteopsStage: 'post_snapshot'
+    });
   }
-  const health = site.monitor_enabled ? await checkSiteNow(site) : null,
+  await stage('health_check');
+  const health = site.monitor_enabled ? await checkSiteNow(site).catch(() => null) : null,
     status =
       site.deployment_mode === 'hostinger_git'
         ? 'deploy_triggered'
         : health && !health.ok
           ? 'deployed_unhealthy'
           : 'deployed';
-  const changeId = crypto.randomUUID();
-  await q(
-    `insert into changes(id,site_id,preview_id,description,actor,files,pre_commit,post_commit,status,health_result) values(?,?,?,?,?,?,?,?,?,?)`,
-    [
-      changeId,
-      site.id,
-      preview.id,
-      preview.description,
-      preview.actor,
-      JSON.stringify(paths),
-      preCommit,
-      postCommit,
-      status,
-      health ? JSON.stringify(health) : null
-    ]
-  );
-  await q(`update change_previews set status='applied' where id=?`, [preview.id]);
-  const syntheticValidation = await scheduleSyntheticValidation(site);
+  await stage('record');
+  const existing = (await q('select id from changes where preview_id=? limit 1', [preview.id])).rows[0];
+  const changeId = existing?.id || crypto.randomUUID();
+  if (!existing)
+    await q(
+      `insert into changes(id,site_id,preview_id,description,actor,files,pre_commit,post_commit,status,health_result) values(?,?,?,?,?,?,?,?,?,?)`,
+      [
+        changeId,
+        site.id,
+        preview.id,
+        preview.description,
+        preview.actor,
+        JSON.stringify(paths),
+        preCommit,
+        postCommit,
+        status,
+        health ? JSON.stringify(health) : null
+      ]
+    );
+  await q(`update change_previews set status='applied',apply_stage='done',change_id=?,apply_error=null where id=?`, [
+    changeId,
+    preview.id
+  ]);
+  const syntheticValidation = await scheduleSyntheticValidation(site).catch(() => null);
   return { changeId, preCommit, postCommit, files: paths, status, health, syntheticValidation };
+}
+const changeApplyJobs = createChangeApplyJobs({
+  q,
+  execute: runPreviewApply,
+  waitMs: Number(process.env.SITEOPS_APPLY_WAIT_MS || 20000),
+  staleSeconds: Number(process.env.SITEOPS_APPLY_STALE_SECONDS || 180)
+});
+async function applyPreview(previewId) {
+  return changeApplyJobs.apply(previewId);
+}
+async function applyStatus(previewId) {
+  return changeApplyJobs.status(previewId);
 }
 async function listHistory(siteId, limit = 30) {
   const site = await getSite(siteId);
@@ -4702,10 +4748,19 @@ function mcpServer(principal) {
     'change_apply',
     {
       description:
-        'Apply an approved preview with pre/post snapshots and health check. Git-deployed sites commit to their deployment branch.',
+        'Apply an approved preview with pre/post snapshots and health check. Git-deployed sites commit to their deployment branch. Runs as a durable background job: answers within ~20 s with the result or status "applying"; then poll change_status. Calling change_apply again for the same preview is safe (never runs twice, resumes an interrupted apply).',
       inputSchema: z.object({ preview_id: z.string().uuid() })
     },
     async ({ preview_id }) => websiteToolResult('change_apply', () => applyPreview(preview_id))
+  );
+  registerTool(
+    'change_status',
+    {
+      description:
+        'State of a change_apply job: pending, applying (with stage), applied (with changeId/commits) or failed (with error, retryable). Resumes an apply whose process was interrupted.',
+      inputSchema: z.object({ preview_id: z.string().uuid() })
+    },
+    async ({ preview_id }) => websiteToolResult('change_status', () => applyStatus(preview_id))
   );
   registerTool(
     'history_list',
@@ -7401,7 +7456,7 @@ async function siteOperationsPage(slug) {
       try{const url=kind==='restore'?'/api/backups/'+encodeURIComponent(id)+'/restore-preview':'/api/changes/'+encodeURIComponent(id)+'/rollback-preview';const r=await fetch(url,{method:'POST'}),preview=await r.json();if(!r.ok)throw Error(preview.message||'Die Änderung konnte nicht vorbereitet werden. Prüfe den Sicherungsverlauf.');if(preview.noChanges){setMsg(preview.message||'Es sind keine Änderungen nötig.');return;}
         let panel=byId('siteChangeReview');if(!panel){panel=document.createElement('section');panel.id='siteChangeReview';panel.className='ui-panel';byId('siteActionStatus').insertAdjacentElement('afterend',panel);}panel.replaceChildren();
         const title=document.createElement('h2');title.textContent=kind==='restore'?'Wiederherstellung prüfen':'Änderung zurücknehmen';const help=document.createElement('p');help.textContent='Die folgenden Dateien sind betroffen. Es wurde noch nichts an der Website geändert. Prüfe den Umfang und fordere anschließend die Freigabe für genau diesen Stand an.';const list=document.createElement('ul');for(const file of preview.files||[]){const row=document.createElement('li');row.textContent=file.path+' · '+(file.afterExists===false?'Entfernen':file.beforeExists?'Ersetzen':'Anlegen');list.append(row);}const apply=document.createElement('button');apply.type='button';apply.textContent='Geprüften Stand anwenden';const cancel=document.createElement('button');cancel.type='button';cancel.className='ghost';cancel.textContent='Vorschau schließen';cancel.onclick=()=>panel.remove();panel.append(title,help,list,apply,cancel);panel.scrollIntoView({block:'nearest'});setMsg('Vorschau bereit. Die Website wurde noch nicht geändert.');
-        apply.onclick=async()=>{apply.disabled=true;try{const result=await fetch('/api/previews/'+encodeURIComponent(preview.previewId)+'/apply',{method:'POST'}),data=await result.json();if(!result.ok)throw Error(data.message||'Die Änderung wurde nicht ausgeführt. Erstelle bei abgelaufener Freigabe eine neue Vorschau.');panel.remove();setMsg(data.status==='deploy_triggered'?'Änderung im Repository gespeichert. Das Deployment wurde angestoßen; prüfe anschließend den Hostingstatus.':data.health?.ok?'Änderung übertragen und Erreichbarkeit erfolgreich geprüft.':data.health?'Änderung übertragen. Die Websiteprüfung meldet weiterhin ein Problem. Prüfe Diagnose und Änderungsverlauf.':'Änderung übertragen. Eine erfolgreiche Websiteprüfung wurde noch nicht bestätigt.',Boolean(data.health&&!data.health.ok));}catch(error){setMsg(error.message,true);}finally{apply.disabled=false;}};
+        apply.onclick=async()=>{apply.disabled=true;try{const result=await fetch('/api/previews/'+encodeURIComponent(preview.previewId)+'/apply',{method:'POST'});let data=await result.json();if(!result.ok)throw Error(data.message||'Die Änderung wurde nicht ausgeführt. Erstelle bei abgelaufener Freigabe eine neue Vorschau.');for(let i=0;data.status==='applying'&&i<120;i++){setMsg('Änderung wird übertragen ('+(data.stage||'läuft')+') …');await new Promise(r=>setTimeout(r,3000));const st=await fetch('/api/previews/'+encodeURIComponent(preview.previewId)+'/status');data=await st.json();if(!st.ok)throw Error(data.message||'Status der Änderung konnte nicht gelesen werden.');}if(data.status==='applying')throw Error('Die Änderung läuft noch im Hintergrund. Prüfe den Änderungsverlauf in einigen Minuten.');if(data.status==='failed')throw Error('Die Änderung ist fehlgeschlagen: '+(data.error||'unbekannter Fehler'));panel.remove();setMsg(data.status==='deploy_triggered'?'Änderung im Repository gespeichert. Das Deployment wurde angestoßen; prüfe anschließend den Hostingstatus.':data.health?.ok?'Änderung übertragen und Erreichbarkeit erfolgreich geprüft.':data.health?'Änderung übertragen. Die Websiteprüfung meldet weiterhin ein Problem. Prüfe Diagnose und Änderungsverlauf.':'Änderung übertragen. Eine erfolgreiche Websiteprüfung wurde noch nicht bestätigt.',Boolean(data.health&&!data.health.ok));}catch(error){setMsg(error.message,true);}finally{apply.disabled=false;}};
       }catch(error){setMsg(error.message,true);}
     }
     async function rollback(id){await prepareSiteChange('rollback',id);}
@@ -8308,6 +8363,7 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   app.post('/api/backups/:id/restore-preview', async req => backupRestorePreview(req.params.id, 'dashboard'));
   app.post('/api/changes/:id/rollback-preview', async req => rollbackPreview(req.params.id, 'dashboard'));
   app.post('/api/previews/:id/apply', async req => applyPreview(req.params.id));
+  app.get('/api/previews/:id/status', async req => applyStatus(req.params.id));
   app.get('/mcp-info', async (_r, reply) => reply.type('text/html').send(mcpInfoPage()));
   app.get('/settings', async (_r, reply) => reply.type('text/html').send(settingsPage()));
   app.get('/setup', async (_r, reply) => reply.type('text/html').send(setupPage()));
@@ -8344,6 +8400,7 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
       15 * 60 * 1000
     ).unref();
     startBackupWorker();
+    changeApplyJobs.startWorker();
     startSyntheticWorker();
     cmsController.startWorker();
     sslService.startWorker();

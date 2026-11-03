@@ -240,9 +240,28 @@ Mit FTP können weder DNS, SSL, PHP-Version, MySQL-Datenbank noch Document-Root-
 
 - `change_preview`
 - `change_apply`
+- `change_status`
 - `history_list`
 - `history_diff`
 - `rollback_preview`
+
+`change_apply` runs as a durable background job stored on the preview row
+(`pending → applying → applied | failed`). The call answers within about 20 seconds
+(`SITEOPS_APPLY_WAIT_MS`) with either the finished result or `status: "applying"` plus the
+current stage (`pre_snapshot`, `write`, `post_snapshot`, `health_check`, `record`). Poll
+`change_status` until it is `applied` or `failed`. Calling `change_apply` again is always safe:
+it never starts a second run, returns the recorded change for an applied preview and retries a
+failed one.
+
+An apply whose process stops (proxy timeout, recycled Node process) keeps no heartbeat; after
+`SITEOPS_APPLY_STALE_SECONDS` (default 180) it is resumed automatically on startup, by a
+worker every minute, or by the next `change_apply`/`change_status`. Resuming reuses the stored
+pre-change snapshot and skips files that already have the target content, so nothing is
+written twice and no change is left without a post snapshot and history entry.
+
+Backup-repository writes are serialised with a bounded hold time
+(`SITEOPS_SNAPSHOT_LOCK_MS`, default 3 min; `SITEOPS_FULL_BACKUP_LOCK_MS`, default 20 min), so a
+single hung FTP or GitHub call can no longer block every later apply.
 
 A domain preview is created first; only `change_apply` writes/commits it, after the additional server-bound personal approval described above.
 

@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS change_previews (
   validation LONGTEXT NULL,
   status VARCHAR(30) NOT NULL DEFAULT 'pending',
   expires_at DATETIME NOT NULL,
+  apply_started_at DATETIME NULL,
+  apply_heartbeat_at DATETIME NULL,
+  apply_stage VARCHAR(40) NULL,
+  apply_attempts INT NOT NULL DEFAULT 0,
+  apply_pre_commit VARCHAR(64) NULL,
+  apply_error TEXT NULL,
+  change_id CHAR(36) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_change_previews_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
   INDEX idx_change_previews_site_created (site_id, created_at)
