@@ -37,16 +37,18 @@ test('saved demo template supplies actual authorized recording steps for review'
     ...context,
     scenes: [{ ...context.scenes[0], template_id: 'template-one' }]
   };
-  const templates = [{
-    id: 'template-one',
-    language: 'en',
-    scene: {
-      capture_mode: 'recording',
-      demoUrl: 'https://demo.example.com/converter',
-      demoSteps: [{ action: 'click', selector: '#convert' }],
-      test_data_only: true
+  const templates = [
+    {
+      id: 'template-one',
+      language: 'en',
+      scene: {
+        capture_mode: 'recording',
+        demoUrl: 'https://demo.example.com/converter',
+        demoSteps: [{ action: 'click', selector: '#convert' }],
+        test_data_only: true
+      }
     }
-  }];
+  ];
   const result = buildTeamReviewContext({
     project,
     context: contextWithTemplate,
