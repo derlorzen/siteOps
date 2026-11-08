@@ -201,6 +201,9 @@
                 (['running', 'queued'].includes(j.status)
                   ? '<button type="button" data-check="' + escapeHtml(j.id) + '">Status prüfen</button>'
                   : '') +
+                (['done','failed'].includes(j.status)
+                  ? '<button type="button" class="ghost" data-repair="' + escapeHtml(j.id) + '">Einzelne Szenen neu aufnehmen</button>'
+                  : '') +
                 (available
                   ? fileLink('video', 'MP4 herunterladen') +
                     fileLink('short', 'Short 9:16') +
@@ -376,6 +379,43 @@
   $('#vs-jobs').addEventListener('click', async event => {
     const packageButton=event.target.closest('[data-package]');
     if(packageButton){packageButton.disabled=true;try{const job=await api('/api/video-studio/jobs/'+encodeURIComponent(packageButton.dataset.package));document.dispatchEvent(new CustomEvent('suite-open-production',{detail:{...job,workflowTarget:'assets'}}));}catch(e){msg(e.message,true);}finally{packageButton.disabled=false;}return;}
+    const repairButton = event.target.closest('[data-repair]');
+    if (repairButton) {
+      repairButton.disabled = true;
+      try {
+        const source = await api('/api/video-studio/jobs/' + encodeURIComponent(repairButton.dataset.repair));
+        const suggested = (source.result?.quality?.audiovisual_scene_reports || source.result?.av_scenes || [])
+          .filter(scene => scene.status === 'blocked' || scene.status === 'needs_review')
+          .map(scene => scene.scene);
+        const answer = window.prompt(
+          'Welche Szenen sollen neu aufgenommen werden? Nummern mit Komma trennen (maximal 6). Nur ausdrücklich gewählte Szenen werden im neuen Entwurf erneut aufgenommen. Andere verifizierte Clips bleiben erhalten.',
+          suggested.length ? suggested.slice(0, 6).join(',') : '1'
+        );
+        if (answer === null) return;
+        const selected = answer.split(',').map(s => Number(s.trim()));
+        if (!selected.length || selected.length > 6 ||
+            selected.some(n => !Number.isSafeInteger(n) || n < 1 || n > source.scenes.length) ||
+            new Set(selected).size !== selected.length)
+          throw Error('Bitte 1–6 eindeutige Szenennummern aus dieser Produktion eingeben.');
+        if (!window.confirm(
+          'Neuen, getrennten Reparaturentwurf für Szenen ' + selected.join(', ') +
+          ' erstellen? Beim späteren Renderstart werden die dort hinterlegten Demo-Aktionen erneut ausgeführt. Ausschließlich Testdaten verwenden. Das Original bleibt erhalten.'
+        )) return;
+        const created = await api(
+          '/api/video-studio/jobs/' + encodeURIComponent(source.id) + '/repair',
+          'POST',
+          { scenes: selected, confirm_demo_replay: true }
+        );
+        msg('Reparaturentwurf angelegt. Nur die ausgewählten Szenen werden beim nächsten Renderauftrag neu aufgenommen. Original unverändert.');
+        document.dispatchEvent(new CustomEvent('suite-production-selected', { detail: created }));
+        await reload();
+      } catch (e) {
+        msg(e.message, true);
+      } finally {
+        repairButton.disabled = false;
+      }
+      return;
+    }
     const trash = event.target.closest('[data-trash]'), restore = event.target.closest('[data-restore]');
     if (trash || restore) {
       const button = trash || restore; button.disabled = true;
