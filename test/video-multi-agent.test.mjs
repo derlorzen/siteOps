@@ -32,6 +32,33 @@ test('producer sees blocked recording configuration as evidence, not a successfu
   assert.match(input.deterministic_capture_plan[0].issues.join(' '), /Keine Demo-URL/);
 });
 
+test('saved demo template supplies actual authorized recording steps for review', () => {
+  const contextWithTemplate = {
+    ...context,
+    scenes: [{ ...context.scenes[0], template_id: 'template-one' }]
+  };
+  const templates = [{
+    id: 'template-one',
+    language: 'en',
+    scene: {
+      capture_mode: 'recording',
+      demoUrl: 'https://demo.example.com/converter',
+      demoSteps: [{ action: 'click', selector: '#convert' }],
+      test_data_only: true
+    }
+  }];
+  const result = buildTeamReviewContext({
+    project,
+    context: contextWithTemplate,
+    guidelines: [],
+    request: 'Check',
+    templates
+  });
+  assert.equal(result.deterministic_capture_plan[0].ok, true);
+  assert.deepEqual(result.scenes[0].configured_browser_actions, ['click']);
+  assert.equal(result.scenes[0].has_template_reference, true);
+});
+
 test('server runs independent Producer and Quality roles in order, without executing tools', async () => {
   const calls = [];
   const invoke = async (role, instructions, input) => {
