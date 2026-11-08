@@ -48,19 +48,52 @@ test('ffmpeg decodes authentic video frames and actual narration audio', { skip:
   const movie = path.join(dir, 'scene.mp4');
   const black = path.join(dir, 'black.mp4');
   const narration = path.join(dir, 'voice.wav');
-  const createMovie = (color, output) => execFileSync('ffmpeg', [
-    '-hide_banner', '-loglevel', 'error', '-y',
-    '-f', 'lavfi', '-i', 'color=c=' + color + ':s=160x90:r=12:d=2',
-    '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=8000:duration=2',
-    '-c:v', 'mpeg4', '-c:a', 'aac', '-shortest', output
-  ], { timeout: 30000 });
+  const createMovie = (color, output) =>
+    execFileSync(
+      'ffmpeg',
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=' + color + ':s=160x90:r=12:d=2',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:sample_rate=8000:duration=2',
+        '-c:v',
+        'mpeg4',
+        '-c:a',
+        'aac',
+        '-shortest',
+        output
+      ],
+      { timeout: 30000 }
+    );
   createMovie('white', movie);
   createMovie('black', black);
-  execFileSync('ffmpeg', [
-    '-hide_banner', '-loglevel', 'error', '-y',
-    '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=8000:duration=2',
-    '-ac', '1', '-ar', '8000', narration
-  ], { timeout: 30000 });
+  execFileSync(
+    'ffmpeg',
+    [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:sample_rate=8000:duration=2',
+      '-ac',
+      '1',
+      '-ar',
+      '8000',
+      narration
+    ],
+    { timeout: 30000 }
+  );
   const real = await inspectRenderedScene({ video: movie, narration, mode: 'screenshot' });
   assert.equal(real.verified_from_media, true);
   assert.equal(real.status, 'passed');
