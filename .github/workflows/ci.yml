@@ -48,6 +48,10 @@ jobs:
         run: npm run check
       - name: Lint
         run: npm run lint
+      - name: Temporary vision-cost format diagnostics
+        run: |
+          npx prettier --write lib/ai-usage.mjs test/ai-usage.test.mjs
+          git diff -- lib/ai-usage.mjs test/ai-usage.test.mjs
       - name: Format check
         run: npm run format:check
       - name: Install browser runner dependencies
