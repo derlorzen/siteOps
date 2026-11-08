@@ -13,6 +13,7 @@ import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-
 import { authenticateDemo, validateDemoLogin } from './video-login.mjs';
 import { narrateWithOpenAI } from './openai-audio.mjs';
 import { videoFileRange } from './video-file-range.mjs';
+import { inspectRenderedScene, extractSceneFrame } from './video-av-qa.mjs';
 
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
 const KOKORO_VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
@@ -228,6 +229,7 @@ async function render(job){
     const agentPlan = producerAgentPlan(job.scenes);
     job.agent_workflow = { producer: 'planned', recording: 'running', quality: 'pending' };
     job.captures=[];
+    job.av_scenes=[];
     for(let i=0;i<job.scenes.length;i++){
       const scene={...job.scenes[i],language:job.language};
       job.progress=Math.round(i/job.scenes.length*30);
@@ -279,6 +281,24 @@ async function render(job){
           '-c:v','libx264','-preset','veryfast','-tune','stillimage','-pix_fmt','yuv420p',
           '-r','25','-c:a','aac','-ar','48000','-ac','2','-b:a','128k',...(scene.outro?['-af','apad','-t',String(len)]:[]),'-shortest','-movflags','+faststart',out]);
       }
+      const av = await inspectRenderedScene({
+        video: out,
+        narration: wav,
+        mode: captureMode(scene),
+        silentFixture: process.env.VIDEO_TTS_MODE === 'silent'
+      });
+      job.av_scenes.push({scene: i+1, ...av});
+      if (av.status === 'blocked') {
+        job.quality = {
+          technical_status: 'failed',
+          audio_visual_status: 'blocked',
+          visual_status: 'pending',
+          scenes_expected: job.scenes.length,
+          scenes_captured: job.captures.length,
+          issues: av.blockers.map(issue => 'Szene ' + (i+1) + ': ' + issue)
+        };
+        throw Error('Szene '+(i+1)+' – audiovisuelle Prüfung fehlgeschlagen: '+av.blockers.join(' '));
+      }
       parts.push(out);
       subtitles.push(String(i+1)+'\n'+srtTime(current)+' --> '+srtTime(current+audioLen)+'\n'+scene.narration+'\n');
       if(scene.outro)job.outro={start_seconds:current,duration_seconds:len,channel:scene.outro.channel,website:scene.outro.website};
@@ -307,11 +327,17 @@ async function render(job){
       }
     });
     requireTechnicalQuality(job.quality);
-    job.agent_workflow.quality = 'technical_passed';
+    job.quality.audio_visual_status = job.av_scenes.some(scene => scene.status === 'needs_review')
+      ? 'needs_review'
+      : 'passed';
+    job.quality.audiovisual_scene_reports = job.av_scenes;
+    job.agent_workflow.quality = job.quality.audio_visual_status === 'passed'
+      ? 'audiovisual_passed'
+      : 'needs_visual_review';
     job.status='done';job.progress=100;job.duration=Math.round(current);
     job.files=['video','short','subtitles','thumbnail'];
   }catch(error){
-    if (job.agent_workflow && job.agent_workflow.quality !== 'technical_passed')
+    if (job.agent_workflow && !['audiovisual_passed', 'needs_visual_review'].includes(job.agent_workflow.quality))
       job.agent_workflow.quality = 'blocked';
     job.status='failed';job.error=String(error.message||error).slice(0,1000);
   }finally{
@@ -345,6 +371,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
       introVersion:1,outroVersion:1,capturePreflightVersion:1,openaiKeyForwardingVersion:1,
+      audiovisualQaVersion:1,sceneFrameVersion:1,
       demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
@@ -424,7 +451,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!uuid(req.params.id))return reply.code(400).send({error:'Invalid job ID'});
     const job=await load(req.params.id);
     if(!job)return reply.code(404).send({error:'Job not found'});
-    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],quality:job.quality || null,agent_workflow:job.agent_workflow || null,outro:job.outro || null,intro:job.intro || null};
+    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],quality:job.quality || null,av_scenes:job.av_scenes || [],agent_workflow:job.agent_workflow || null,outro:job.outro || null,intro:job.intro || null};
   });
   app.get('/video/jobs/:id/file',async(req,reply)=>{
     if(!auth(req,reply))return;
