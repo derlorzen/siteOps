@@ -92,7 +92,10 @@ test('old runner is stopped before receiving any Suite key or queuing a broken r
     requests.push({ url, options });
     return Response.json({ openaiConfigured: false });
   });
-  await assert.rejects(studio.renderJob(id), error => error.statusCode === 409 && /Audio-\/Video-QA|1\.1\.1/.test(error.message));
+  await assert.rejects(
+    studio.renderJob(id),
+    error => error.statusCode === 409 && /Audio-\/Video-QA|1\.1\.1/.test(error.message)
+  );
   assert.ok(requests.every(x => !x.options.body));
 });
 test('local narration never forwards the OpenAI key, and failed jobs get a fresh runner ID', async t => {
