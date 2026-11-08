@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { stat, copyFile, unlink } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { requireCapturePlan } from './video-capture.mjs';
@@ -18,20 +18,41 @@ export function producerAgentPlan(scenes) {
 
 // Recording-agent boundary: only a real, non-empty local file counts as captured.
 // The caller must separately validate video resolution and browser action results.
+export async function fileSha256(filename) {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(filename)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+// Never accept copied voice or assembled clips without their own source digest.
+// Deleting a mismatched destination does not modify the original recording.
+export async function verifiedArtifactCopy(source, destination, expectedSha256) {
+  if (typeof expectedSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(expectedSha256))
+    throw Error('Verifizierbare SHA-256-Prüfsumme für übernommene Datei fehlt.');
+  await copyFile(source, destination);
+  try {
+    const actual = await fileSha256(destination);
+    if (actual !== expectedSha256) throw Error('Übernommene Datei stimmt nicht mit dem Original-Prüfnachweis überein.');
+    return actual;
+  } catch (error) {
+    await unlink(destination).catch(() => {});
+    throw error;
+  }
+}
+
 export async function recordingAgentEvidence(task, filename, { resolution, actions_executed } = {}) {
   const file = await stat(filename);
   if (!file.isFile() || file.size <= 0)
     throw new Error('Szene ' + task.scene + ': Aufnahmedatei fehlt oder ist leer.');
   if (task.mode === 'recording' && (!Number.isSafeInteger(actions_executed) || actions_executed < 0))
     throw new Error('Szene ' + task.scene + ': bestätigte Browseraktionen fehlen.');
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(filename)) hash.update(chunk);
+  const sha256 = await fileSha256(filename);
   return {
     scene: task.scene,
     mode: task.mode,
     status: 'captured',
     bytes: file.size,
-    sha256: hash.digest('hex'),
+    sha256,
     actions_executed: task.mode === 'recording' ? actions_executed : 0,
     ...(resolution ? { resolution } : {})
   };
