@@ -154,7 +154,7 @@ jobs:
           # Record a real browser scene with a safe, allowlisted HTTPS site.
           curl -fsS -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
-            --data '{"id":"33333333-3333-4333-8333-333333333333","title":"CI Browser Recording","voice":"am_michael","language":"en","format":"landscape","scenes":[{"headline":"Real browser recording","narration":"Watch a browser scroll on this public sample page.","demoUrl":"https://example.com/","test_data_only":true,"demoSteps":[{"action":"scroll","pixels":250},{"action":"wait","ms":300}]}]}' \
+            --data '{"id":"33333333-3333-4333-8333-333333333333","title":"CI Browser Recording","voice":"am_michael","language":"en","format":"landscape","scenes":[{"headline":"Real browser recording","narration":"Watch a browser scroll on this public sample page.","demoUrl":"https://example.com/","test_data_only":true,"demoSteps":[{"action":"scroll","pixels":250},{"action":"wait","ms":300}]},{"headline":"Immutable context slide","narration":"This original verified scene must be reused without any changes."}]}' \
             http://127.0.0.1:3299/video/jobs > /tmp/siteops-video-demo-created.json
           for i in {1..90}; do
             curl -fsS -H 'Authorization: Bearer ci-runner-token' \
@@ -171,6 +171,45 @@ jobs:
             -o /tmp/siteops-video-demo.mp4
           test "$(stat -c%s /tmp/siteops-video-demo.mp4)" -gt 10000
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 /tmp/siteops-video-demo.mp4
+
+          # True end-to-end selective repair: repeat the browser recording, reuse
+          # the unchanged second scene and verify cryptographic source receipts.
+          curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+            -H 'Content-Type: application/json' \
+            --data '{"id":"55555555-5555-4555-8555-555555555555","resumeFrom":"33333333-3333-4333-8333-333333333333","recaptureScenes":[1],"title":"CI Browser Recording","voice":"am_michael","language":"en","format":"landscape","scenes":[{"headline":"Real browser recording","narration":"Watch a browser scroll on this public sample page.","demoUrl":"https://example.com/","test_data_only":true,"demoSteps":[{"action":"scroll","pixels":250},{"action":"wait","ms":300}]},{"headline":"Immutable context slide","narration":"This original verified scene must be reused without any changes."}]}' \
+            http://127.0.0.1:3299/video/jobs > /tmp/siteops-retake-created.json
+          for i in {1..90}; do
+            curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+              http://127.0.0.1:3299/video/jobs/55555555-5555-4555-8555-555555555555 \
+              > /tmp/siteops-retake-status.json
+            result="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/siteops-retake-status.json','utf8')).status")"
+            if [[ "$result" == "done" ]]; then break; fi
+            if [[ "$result" == "failed" ]]; then cat /tmp/siteops-retake-status.json; exit 1; fi
+            sleep 2
+          done
+          test "$result" = "done"
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const source = JSON.parse(fs.readFileSync('/tmp/siteops-video-demo-status.json', 'utf8'));
+          const repaired = JSON.parse(fs.readFileSync('/tmp/siteops-retake-status.json', 'utf8'));
+          assert.equal(source.status, 'done');
+          assert.equal(repaired.status, 'done');
+          assert.equal(repaired.resume_from, source.id);
+          assert.equal(source.captures.length, 2);
+          assert.equal(repaired.captures.length, 2);
+          assert.equal(repaired.captures[0].attempt, 2);
+          assert.equal(repaired.captures[0].actions_executed, 2);
+          assert.equal(repaired.captures[1].reused_from, source.id);
+          assert.equal(repaired.captures[1].sha256, source.captures[1].sha256);
+          assert.equal(repaired.captures[1].attempt, 1);
+          assert.equal(repaired.av_scenes[1].reused_part, true);
+          assert.equal(repaired.av_scenes[1].part_sha256, source.av_scenes[1].part_sha256);
+          assert.equal(repaired.av_scenes[1].narration_sha256, source.av_scenes[1].narration_sha256);
+          assert.equal(repaired.quality.technical_status, 'passed');
+          assert.equal(repaired.quality.audio_visual_status, 'needs_review'); // Silent test narration
+          console.log('True scene-level retake verified: fresh browser recording + SHA-matched unchanged scene.');
+          NODE
 
 
 
