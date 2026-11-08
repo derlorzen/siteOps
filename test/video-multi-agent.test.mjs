@@ -47,7 +47,10 @@ test('server runs independent Producer and Quality roles in order, without execu
     request: 'Review this',
     invoke
   });
-  assert.deepEqual(calls.map(call => call.role), ['producer', 'quality']);
+  assert.deepEqual(
+    calls.map(call => call.role),
+    ['producer', 'quality']
+  );
   assert.equal(calls[1].input.producer_assessment.summary, 'The script needs a real browser clip.');
   assert.equal(result.status, 'blocked');
   assert.match(result.reply, /Aufnahmeplan noch blockiert/);
@@ -61,12 +64,14 @@ test('the team cannot turn an unreviewed plan into a published or approved video
     project,
     context: {
       ...context,
-      scenes: [{
-        ...context.scenes[0],
-        demoUrl: 'https://demo.example.com/converter',
-        demoSteps: [{ action: 'click', selector: '#upload' }],
-        test_data_only: true
-      }]
+      scenes: [
+        {
+          ...context.scenes[0],
+          demoUrl: 'https://demo.example.com/converter',
+          demoSteps: [{ action: 'click', selector: '#upload' }],
+          test_data_only: true
+        }
+      ]
     },
     guidelines: [],
     request: 'Review',
