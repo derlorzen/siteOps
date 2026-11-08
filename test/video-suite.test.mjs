@@ -221,7 +221,8 @@ test('real-frame review requires explicit consent, checks actual model payload a
   const payload = JSON.parse(calls[0][1].body);
   assert.equal(payload.store, false);
   assert.equal(payload.input[0].content.filter(item => item.type === 'input_image').length, 2);
-  assert.equal(payload.input[0].content.find(item => item.type === 'input_image').image_url.startsWith('data:image/jpeg;base64,'), true);
+  const image = payload.input[0].content.find(item => item.type === 'input_image');
+  assert.equal(image.image_url.startsWith('data:image/jpeg;base64,'), true);
   assert.equal(saved.human_approval_required, true);
   assert.equal(saved.findings[0].verdict, 'uncertain');
   assert.equal(result.source, 'openai_frame_samples');
