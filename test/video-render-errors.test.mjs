@@ -15,16 +15,12 @@ test('runner render HTTP 422 remains a readable validation error, never Bad Gate
       return [[]];
     }
   };
-  t.mock.method(
-    globalThis,
-    'fetch',
-    async url =>
-      url.endsWith('/capabilities')
-        ? Response.json({ audiovisualQaVersion: 1 })
-        : new Response(
-            JSON.stringify({ error: 'Only explicitly allowed HTTPS demo URLs are supported.' }),
-            { status: 422 }
-          )
+  t.mock.method(globalThis, 'fetch', async url =>
+    url.endsWith('/capabilities')
+      ? Response.json({ audiovisualQaVersion: 1 })
+      : new Response(JSON.stringify({ error: 'Only explicitly allowed HTTPS demo URLs are supported.' }), {
+          status: 422
+        })
   );
   const studio = createVideoStudio({ db, runnerUrl: () => 'https://runner.example.com', runnerToken: () => 'test' });
   await assert.rejects(studio.renderJob(id), error => {
