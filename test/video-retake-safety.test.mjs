@@ -25,7 +25,9 @@ test('runner rejects unapproved, ambiguous, or missing-source scene retakes befo
     language: 'en',
     format: 'landscape',
     demoPolicy: { version: 1, hosts: ['demo.example.com'] },
-    scenes: [{ headline: 'Intro', narration: 'This is a complete narration for the product tutorial.', capture_mode: 'text' }]
+    scenes: [
+      { headline: 'Intro', narration: 'This is a complete narration for the product tutorial.', capture_mode: 'text' }
+    ]
   };
   const post = async extra =>
     app.inject({
@@ -39,8 +41,5 @@ test('runner rejects unapproved, ambiguous, or missing-source scene retakes befo
   assert.equal((await post({ resumeFrom: source, recaptureScenes: [1, 1] })).statusCode, 422);
   assert.equal((await post({ resumeFrom: source, recaptureScenes: [2] })).statusCode, 422);
   assert.equal((await post({ resumeFrom: source, recaptureScenes: [1] })).statusCode, 409);
-  assert.equal(
-    (await app.inject({ method: 'GET', url: '/video/jobs/' + source })).statusCode,
-    401
-  );
+  assert.equal((await app.inject({ method: 'GET', url: '/video/jobs/' + source })).statusCode, 401);
 });
