@@ -4,7 +4,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
-import { assessAvSamples, inspectRenderedScene, extractSceneFrame, estimateAudioAlignment } from '../runner/video-av-qa.mjs';
+import {
+  assessAvSamples,
+  inspectRenderedScene,
+  extractSceneFrame,
+  estimateAudioAlignment
+} from '../runner/video-av-qa.mjs';
 
 const available = (() => {
   try {
@@ -72,7 +77,7 @@ test('ffmpeg decodes authentic video frames and actual narration audio', { skip:
   const pcm = Buffer.alloc(32000 * 2);
   for (let i = 0; i < 32000; i++) {
     const amplitude = rates[Math.floor(i / 1200) % rates.length];
-    pcm.writeInt16LE(Math.round(Math.sin(i * 2 * Math.PI * 440 / 8000) * amplitude * 24000), i * 2);
+    pcm.writeInt16LE(Math.round(Math.sin((i * 2 * Math.PI * 440) / 8000) * amplitude * 24000), i * 2);
   }
   const header = Buffer.alloc(44);
   header.write('RIFF', 0);
@@ -89,13 +94,29 @@ test('ffmpeg decodes authentic video frames and actual narration audio', { skip:
   header.writeUInt32LE(pcm.length, 40);
   await writeFile(narration, Buffer.concat([header, pcm]));
   const createMovie = (color, output, delayMs = 0) =>
-    execFileSync('ffmpeg', [
-      '-hide_banner', '-loglevel', 'error', '-y',
-      '-f', 'lavfi', '-i', 'color=c=' + color + ':s=160x90:r=12:d=6',
-      '-i', narration,
-      ...(delayMs ? ['-af', 'adelay=' + delayMs + ':all=1'] : []),
-      '-c:v', 'mpeg4', '-c:a', 'aac', '-shortest', output
-    ], { timeout: 30000 });
+    execFileSync(
+      'ffmpeg',
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=' + color + ':s=160x90:r=12:d=6',
+        '-i',
+        narration,
+        ...(delayMs ? ['-af', 'adelay=' + delayMs + ':all=1'] : []),
+        '-c:v',
+        'mpeg4',
+        '-c:a',
+        'aac',
+        '-shortest',
+        output
+      ],
+      { timeout: 30000 }
+    );
   createMovie('white', movie);
   createMovie('black', black);
   const real = await inspectRenderedScene({ video: movie, narration, mode: 'screenshot' });
