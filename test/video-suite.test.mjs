@@ -8,7 +8,7 @@ import { renderVideoStudio } from '../lib/video-studio-ui.mjs';
 import { renderYouTube } from '../lib/youtube-ui.mjs';
 const project = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
-function fixture(fetcher, templates = []) {
+function fixture(fetcher, templates = [], extraStudio = {}) {
   const settings = new Map(),
     conversations = new Map(),
     drafts = new Map(),
@@ -59,7 +59,8 @@ function fixture(fetcher, templates = []) {
       getProject: async id => {
         if (id !== project) throw Object.assign(Error('Missing'), { statusCode: 404 });
         return { name: 'Software tutorials', channel: 'Lorzen', language: 'en' };
-      }
+      },
+      ...extraStudio
     },
     env: {},
     fetcher: async (...args) => {
@@ -164,6 +165,60 @@ test('team review runs Producer then independent Quality and saves one chat resu
   assert.equal(result.draft, null);
   const history = await service.conversation(result.conversation_id, project);
   assert.equal(history.messages.at(-1).result.reply, result.reply);
+});
+test('real-frame review requires explicit consent, checks actual model payload and persists findings', async () => {
+  let saved = null;
+  const review = {
+    summary: 'The scene appears to show the product dashboard.',
+    findings: [{
+      scene: 1,
+      verdict: 'uncertain',
+      visible_observation: 'A software interface is visible.',
+      reason: 'Only two sampled frames are available.',
+      suggested_fix: 'Review the complete moving clip manually.'
+    }],
+    recommendation: 'Human review of the full recording is required.'
+  };
+  const extraStudio = {
+    getJob: async id => ({
+      id,
+      project_id: project,
+      status: 'done',
+      scenes: [{
+        headline: 'Interface',
+        narration: context.script,
+        capture_mode: 'recording',
+        visual_directions: 'Show the product dashboard.'
+      }],
+      result: { quality: { audio_visual_status: 'passed' } }
+    }),
+    sceneFrame: async (_id, _scene, _moment) => Buffer.from([0xff, 0xd8, ...Array(128).fill(1)]),
+    saveVisualReview: async (_id, _project, result) => {
+      saved = result;
+      return result;
+    }
+  };
+  const { service, calls } = fixture(() => response(review), [], extraStudio);
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  await assert.rejects(service.visualReview({
+    project_id: project,
+    job_id: project,
+    scene_numbers: [1]
+  }));
+  const result = await service.visualReview({
+    project_id: project,
+    job_id: project,
+    scene_numbers: [1],
+    approved_to_send_frames: true
+  });
+  assert.equal(calls.length, 1);
+  const payload = JSON.parse(calls[0][1].body);
+  assert.equal(payload.store, false);
+  assert.equal(payload.input[0].content.filter(item => item.type === 'input_image').length, 2);
+  assert.equal(payload.input[0].content[1].image_url.startsWith('data:image/jpeg;base64,'), true);
+  assert.equal(saved.human_approval_required, true);
+  assert.equal(saved.findings[0].verdict, 'uncertain');
+  assert.equal(result.source, 'openai_frame_samples');
 });
 test('working draft survives a reload without saving a render job', async () => {
   const { service } = fixture();
