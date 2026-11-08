@@ -65,10 +65,7 @@ test('reused scene media is SHA-256 verified and corrupted copies are rejected',
     /stimmt nicht mit dem Original-Prüfnachweis/
   );
   await assert.rejects(agent.fileSha256(reused), { code: 'ENOENT' });
-  await assert.rejects(
-    agent.verifiedArtifactCopy(source, reused, 'invalid checksum'),
-    /SHA-256-Prüfsumme/
-  );
+  await assert.rejects(agent.verifiedArtifactCopy(source, reused, 'invalid checksum'), /SHA-256-Prüfsumme/);
 });
 
 test('quality requires every capture and every media stream', () => {
