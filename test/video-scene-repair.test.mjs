@@ -22,10 +22,15 @@ test('scene repair creates a distinct draft with the exact approved retake indic
         headline: 'Converter',
         narration: 'This is a real tutorial scene for the plugin converter.',
         capture_mode: 'text'
+      },
+      {
+        headline: 'Reference scene',
+        narration: 'This is the original reference scene and must remain unchanged.',
+        capture_mode: 'text'
       }
     ],
     render_settings: { language: 'en', voice_provider: 'kokoro', voice: 'am_adam' },
-    result: { captures: [{ scene: 1, sha256: 'test-integrity-hash' }] }
+    result: { captures: [{ scene: 1, sha256: 'a'.repeat(64) }] }
   };
   rows.set(id, original);
   const projectRow = {
@@ -77,6 +82,23 @@ test('scene repair creates a distinct draft with the exact approved retake indic
   });
   await assert.rejects(studio.repairJob(id, { scenes: [1], confirm_demo_replay: false }));
   await assert.rejects(studio.repairJob(id, { scenes: [1, 1], confirm_demo_replay: true }), { statusCode: 422 });
+  // An old job or a partly hashed job must never silently regenerate retained media.
+  original.result.captures[0].sha256 = 'legacy-no-checksum';
+  await assert.rejects(
+    studio.repairJob(id, { scenes: [1], confirm_demo_replay: true }),
+    /Quellproduktion hat keine verifizierbaren/
+  );
+  original.result.captures[0].sha256 = 'a'.repeat(64);
+  await assert.rejects(
+    studio.repairJob(id, { scenes: [1], confirm_demo_replay: true }),
+    /vollständigen Aufnahme-, Sprach- oder Schnittprüfsummen/
+  );
+  original.result.captures.push({ scene: 2, sha256: 'b'.repeat(64) });
+  original.result.av_scenes = [{
+    scene: 2,
+    narration_sha256: 'c'.repeat(64),
+    part_sha256: 'd'.repeat(64)
+  }];
   const result = await studio.repairJob(id, { scenes: [1], confirm_demo_replay: true });
   assert.notEqual(result.id, id);
   assert.equal(result.status, 'draft');
