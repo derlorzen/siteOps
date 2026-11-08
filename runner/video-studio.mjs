@@ -86,8 +86,23 @@ function validate(payload){
     const login=logins.find(x=>x.id===scene.login_profile_id);
     if(!login || new URL(login.login_url).origin!==new URL(scene.demoUrl).origin)throw Error('Matching demo login profile required.');
   }
+  const resumeFrom = payload.resumeFrom;
+  const recaptureScenes = payload.recaptureScenes || [];
+  if (resumeFrom !== undefined && !uuid(resumeFrom))
+    throw Error('Ungültige Quellproduktion für gezielte Szenenreparatur.');
+  if (!Array.isArray(recaptureScenes) || recaptureScenes.length > 6 ||
+      new Set(recaptureScenes).size !== recaptureScenes.length ||
+      recaptureScenes.some(index => !Number.isSafeInteger(index) || index < 1 || index > scenes.length) ||
+      (resumeFrom && recaptureScenes.length === 0) || (!resumeFrom && recaptureScenes.length))
+    throw Error('Szenenreparatur benötigt 1–6 eindeutige, explizit gewählte Szenen.');
   return {id:payload.id,introId:payload.introId,title:String(payload.title||'').slice(0,200),voice:payload.voice,
-    voiceProvider,language:payload.language,format:payload.format,scenes,demoPolicy:policy};
+    voiceProvider,language:payload.language,format:payload.format,scenes,demoPolicy:policy,resumeFrom,recaptureScenes};
+}
+function productionFingerprint(job){
+  return crypto.createHash('sha256').update(JSON.stringify({
+    title:job.title,introId:job.introId,voice:job.voice,voiceProvider:job.voiceProvider,
+    language:job.language,format:job.format,scenes:job.scenes,demoPolicy:job.demoPolicy
+  })).digest('hex');
 }
 async function persist(job){
   await fs.mkdir(path.join(ROOT,job.id),{recursive:true});
@@ -230,28 +245,59 @@ async function render(job){
     job.agent_workflow = { producer: 'planned', recording: 'running', quality: 'pending' };
     job.captures=[];
     job.av_scenes=[];
+    job.capture_attempts={};
+    const source = job.resumeFrom ? await load(job.resumeFrom) : null;
+    if (job.resumeFrom && (!source || !['done','failed'].includes(source.status) ||
+        source.fingerprint !== job.fingerprint))
+      throw Error('Quellproduktion für Szenenreparatur fehlt oder stimmt nicht mit dem unveränderten Aufnahmeplan überein.');
     for(let i=0;i<job.scenes.length;i++){
       const scene={...job.scenes[i],language:job.language};
       job.progress=Math.round(i/job.scenes.length*30);
       await persist(job);
       try {
-      const profile=(jobLogins.get(job.id)||[]).find(x=>x.id===scene.login_profile_id);
-      if(scene.login_profile_id && !sessions.has(scene.login_profile_id)) sessions.set(scene.login_profile_id,await authenticateDemo(browser,profile,job.demoPolicy.hosts));
-      const storageState=sessions.get(scene.login_profile_id);
       const recording = captureMode(scene)==='recording';
       const png = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
-      let receipt;
-      if (recording) {
-        receipt = await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png,undefined,storageState);
-      } else {
-        await captureSceneScreenshot(browser,scene,job,i,dir,undefined,storageState);
+      const sourceCapture=source?.captures?.find(x=>x.scene===i+1);
+      const retryRequested=job.recaptureScenes?.includes(i+1);
+      const attempts=source?.capture_attempts?.[i+1] || sourceCapture?.attempt || 0;
+      if(retryRequested && attempts>=3)throw Error('Maximal drei Aufnahmeversuche pro Szene.');
+      let evidence;
+      if(source && !retryRequested){
+        if(!sourceCapture || !sourceCapture.sha256 || sourceCapture.status!=='captured')
+          throw Error('Kein überprüfbarer Quellclip vorhanden. Szene '+(i+1)+' zur Neuaufnahme markieren.');
+        const sourceDir=path.join(ROOT,source.id);
+        await fs.copyFile(path.join(sourceDir,recording?'scene-'+String(i).padStart(2,'0')+'.webm':'scene-'+String(i).padStart(2,'0')+'.png'),recording?webm:png);
+        if(recording) {
+          await fs.copyFile(path.join(sourceDir,'scene-'+String(i).padStart(2,'0')+'.png'),png);
+          await verifyVideoDimensions(webm,width,height);
+        }
+        evidence=await recordingAgentEvidence(agentPlan[i],recording?webm:png,{
+          resolution:{width,height},actions_executed:sourceCapture.actions_executed
+        });
+        if(evidence.sha256!==sourceCapture.sha256 || evidence.bytes!==sourceCapture.bytes)
+          throw Error('Quellclip stimmt nicht mit dem gespeicherten Prüfnachweis überein.');
+        evidence.reused_from=source.id;
+        evidence.attempt=attempts;
+        job.capture_attempts[i+1]=attempts;
+      }else{
+        const profile=(jobLogins.get(job.id)||[]).find(x=>x.id===scene.login_profile_id);
+        if(scene.login_profile_id && !sessions.has(scene.login_profile_id))
+          sessions.set(scene.login_profile_id,await authenticateDemo(browser,profile,job.demoPolicy.hosts));
+        const storageState=sessions.get(scene.login_profile_id);
+        job.capture_attempts[i+1]=attempts+1;
+        await persist(job);
+        let receipt;
+        if(recording){
+          receipt=await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png,undefined,storageState);
+          await verifyVideoDimensions(webm,width,height);
+        }else await captureSceneScreenshot(browser,scene,job,i,dir,undefined,storageState);
+        evidence=await recordingAgentEvidence(agentPlan[i],recording?webm:png,{
+          resolution:{width,height},actions_executed:receipt?.actions_executed
+        });
+        evidence.attempt=attempts+1;
       }
-      if(recording)await verifyVideoDimensions(webm,width,height);
-      job.captures.push(await recordingAgentEvidence(agentPlan[i], recording ? webm : png, {
-        resolution: { width, height },
-        actions_executed: receipt?.actions_executed
-      }));
+      job.captures.push(evidence);
       }catch(error){throw Error('Szene '+(i+1)+' – Aufnahme fehlgeschlagen: '+error.message);}
     }
     job.agent_workflow.recording = 'complete';
@@ -268,9 +314,21 @@ async function render(job){
       const recording=captureMode(scene)==='recording';
       const png=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
-      const wav=await voice(scene,job,i,dir);
+      const wav=path.join(dir,'voice-'+String(i).padStart(2,'0')+'.wav');
+      const oldBase=source && !job.recaptureScenes.includes(i+1)
+        ?path.join(ROOT,source.id):null;
+      let copiedVoice=false;
+      if(oldBase){
+        copiedVoice=await fs.copyFile(path.join(oldBase,'voice-'+String(i).padStart(2,'0')+'.wav'),wav)
+          .then(()=>true).catch(()=>false);
+      }
+      if(!copiedVoice)await voice(scene,job,i,dir);
       const audioLen=await duration(wav),len=outroDuration(scene,audioLen),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
-      if (recording) {
+      const reusedPart=oldBase ? await fs.copyFile(path.join(oldBase,'part-'+String(i).padStart(2,'0')+'.mp4'),out)
+        .then(()=>true).catch(()=>false) : false;
+      if(reusedPart) {
+        await verifyVideoDimensions(out,width,height);
+      } else if (recording) {
         await exec('ffmpeg',['-y','-i',webm,'-i',wav,
           '-vf','scale='+width+':'+height+',setsar=1,fps=25,tpad=stop_mode=clone:stop_duration=125',
           '-t',String(len),'-c:v','libx264','-preset','veryfast',
@@ -371,7 +429,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
       introVersion:1,outroVersion:1,capturePreflightVersion:1,openaiKeyForwardingVersion:1,
-      audiovisualQaVersion:1,sceneFrameVersion:1,
+      audiovisualQaVersion:1,sceneFrameVersion:1,sceneReuseVersion:1,
       demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
@@ -436,9 +494,19 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(parsed.introId){try{await introAsset(parsed.introId);}catch(error){return reply.code(422).send({error:error.message});}}
     const old=await load(parsed.id);
     if(old) return reply.code(409).send({error:'Job already exists.'});
+    const fingerprint=productionFingerprint(parsed);
+    if(parsed.resumeFrom) {
+      const source=await load(parsed.resumeFrom);
+      if(!source || !['done','failed'].includes(source.status))
+        return reply.code(409).send({error:'Quellproduktion für die Reparatur nicht abgeschlossen.'});
+      if(source.fingerprint!==fingerprint)
+        return reply.code(422).send({error:'Der Aufnahmeplan wurde seit der Quellproduktion geändert. Bitte neue Gesamtproduktion starten.'});
+      if(parsed.recaptureScenes.some(i => (source.capture_attempts?.[i] || source.captures?.find(x=>x.scene===i)?.attempt || 0)>=3))
+        return reply.code(422).send({error:'Für diese Szene wurden bereits drei Aufnahmeversuche verwendet.'});
+    }
     if(queue.length+active>=MAX_JOBS)return reply.code(429).send({error:'Video queue full.'});
     if(parsed.voiceProvider==='openai' && !req.body.openaiApiKey && !process.env.OPENAI_API_KEY)return reply.code(422).send({error:'Für OpenAI-Sprachausgabe fehlt der Schlüssel. In den Suite-Einstellungen speichern oder OPENAI_API_KEY auf dem Runner setzen.'});
-    const job={...parsed,status:'queued',progress:0,files:[],error:null,createdAt:new Date().toISOString()};
+    const job={...parsed,fingerprint,status:'queued',progress:0,files:[],error:null,createdAt:new Date().toISOString()};
     const profiles=(req.body.demoLogins||[]).map(x=>validateDemoLogin(x,parsed.demoPolicy.hosts));
     if(profiles.length)jobLogins.set(job.id,profiles);
     if(req.body.openaiApiKey){jobOpenAIKeys.set(job.id,req.body.openaiApiKey);delete req.body.openaiApiKey;}
@@ -451,7 +519,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!uuid(req.params.id))return reply.code(400).send({error:'Invalid job ID'});
     const job=await load(req.params.id);
     if(!job)return reply.code(404).send({error:'Job not found'});
-    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],quality:job.quality || null,av_scenes:job.av_scenes || [],agent_workflow:job.agent_workflow || null,outro:job.outro || null,intro:job.intro || null};
+    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],quality:job.quality || null,av_scenes:job.av_scenes || [],capture_attempts:job.capture_attempts || {},resume_from:job.resumeFrom || null,agent_workflow:job.agent_workflow || null,outro:job.outro || null,intro:job.intro || null};
   });
   app.get('/video/jobs/:id/frame',async(req,reply)=>{
     if(!auth(req,reply))return;
