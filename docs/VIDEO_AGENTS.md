@@ -36,20 +36,68 @@ browser action successfully executes, not a copy of the planned action count.
 - **Recording boundary:** For every scene, only accept evidence of a real,
   non-empty file produced by the existing browser runner. Recording scenes
   continue to undergo the runner's video-resolution verification. The result
-  persists in `captures` with scene number, mode, bytes, dimensions, and the
-  number of runner actions that returned successfully.
+  persists in `captures` with scene number, mode, bytes, SHA-256, dimensions,
+  capture attempts, and the number of runner actions that returned successfully.
 - **Quality boundary:** Before marking a job `done`, reconcile all expected
   scenes against the evidence and require non-empty video, short, subtitles and
   thumbnail. Probe both MP4 files for **video and audio streams**. Failure
   leaves the job `failed`, not `done`, with an actionable error.
-- **Honest status:** Persist `quality.technical_status` and
-  `quality.visual_status` (currently always `pending`) plus
-  `agent_workflow`. Existing jobs without the new fields remain readable.
+- **Honest status:** Persist `quality.technical_status`,
+  `quality.audio_visual_status`, `quality.visual_status` and
+  `agent_workflow`. A text/audio codec check is NOT a semantic validation.
+  Existing jobs without these fields remain readable.
   The current publisher keeps its separate human approval process.
 
 This protects against missing files and silent recording-to-slide fallback.
 It does **not** certify a visibly correct interaction, time-aligned voice,
 good cuts, or a reviewed final upload.
+
+## Actual audiovisual QA (phase 2)
+
+The runner decodes **three real samples** from each rendered scene clip using
+FFmpeg and measures whether the samples are all nearly black or unexpectedly
+unchanged. It also decodes the narration audio to PCM, measures audio level,
+probes actual scene/voice durations and checks for truncated narration.
+A completely black scene, missing/truncated sound, or invalid media blocks
+the render. A nearly static browser recording produces a *human-review
+warning*, not a fabricated claim that actions were not executed. The
+intentionally silent CI TTS fixture always reports `needs_review` rather
+than `passed`.
+
+A successful scene probe is **not** proof that the correct product action is
+visible or that narration matches the on-screen state. The separate Video Suite
+final review now offers an **opt-in OpenAI visual review**. With an explicit
+checkbox/submit action, it fetches at most two authentic rendered JPEG frames
+per selected scene, at most three scenes per request, over the authenticated
+runner bridge. Images and the scene narration are sent to OpenAI with
+`store:false`. The AI returns structured `matches`, `mismatch`, or
+`uncertain` findings; they are saved on that video job. The status remains
+`ai_reviewed_human_approval_pending` or `ai_flagged_for_human_review`;
+the reviewer is **never** allowed to approve publication or claim full-motion
+or full-audio verification. Users must personally watch the rendered video.
+
+## Scene-specific repair
+
+For a completed or failed video, the dashboard action
+**„Einzelne Szenen neu aufnehmen“** asks for up to six scene numbers and
+requires explicit confirmation that any configured demo actions may be replayed
+**with test data only**. A new independent draft is created; it **does not**
+automatically render or change the original job. The normal explicit render
+approval is still required.
+
+The new runner can then `resumeFrom` the old runner job while
+`recaptureScenes` explicitly lists changed scenes. It verifies a content
+fingerprint of the original immutable scene/policy/voice snapshot. The other
+scene recordings are copied and checked against their persisted SHA-256
+receipts, and existing scene audio/assembled parts are reused where available.
+Unselected scenes missing integrity evidence fail closed instead of silently
+executing unexpected browser actions. Every new render uses its own UUID
+and media directory; the original remains available. At most three recording
+attempts per scene and six selected scenes per repair are permitted. Legacy
+productions without a fingerprint/digests require a full new render.
+
+This is **manual, bounded scene repair**, not a background agent that
+repeatedly clicks unknown controls or automatically changes production data.
 
 ## Next: actual LLM agent orchestration
 
@@ -60,13 +108,12 @@ good cuts, or a reviewed final upload.
    project context and propose the shot list; Recording may use approved
    demo-only capture tools; Quality may read evidence and inspect authorized
    actual media. None may publish or change live customer data.
-3. Persist a job/scene task graph, immutable input snapshots, output artifact
-   IDs, artifact hashes, attempt counts and state transitions. Retrying an
-   individual recording must create a new version and preserve its predecessor.
-4. Add a *visual* QA pass on sampled actual frames and synchronized audio
-   instead of interpreting only metadata. Missing scenes trigger a bounded
-   re-capture request. Never automatically replay potentially mutating browser
-   actions without explicit safe/idempotent approval.
+3. Extend the existing scene fingerprints, artifact hashes, attempt counts
+   and per-job states into an externally queryable persistent task graph.
+4. Build synchronized full-video vision + speech-transcription review, including
+   sampled transitions and action outcome verification. Current frame sampling
+   and audio-level probing do not validate exact speech/content alignment.
+   Optional scene repair remains a user-approved, bounded action.
 5. Only after verified edits and an explicit human review may the existing
    private YouTube upload flow be invoked. Public publication requires its
    existing separate approval.
