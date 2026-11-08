@@ -7,7 +7,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import { captureMode, requireCapturePlan } from './video-capture.mjs';
-import { producerAgentPlan, recordingAgentEvidence, qualityAgentAudit, requireTechnicalQuality } from './video-agent-workflow.mjs';
+import { producerAgentPlan, recordingAgentEvidence, qualityAgentAudit, requireTechnicalQuality, fileSha256, verifiedArtifactCopy } from './video-agent-workflow.mjs';
 import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
 import { authenticateDemo, validateDemoLogin } from './video-login.mjs';
@@ -317,15 +317,25 @@ async function render(job){
       const wav=path.join(dir,'voice-'+String(i).padStart(2,'0')+'.wav');
       const oldBase=source && !job.recaptureScenes.includes(i+1)
         ?path.join(ROOT,source.id):null;
+      const sourceAv=source?.av_scenes?.find(check=>check.scene===i+1);
       let copiedVoice=false;
-      if(oldBase){
-        copiedVoice=await fs.copyFile(path.join(oldBase,'voice-'+String(i).padStart(2,'0')+'.wav'),wav)
-          .then(()=>true).catch(()=>false);
+      if(oldBase && sourceAv?.narration_sha256){
+        await verifiedArtifactCopy(
+          path.join(oldBase,'voice-'+String(i).padStart(2,'0')+'.wav'),
+          wav,sourceAv.narration_sha256
+        );
+        copiedVoice=true;
       }
       if(!copiedVoice)await voice(scene,job,i,dir);
       const audioLen=await duration(wav),len=outroDuration(scene,audioLen),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
-      const reusedPart=oldBase ? await fs.copyFile(path.join(oldBase,'part-'+String(i).padStart(2,'0')+'.mp4'),out)
-        .then(()=>true).catch(()=>false) : false;
+      let reusedPart=false;
+      if(oldBase && sourceAv?.part_sha256){
+        await verifiedArtifactCopy(
+          path.join(oldBase,'part-'+String(i).padStart(2,'0')+'.mp4'),
+          out,sourceAv.part_sha256
+        );
+        reusedPart=true;
+      }
       if(reusedPart) {
         await verifyVideoDimensions(out,width,height);
       } else if (recording) {
@@ -345,7 +355,12 @@ async function render(job){
         mode: captureMode(scene),
         silentFixture: process.env.VIDEO_TTS_MODE === 'silent'
       });
-      job.av_scenes.push({scene: i+1, ...av});
+      job.av_scenes.push({
+        scene: i+1,...av,
+        part_sha256:await fileSha256(out),
+        narration_sha256:await fileSha256(wav),
+        reused_part:reusedPart
+      });
       if (av.status === 'blocked') {
         job.quality = {
           technical_status: 'failed',
