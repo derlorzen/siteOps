@@ -466,12 +466,14 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
       const storageState=profile?await authenticateDemo(browser,profile,policy.hosts):undefined;
       const width=req.body.format==='portrait'?1080:1920,height=req.body.format==='portrait'?1920:1080;
       const mode=captureMode(scene);
+      let executed=0;
       if(mode==='recording'){
         const target=path.join(dir,'test.webm');
-        await recordDemoScene(browser,scene,target,{width,height},policy.hosts,path.join(dir,'test.png'),undefined,storageState);
+        const receipt=await recordDemoScene(browser,scene,target,{width,height},policy.hosts,path.join(dir,'test.png'),undefined,storageState);
+        executed=receipt.actions_executed;
         await verifyVideoDimensions(target,width,height);
       }else await captureSceneScreenshot(browser,scene,{demoPolicy:policy,format:req.body.format},0,dir,undefined,storageState);
-      return {ok:true,resolution:{width,height},actions_executed:scene.demoSteps?.length || 0,message:mode==='recording'?'Bildschirmaufnahme erfolgreich getestet: Zielseite, Anmeldung falls nötig, alle Aktionen und Full HD.':'Browser-Standbild erfolgreich getestet. Keine bewegte Bildschirmaufnahme.'};
+      return {ok:true,resolution:{width,height},actions_executed:executed,message:mode==='recording'?'Bildschirmaufnahme erfolgreich getestet: Zielseite, Anmeldung falls nötig, alle Aktionen und Full HD.':'Browser-Standbild erfolgreich getestet. Keine bewegte Bildschirmaufnahme.'};
     }catch(error){
       const detail=/^(Demo-|Only explicitly|Full-HD)/.test(error.message || '')?error.message:'Zielseite, Domainfreigabe, Demo-Login und Aktions-Selektoren prüfen.';
       return reply.code(422).send({error:('Aufnahme fehlgeschlagen: '+detail+' Es wird keine Texttafel als Ersatz erstellt.').slice(0,900)});
