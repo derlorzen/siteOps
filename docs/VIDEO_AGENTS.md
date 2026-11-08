@@ -2,10 +2,32 @@
 
 ## Scope of the first implementation
 
-The initial producer / recording / quality boundaries live in
-`runner/video-agent-workflow.mjs`. They are deterministic execution guards,
-not yet three remotely running OpenAI Agents SDK sessions. In particular, the
-quality gate **does not claim to inspect images or understand the recorded UI**.
+The producer / recording / quality execution boundaries live in
+`runner/video-agent-workflow.mjs`. They are deterministic safeguards, not
+three remotely running OpenAI Agents SDK sessions. In particular, the
+technical gate **does not claim to inspect images or understand the recorded UI**.
+
+## Two real AI specialists in Video Suite
+
+The Creative Agent now has a **Team-Review: Producer + Qualität** mode. This
+uses the existing SiteOps-managed encrypted OpenAI credential and usage limits,
+with two separate, structured Responses API calls:
+
+1. The **Producer** assesses the supplied script, scene intent and recording
+   configuration without access to browser tools.
+2. The **Quality** reviewer independently challenges the Producer's assessment
+   using both the original plan and the Producer's findings.
+
+The server enforces this handoff deterministically, including a list of
+non-AI capture blockers. The resulting advice is saved in the existing
+project-scoped conversation store. Neither role can edit a production,
+launch a recording, publish, or approve a final video. Each Team-Review
+makes two billable OpenAI text calls; it does not analyze the actual video
+or attached chat images. SiteOps currently orchestrates these roles directly
+using its existing Responses API adapter; an Agents SDK runtime is not deployed.
+
+Screen-recording evidence now includes a count incremented **after** each
+browser action successfully executes, not a copy of the planned action count.
 
 - **Producer boundary:** Build a numbered capture plan from the exact approved
   scene definitions. Reject missing approved demo URLs, unconfirmed test data,
