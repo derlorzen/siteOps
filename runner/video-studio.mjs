@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import { captureMode, requireCapturePlan } from './video-capture.mjs';
+import { producerAgentPlan, recordingAgentEvidence, qualityAgentAudit, requireTechnicalQuality } from './video-agent-workflow.mjs';
 import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
 import { authenticateDemo, validateDemoLogin } from './video-login.mjs';
@@ -192,6 +193,24 @@ export async function verifyVideoDimensions(filename,width,height) {
   if(actual!==width+','+height)throw Error('Full-HD-Prüfung fehlgeschlagen: erwartet '+width+'×'+height+', erhalten '+actual+'.');
   return {width,height};
 }
+async function outputEvidence(filename, requireAudio = false) {
+  const file = await fs.stat(filename);
+  const result = { bytes: file.size };
+  if (!requireAudio) return result;
+  const raw = await new Promise((resolve, reject) => {
+    const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'json', filename]);
+    let output = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('Media stream check timed out.')); }, 30000);
+    child.stdout.on('data', chunk => { output += String(chunk).slice(0, 10000); });
+    child.on('error', error => { clearTimeout(timer); reject(error); });
+    child.on('close', code => {
+      clearTimeout(timer);
+      code === 0 ? resolve(output) : reject(new Error('Media stream check failed.'));
+    });
+  });
+  result.streams = (JSON.parse(raw).streams || []).map(stream => stream.codec_type);
+  return result;
+}
 function srtTime(seconds){
   const ms=Math.round(seconds*1000),h=Math.floor(ms/3600000),m=Math.floor(ms/60000)%60,s=Math.floor(ms/1000)%60,n=ms%1000;
   return [h,m,s].map(x=>String(x).padStart(2,'0')).join(':')+','+String(n).padStart(3,'0');
@@ -206,7 +225,8 @@ async function render(job){
   let current=0;
   try{
     browser=await chromium.launch({headless:true,args:demoBrowserArgs});
-    requireCapturePlan(job.scenes);
+    const agentPlan = producerAgentPlan(job.scenes);
+    job.agent_workflow = { producer: 'planned', recording: 'running', quality: 'pending' };
     job.captures=[];
     for(let i=0;i<job.scenes.length;i++){
       const scene={...job.scenes[i],language:job.language};
@@ -225,9 +245,10 @@ async function render(job){
         await captureSceneScreenshot(browser,scene,job,i,dir,undefined,storageState);
       }
       if(recording)await verifyVideoDimensions(webm,width,height);
-      job.captures.push({scene:i+1,mode:captureMode(scene),status:'captured',resolution:{width,height}});
+      job.captures.push(await recordingAgentEvidence(agentPlan[i], recording ? webm : png, { resolution: { width, height } }));
       }catch(error){throw Error('Szene '+(i+1)+' – Aufnahme fehlgeschlagen: '+error.message);}
     }
+    job.agent_workflow.recording = 'complete';
     if(job.introId){
       const intro=await introAsset(job.introId),out=path.join(dir,'intro.mp4');
       await exec('ffmpeg',['-y','-protocol_whitelist','file','-format_whitelist','mov,matroska,webm','-i',intro.filename,...(intro.has_audio?[]:['-f','lavfi','-i','anullsrc=r=48000:cl=stereo']),'-map','0:v:0','-map',intro.has_audio?'0:a:0':'1:a:0','-vf','scale='+width+':'+height+':force_original_aspect_ratio=decrease,pad='+width+':'+height+':(ow-iw)/2:(oh-ih)/2:color=0x091a30,setsar=1,fps=25','-af','apad','-t',String(intro.duration),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-r','25','-c:a','aac','-ar','48000','-ac','2','-b:a','128k','-movflags','+faststart',out]);
@@ -271,9 +292,23 @@ async function render(job){
     await verifyVideoDimensions(path.join(dir,'video.mp4'),width,height);
     await verifyVideoDimensions(path.join(dir,'short.mp4'),1080,1920);
     job.resolution={width,height};
+    job.quality=qualityAgentAudit({
+      plan: agentPlan,
+      captures: job.captures,
+      media: {
+        video: await outputEvidence(path.join(dir, 'video.mp4'), true),
+        short: await outputEvidence(path.join(dir, 'short.mp4'), true),
+        subtitles: await outputEvidence(path.join(dir, 'subtitles.srt')),
+        thumbnail: await outputEvidence(path.join(dir, 'thumbnail.png'))
+      }
+    });
+    requireTechnicalQuality(job.quality);
+    job.agent_workflow.quality = 'technical_passed';
     job.status='done';job.progress=100;job.duration=Math.round(current);
     job.files=['video','short','subtitles','thumbnail'];
   }catch(error){
+    if (job.agent_workflow && job.agent_workflow.quality !== 'technical_passed')
+      job.agent_workflow.quality = 'blocked';
     job.status='failed';job.error=String(error.message||error).slice(0,1000);
   }finally{
     jobLogins.delete(job.id); jobOpenAIKeys.delete(job.id); sessions.clear();
@@ -385,7 +420,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!uuid(req.params.id))return reply.code(400).send({error:'Invalid job ID'});
     const job=await load(req.params.id);
     if(!job)return reply.code(404).send({error:'Job not found'});
-    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],outro:job.outro || null,intro:job.intro || null};
+    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],quality:job.quality || null,agent_workflow:job.agent_workflow || null,outro:job.outro || null,intro:job.intro || null};
   });
   app.get('/video/jobs/:id/file',async(req,reply)=>{
     if(!auth(req,reply))return;
