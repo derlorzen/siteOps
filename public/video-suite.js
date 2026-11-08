@@ -588,7 +588,8 @@
     const av=job.result?.quality,sceneChecks=av?.audiovisual_scene_reports || job.result?.av_scenes || [];
     const blocked=sceneChecks.filter(scene=>scene.status==='blocked');
     const cautions=sceneChecks.filter(scene=>scene.status==='needs_review');
-    $('suite-review-av-quality').textContent=!av?'Keine audiovisuelle Qualitätsmessung vorhanden (ältere Produktion). Das gesamte Video persönlich kontrollieren.':blocked.length?'Audiovisuelle Prüfung blockiert: '+blocked.map(scene=>'Szene '+scene.scene+': '+scene.blockers.join(', ')).join(' · '):sceneChecks.length?'Geprüfte Szenen: '+sceneChecks.length+'. '+(cautions.length?cautions.length+' benötigen Sichtkontrolle. ':'')+'Automatische Messwerte ersetzen keine persönliche Inhaltskontrolle.':'Technische Dateiprüfung vorhanden; keine audiovisuelle Szenenmessung.';
+    const issueDetails=cautions.map(scene=>'Szene '+scene.scene+': '+(scene.warnings || []).join(', ')+(Number.isFinite(scene.audio_alignment?.offset_ms)?' (gemessener Audioversatz '+scene.audio_alignment.offset_ms+' ms)':'')).join(' · ');
+    $('suite-review-av-quality').textContent=!av?'Keine audiovisuelle Qualitätsmessung vorhanden (ältere Produktion). Das gesamte Video persönlich kontrollieren.':blocked.length?'Audiovisuelle Prüfung blockiert: '+blocked.map(scene=>'Szene '+scene.scene+': '+scene.blockers.join(', ')).join(' · '):sceneChecks.length?'Geprüfte Szenen: '+sceneChecks.length+'. '+(cautions.length?cautions.length+' benötigen Sichtkontrolle. '+issueDetails+'. ':'')+'Automatische Messwerte ersetzen keine persönliche Inhaltskontrolle.':'Technische Dateiprüfung vorhanden; keine audiovisuelle Szenenmessung.';
     const visual=job.result?.visual_review,visualList=$('suite-visual-findings');
     visualList.replaceChildren();
     if(visual){
