@@ -77,7 +77,67 @@ async function voiceLevel(filename) {
   return Math.round(20 * Math.log10(Math.max(1e-10, Math.sqrt(sum / (pcm.length / 2)))) * 10) / 10;
 }
 
-export function assessAvSamples({ mode, frames, narration_dbfs, rendered_dbfs = narration_dbfs, rendered_seconds, narration_seconds, silent_fixture = false }) {
+// Decode real PCM from both the original narration and the muxed scene video.
+// Compare 50ms energy envelopes, so AAC encoder delay and minor compression
+// do not look like a different narration.
+async function audioEnvelope(filename) {
+  const pcm = await subprocess('ffmpeg', [
+    '-v', 'error', '-i', filename, '-map', '0:a:0', '-t', '12',
+    '-ac', '1', '-ar', '8000', '-f', 's16le', 'pipe:1'
+  ], AUDIO_SAMPLES_MAX * 2 + 4096);
+  if (pcm.length < 800 || pcm.length % 2 !== 0) throw Error('Invalid PCM audio alignment sample.');
+  const envelope = [];
+  for (let pos = 0; pos + 800 <= pcm.length; pos += 800) {
+    let sum = 0;
+    for (let i = pos; i < pos + 800; i += 2) {
+      const sample = pcm.readInt16LE(i) / 32768;
+      sum += sample * sample;
+    }
+    envelope.push(Math.sqrt(sum / 400));
+  }
+  return envelope;
+}
+
+export function estimateAudioAlignment(source, rendered) {
+  if (!Array.isArray(source) || !Array.isArray(rendered))
+    throw TypeError('Audio envelopes must be arrays.');
+  if (Math.min(source.length, rendered.length) < 30)
+    return { status: 'uncertain', offset_ms: null, correlation: null, reason: 'Sprachprobe zu kurz für sicheren Abgleich.' };
+  let best = { shift: 0, score: -2, correlation: -1 };
+  const limit = Math.min(40, Math.floor(Math.min(source.length, rendered.length) / 3));
+  for (let shift = -limit; shift <= limit; shift++) {
+    const start = Math.max(0, -shift), end = Math.min(source.length, rendered.length - shift);
+    const n = end - start;
+    if (n < 30) continue;
+    let sumX = 0, sumY = 0, xx = 0, yy = 0, xy = 0;
+    for (let i = start; i < end; i++) {
+      const x = source[i], y = rendered[i + shift];
+      if (!Number.isFinite(x) || !Number.isFinite(y)) throw TypeError('Invalid audio sample.');
+      sumX += x; sumY += y; xx += x * x; yy += y * y; xy += x * y;
+    }
+    const vx = n * xx - sumX * sumX, vy = n * yy - sumY * sumY;
+    if (vx < 1e-8 || vy < 1e-8) continue;
+    const correlation = (n * xy - sumX * sumY) / Math.sqrt(vx * vy);
+    const score = correlation * (0.9 + 0.1 * n / Math.max(source.length, rendered.length));
+    if (score > best.score) best = { shift, score, correlation };
+  }
+  if (best.correlation < 0.72)
+    return { status: 'uncertain', offset_ms: null,
+      correlation: Math.max(0, Math.round(best.correlation * 1000) / 1000),
+      reason: 'Tonspur und Sprecherquelle lassen sich anhand der Signale nicht sicher abgleichen.' };
+  const offset = best.shift * 50;
+  const status = Math.abs(offset) > 700 ? 'misaligned' : Math.abs(offset) > 250 ? 'needs_review' : 'verified';
+  return {
+    status, offset_ms: offset, correlation: Math.round(best.correlation * 1000) / 1000,
+    reason: status === 'misaligned'
+      ? 'Die fertige Tonspur ist gegenüber der Sprecheraufnahme deutlich zeitversetzt.'
+      : status === 'needs_review'
+        ? 'Möglicher hörbarer Versatz: Anfang und Ende manuell kontrollieren.'
+        : 'Die geprüfte Anfangspassage der Sprecheraufnahme ist zeitlich passend eingebettet.'
+  };
+}
+
+export function assessAvSamples({ mode, frames, narration_dbfs, rendered_dbfs = narration_dbfs, rendered_seconds, narration_seconds, silent_fixture = false, audio_alignment = null }) {
   const blockers = [];
   const warnings = [];
   if (!frames.length) blockers.push('Keine echten Videoframes für die Prüfung vorhanden.');
@@ -108,6 +168,10 @@ export function assessAvSamples({ mode, frames, narration_dbfs, rendered_dbfs = 
   }
   if (rendered_seconds + 0.6 < narration_seconds)
     blockers.push('Gerenderter Szenenclip ist kürzer als die gesprochene Tonspur.');
+  if (!silent_fixture && audio_alignment?.status === 'misaligned')
+    blockers.push('Audio-Synchronisation: ' + audio_alignment.reason);
+  else if (!silent_fixture && ['uncertain', 'needs_review'].includes(audio_alignment?.status))
+    warnings.push('Audio-Synchronisation: ' + audio_alignment.reason);
   if (silent_fixture) {
     warnings.push('Stille Test-Tonspur: Sprachausgabe konnte nicht geprüft werden.');
   } else {
@@ -123,6 +187,7 @@ export function assessAvSamples({ mode, frames, narration_dbfs, rendered_dbfs = 
     motion_ratio: motion,
     narration_dbfs,
     rendered_dbfs,
+    audio_alignment,
     blockers,
     warnings
   };
@@ -137,12 +202,20 @@ export async function inspectRenderedScene({ video, narration, mode, silentFixtu
     clamp(movie.duration_seconds * ratio, 0, Math.max(0, movie.duration_seconds - 0.08))
   );
   const frames = await Promise.all(sampleTimes.map(time => decodedFrame(video, time)));
-  const [level, encodedLevel] = await Promise.all([voiceLevel(narration), voiceLevel(video)]);
+  const [level, encodedLevel, audioAlignment] = await Promise.all([
+    voiceLevel(narration),
+    voiceLevel(video),
+    silentFixture
+      ? Promise.resolve({ status: 'not_checked', offset_ms: null, correlation: null })
+      : Promise.all([audioEnvelope(narration), audioEnvelope(video)])
+          .then(([source, encoded]) => estimateAudioAlignment(source, encoded))
+  ]);
   const result = assessAvSamples({
     mode,
     frames,
     narration_dbfs: level,
     rendered_dbfs: encodedLevel,
+    audio_alignment: audioAlignment,
     rendered_seconds: movie.duration_seconds,
     narration_seconds: voice.duration_seconds,
     silent_fixture: silentFixture
