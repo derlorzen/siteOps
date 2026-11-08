@@ -77,7 +77,7 @@ async function voiceLevel(filename) {
   return Math.round(20 * Math.log10(Math.max(1e-10, Math.sqrt(sum / (pcm.length / 2)))) * 10) / 10;
 }
 
-export function assessAvSamples({ mode, frames, narration_dbfs, rendered_seconds, narration_seconds, silent_fixture = false }) {
+export function assessAvSamples({ mode, frames, narration_dbfs, rendered_dbfs = narration_dbfs, rendered_seconds, narration_seconds, silent_fixture = false }) {
   const blockers = [];
   const warnings = [];
   if (!frames.length) blockers.push('Keine echten Videoframes für die Prüfung vorhanden.');
@@ -110,8 +110,11 @@ export function assessAvSamples({ mode, frames, narration_dbfs, rendered_seconds
     blockers.push('Gerenderter Szenenclip ist kürzer als die gesprochene Tonspur.');
   if (silent_fixture) {
     warnings.push('Stille Test-Tonspur: Sprachausgabe konnte nicht geprüft werden.');
-  } else if (narration_dbfs < -48) {
-    blockers.push('Gesprochene Tonspur ist stumm oder ungewöhnlich leise.');
+  } else {
+    if (narration_dbfs < -48)
+      blockers.push('Quell-Sprecheraufnahme ist stumm oder ungewöhnlich leise.');
+    if (rendered_dbfs < -48)
+      blockers.push('Gerenderte Video-Tonspur ist stumm oder ungewöhnlich leise.');
   }
   return {
     status: blockers.length ? 'blocked' : warnings.length ? 'needs_review' : 'passed',
@@ -119,6 +122,7 @@ export function assessAvSamples({ mode, frames, narration_dbfs, rendered_seconds
     frame_black_max_ratio: darkness,
     motion_ratio: motion,
     narration_dbfs,
+    rendered_dbfs,
     blockers,
     warnings
   };
@@ -133,11 +137,12 @@ export async function inspectRenderedScene({ video, narration, mode, silentFixtu
     clamp(movie.duration_seconds * ratio, 0, Math.max(0, movie.duration_seconds - 0.08))
   );
   const frames = await Promise.all(sampleTimes.map(time => decodedFrame(video, time)));
-  const level = await voiceLevel(narration);
+  const [level, encodedLevel] = await Promise.all([voiceLevel(narration), voiceLevel(video)]);
   const result = assessAvSamples({
     mode,
     frames,
     narration_dbfs: level,
+    rendered_dbfs: encodedLevel,
     rendered_seconds: movie.duration_seconds,
     narration_seconds: voice.duration_seconds,
     silent_fixture: silentFixture
