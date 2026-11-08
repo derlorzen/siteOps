@@ -453,6 +453,23 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!job)return reply.code(404).send({error:'Job not found'});
     return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],quality:job.quality || null,av_scenes:job.av_scenes || [],agent_workflow:job.agent_workflow || null,outro:job.outro || null,intro:job.intro || null};
   });
+  app.get('/video/jobs/:id/frame',async(req,reply)=>{
+    if(!auth(req,reply))return;
+    const id=req.params.id,scene=Number(req.query?.scene),moment=String(req.query?.moment||'middle');
+    if(!uuid(id)||!Number.isSafeInteger(scene)||!['beginning','middle','end'].includes(moment))
+      return reply.code(400).send({error:'Invalid scene frame request.'});
+    const job=await load(id);
+    if(!job || job.status!=='done')return reply.code(404).send({error:'Finished video not found.'});
+    if(scene<1||scene>job.scenes.length)return reply.code(400).send({error:'Scene outside the production.'});
+    const filename=path.join(ROOT,id,'part-'+String(scene-1).padStart(2,'0')+'.mp4');
+    try{
+      const jpeg=await extractSceneFrame(filename,moment);
+      return reply.type('image/jpeg').header('Cache-Control','private, no-store')
+        .header('X-Content-Type-Options','nosniff').send(jpeg);
+    }catch{
+      return reply.code(422).send({error:'This scene cannot be decoded for visual review.'});
+    }
+  });
   app.get('/video/jobs/:id/file',async(req,reply)=>{
     if(!auth(req,reply))return;
     const id=req.params.id,kind=String(req.query?.kind||'video');
