@@ -28,13 +28,18 @@ test('scene repair creates a distinct draft with the exact approved retake indic
     result: { captures: [{ scene: 1, sha256: 'test-integrity-hash' }] }
   };
   rows.set(id, original);
+  const projectRow = {
+    id: projectId,
+    language: 'en',
+    name: 'Tutorials',
+    channel: 'Lorzen',
+    voice_provider: 'kokoro',
+    voice: 'am_adam'
+  };
   const db = {
     query: async (sql, params = []) => {
       if (sql.startsWith('SELECT * FROM video_studio_jobs')) return [[rows.get(params[0])].filter(Boolean)];
-      if (sql.startsWith('SELECT * FROM video_studio_projects'))
-        return [[
-          { id: projectId, language: 'en', name: 'Tutorials', channel: 'Lorzen', voice_provider: 'kokoro', voice: 'am_adam' }
-        ]];
+      if (sql.startsWith('SELECT * FROM video_studio_projects')) return [[projectRow]];
       if (sql.startsWith('INSERT INTO video_studio_jobs')) {
         rows.set(params[0], {
           id: params[0],
