@@ -49,6 +49,28 @@ test('recording requires an actual nonempty file', async t => {
   await assert.rejects(agent.recordingAgentEvidence(task, filename), /fehlt oder ist leer/);
 });
 
+test('reused scene media is SHA-256 verified and corrupted copies are rejected', async t => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'siteops-reuse-test-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const source = path.join(dir, 'voice.wav');
+  const reused = path.join(dir, 'copied.wav');
+  await writeFile(source, Buffer.from('Original generated narration data.'));
+  const digest = await agent.fileSha256(source);
+  assert.match(digest, /^[a-f0-9]{64}$/);
+  assert.equal(await agent.verifiedArtifactCopy(source, reused, digest), digest);
+  assert.equal(await agent.fileSha256(reused), digest);
+  await writeFile(source, Buffer.from('Unexpected changed narration.'));
+  await assert.rejects(
+    agent.verifiedArtifactCopy(source, reused, digest),
+    /stimmt nicht mit dem Original-Prüfnachweis/
+  );
+  await assert.rejects(agent.fileSha256(reused), { code: 'ENOENT' });
+  await assert.rejects(
+    agent.verifiedArtifactCopy(source, reused, 'invalid checksum'),
+    /SHA-256-Prüfsumme/
+  );
+});
+
 test('quality requires every capture and every media stream', () => {
   const plan = agent.producerAgentPlan([scene]);
   const missing = agent.qualityAgentAudit({ plan, captures: [], media: media() });
