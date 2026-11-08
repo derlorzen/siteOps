@@ -16,7 +16,7 @@ const available = (() => {
   }
 })();
 const frame = intensity => Buffer.alloc(96 * 54, intensity);
-const samples = (video = [frame(180), frame(190), frame(200)], voice = -20) => ({
+const samples = (video = [frame(180), frame(215), frame(245)], voice = -20) => ({
   mode: 'recording',
   frames: video,
   narration_dbfs: voice,
