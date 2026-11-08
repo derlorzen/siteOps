@@ -22,14 +22,8 @@ const media = () => ({
 });
 
 test('producer rejects a missing recording plan', () => {
-  assert.throws(
-    () => agent.producerAgentPlan([{ ...scene, demoSteps: [] }]),
-    /Kein ausführbarer Aufnahme-Ablauf/
-  );
-  assert.throws(
-    () => agent.producerAgentPlan([{ ...scene, test_data_only: false }]),
-    /Testkonto und Testdaten/
-  );
+  assert.throws(() => agent.producerAgentPlan([{ ...scene, demoSteps: [] }]), /Kein ausführbarer Aufnahme-Ablauf/);
+  assert.throws(() => agent.producerAgentPlan([{ ...scene, test_data_only: false }]), /Testkonto und Testdaten/);
   const plan = agent.producerAgentPlan([scene]);
   assert.equal(plan.length, 1);
   assert.equal(plan[0].mode, 'recording');
