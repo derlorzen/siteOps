@@ -94,11 +94,13 @@ test('scene repair creates a distinct draft with the exact approved retake indic
     /vollständigen Aufnahme-, Sprach- oder Schnittprüfsummen/
   );
   original.result.captures.push({ scene: 2, sha256: 'b'.repeat(64) });
-  original.result.av_scenes = [{
-    scene: 2,
-    narration_sha256: 'c'.repeat(64),
-    part_sha256: 'd'.repeat(64)
-  }];
+  original.result.av_scenes = [
+    {
+      scene: 2,
+      narration_sha256: 'c'.repeat(64),
+      part_sha256: 'd'.repeat(64)
+    }
+  ];
   const result = await studio.repairJob(id, { scenes: [1], confirm_demo_replay: true });
   assert.notEqual(result.id, id);
   assert.equal(result.status, 'draft');
