@@ -203,7 +203,7 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | video | /video-suite#review | video.publication.read | GET /api/video-studio/jobs/:id/publication | video_publication_get | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#assets | video.publication.save | POST /api/video-studio/jobs/:id/publication | video_publication_save | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite | video_studio_render_job | POST /api/video-studio/jobs/:id/render | video_studio_render_job | Ändern | Gebundene Freigabe | Zugeordnet |  |
-| video | /video-suite | video_studio_repair_job | POST /api/video-studio/jobs/:id/repair | video_studio_repair_job | Ändern | Gebundene Freigabe | Zugeordnet |  |
+| video | /video-suite | video_studio_repair_job | POST /api/video-studio/jobs/:id/repair | video_studio_repair_job | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#production | video.restoreJob | POST /api/video-studio/jobs/:id/restore | video_job_restore | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#production | video.trashJob | POST /api/video-studio/jobs/:id/trash | video_job_trash | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite | video_studio_job_status | GET /api/video-studio/jobs/:id | video_studio_job_status | Lesen | Keine zusätzliche | Zugeordnet |  |
