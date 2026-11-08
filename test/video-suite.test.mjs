@@ -170,13 +170,15 @@ test('real-frame review requires explicit consent, checks actual model payload a
   let saved = null;
   const review = {
     summary: 'The scene appears to show the product dashboard.',
-    findings: [{
-      scene: 1,
-      verdict: 'uncertain',
-      visible_observation: 'A software interface is visible.',
-      reason: 'Only two sampled frames are available.',
-      suggested_fix: 'Review the complete moving clip manually.'
-    }],
+    findings: [
+      {
+        scene: 1,
+        verdict: 'uncertain',
+        visible_observation: 'A software interface is visible.',
+        reason: 'Only two sampled frames are available.',
+        suggested_fix: 'Review the complete moving clip manually.'
+      }
+    ],
     recommendation: 'Human review of the full recording is required.'
   };
   const extraStudio = {
@@ -184,12 +186,14 @@ test('real-frame review requires explicit consent, checks actual model payload a
       id,
       project_id: project,
       status: 'done',
-      scenes: [{
-        headline: 'Interface',
-        narration: context.script,
-        capture_mode: 'recording',
-        visual_directions: 'Show the product dashboard.'
-      }],
+      scenes: [
+        {
+          headline: 'Interface',
+          narration: context.script,
+          capture_mode: 'recording',
+          visual_directions: 'Show the product dashboard.'
+        }
+      ],
       result: { quality: { audio_visual_status: 'passed' } }
     }),
     sceneFrame: async (_id, _scene, _moment) => Buffer.from([0xff, 0xd8, ...Array(128).fill(1)]),
@@ -200,11 +204,13 @@ test('real-frame review requires explicit consent, checks actual model payload a
   };
   const { service, calls } = fixture(() => response(review), [], extraStudio);
   await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
-  await assert.rejects(service.visualReview({
-    project_id: project,
-    job_id: project,
-    scene_numbers: [1]
-  }));
+  await assert.rejects(
+    service.visualReview({
+      project_id: project,
+      job_id: project,
+      scene_numbers: [1]
+    })
+  );
   const result = await service.visualReview({
     project_id: project,
     job_id: project,
