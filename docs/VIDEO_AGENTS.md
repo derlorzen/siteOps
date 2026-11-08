@@ -76,6 +76,34 @@ runner bridge. Images and the scene narration are sent to OpenAI with
 the reviewer is **never** allowed to approve publication or claim full-motion
 or full-audio verification. Users must personally watch the rendered video.
 
+## Speech timing verification
+
+Every rendered scene now compares the **decoded narration WAV** with the
+**actual muxed MP4 audio** using 50-ms RMS amplitude windows from the first
+12 seconds of both media tracks. The resulting scene report records
+`audio_alignment.status`, the estimated offset (milliseconds), and an
+observed correlation. A confident shift above 700 ms blocks rendering; a
+possible shift above 250 ms or an inconclusive sample requires human review.
+The deliberately silent CI narration fixture is marked `not_checked`, never
+as verified speech.
+
+This validates the timing of the sampled **audio signal** in the encoded
+scene, not whether the spoken words match the authored narration, and not
+the complete video beyond the sampled time range. A transcript/word-level
+verification would require an additional explicitly approved transcription
+workflow. Users must review audio and the whole final MP4 themselves.
+
+Reused narration WAV and already assembled scene MP4 files now have their
+**own SHA-256 digests**, in addition to the original capture digest.
+The runner verifies the copied file against the original digest. A mismatched
+file is discarded and the repair stops rather than trusting an unverified
+copy. A missing legacy digest prevents that asset from being reused.
+
+SiteOps requires the runner capability `audiovisualQaVersion:1` before it
+submits **any** new render. This prevents an older deployed runner from
+silently reporting `done` without the required QA. The new runner must be
+deployed before the SiteOps changes are enabled in production.
+
 ## Scene-specific repair
 
 For a completed or failed video, the dashboard action
