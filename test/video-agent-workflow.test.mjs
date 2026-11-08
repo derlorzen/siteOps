@@ -37,8 +37,10 @@ test('recording requires an actual nonempty file', async t => {
   const task = agent.producerAgentPlan([scene])[0];
   const filename = path.join(dir, 'scene.webm');
   await writeFile(filename, 'test-bytes');
+  await assert.rejects(agent.recordingAgentEvidence(task, filename), /bestätigte Browseraktionen fehlen/);
   const evidence = await agent.recordingAgentEvidence(task, filename, {
-    resolution: { width: 1920, height: 1080 }
+    resolution: { width: 1920, height: 1080 },
+    actions_executed: 1
   });
   assert.equal(evidence.status, 'captured');
   assert.equal(evidence.bytes, 10);
