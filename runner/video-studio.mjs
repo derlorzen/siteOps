@@ -239,13 +239,17 @@ async function render(job){
       const recording = captureMode(scene)==='recording';
       const png = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
+      let receipt;
       if (recording) {
-        await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png,undefined,storageState);
+        receipt = await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png,undefined,storageState);
       } else {
         await captureSceneScreenshot(browser,scene,job,i,dir,undefined,storageState);
       }
       if(recording)await verifyVideoDimensions(webm,width,height);
-      job.captures.push(await recordingAgentEvidence(agentPlan[i], recording ? webm : png, { resolution: { width, height } }));
+      job.captures.push(await recordingAgentEvidence(agentPlan[i], recording ? webm : png, {
+        resolution: { width, height },
+        actions_executed: receipt?.actions_executed
+      }));
       }catch(error){throw Error('Szene '+(i+1)+' – Aufnahme fehlgeschlagen: '+error.message);}
     }
     job.agent_workflow.recording = 'complete';
