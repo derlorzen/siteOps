@@ -1,4 +1,6 @@
 import { stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { requireCapturePlan } from './video-capture.mjs';
 
 // Production control-plane: a producer specifies required evidence before a runner
@@ -22,11 +24,14 @@ export async function recordingAgentEvidence(task, filename, { resolution, actio
     throw new Error('Szene ' + task.scene + ': Aufnahmedatei fehlt oder ist leer.');
   if (task.mode === 'recording' && (!Number.isSafeInteger(actions_executed) || actions_executed < 0))
     throw new Error('Szene ' + task.scene + ': bestätigte Browseraktionen fehlen.');
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(filename)) hash.update(chunk);
   return {
     scene: task.scene,
     mode: task.mode,
     status: 'captured',
     bytes: file.size,
+    sha256: hash.digest('hex'),
     actions_executed: task.mode === 'recording' ? actions_executed : 0,
     ...(resolution ? { resolution } : {})
   };
