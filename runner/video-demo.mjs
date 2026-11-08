@@ -158,10 +158,12 @@ export async function recordDemoScene(
     if(!response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
     if(await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
     await page.waitForTimeout(700);
+    let actionsExecuted = 0;
     for (const [index,step] of steps.entries()) {
       try { await executeDemoStep(page, step); } catch { throw Error('Demo-Aktion '+(index+1)+' ('+step.action+') fehlgeschlagen. Selektor oder Zielzustand prüfen.'); }
       validatedDemoUrl(page.url(), hosts);
       if(await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung abgelaufen. Keine gültige Aufnahme.');
+      actionsExecuted += 1;
       await page.waitForTimeout(500);
     }
     await page.waitForTimeout(700);
@@ -169,7 +171,7 @@ export async function recordDemoScene(
     const video = page.video();
     await context.close();
     await fs.copyFile(await video.path(), filename);
-    return filename;
+    return { filename, actions_executed: actionsExecuted };
   } finally {
     await guarded?.close().catch(() => {});
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
