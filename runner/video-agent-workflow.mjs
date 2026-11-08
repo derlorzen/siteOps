@@ -16,16 +16,18 @@ export function producerAgentPlan(scenes) {
 
 // Recording-agent boundary: only a real, non-empty local file counts as captured.
 // The caller must separately validate video resolution and browser action results.
-export async function recordingAgentEvidence(task, filename, { resolution } = {}) {
+export async function recordingAgentEvidence(task, filename, { resolution, actions_executed } = {}) {
   const file = await stat(filename);
   if (!file.isFile() || file.size <= 0)
     throw new Error('Szene ' + task.scene + ': Aufnahmedatei fehlt oder ist leer.');
+  if (task.mode === 'recording' && (!Number.isSafeInteger(actions_executed) || actions_executed < 0))
+    throw new Error('Szene ' + task.scene + ': bestätigte Browseraktionen fehlen.');
   return {
     scene: task.scene,
     mode: task.mode,
     status: 'captured',
     bytes: file.size,
-    actions_executed: task.expected_actions,
+    actions_executed: task.mode === 'recording' ? actions_executed : 0,
     ...(resolution ? { resolution } : {})
   };
 }
