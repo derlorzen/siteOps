@@ -264,6 +264,7 @@
     catch (e) { $('suite-agent-status').textContent = e.message; }
   });
   const presets = {
+    review: 'Prüft bitte im Team aus Producer und unabhängiger Qualitätskontrolle meinen aktuellen Szenenplan. Welche echten Bildschirmaufnahmen sind erforderlich, welche Browserabläufe fehlen, und welche Aussagen sind ohne Bildmaterial noch nicht nachgewiesen? Führt nichts aus und verändert keine Szenen.',
     script: 'Erstelle aus meinem Thema ein vollständiges, etwa vierminütiges Tutorial mit Hook, Sprechertext, Szenenplan, Bildanweisungen und YouTube-Metadaten. Nutze die Projektsprache und erfinde keine Produktfunktionen.',
     edit: 'Prüfe mein vorhandenes Skript auf Einstieg, Tempo und Verständlichkeit. Straffe es und schlage eine bessere Szenenfolge vor. Erhalte bestätigte Demo-Aktionen.',
     seo: 'Optimiere das Packaging meines vorhandenen Videos: drei ehrliche Titel, Beschreibung, Keywords, drei Hashtags und Kapitel. Verändere den Sprechertext nicht.',
