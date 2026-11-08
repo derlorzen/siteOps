@@ -318,6 +318,8 @@ async function render(job){
       const oldBase=source && !job.recaptureScenes.includes(i+1)
         ?path.join(ROOT,source.id):null;
       const sourceAv=source?.av_scenes?.find(check=>check.scene===i+1);
+      if(oldBase && (!sourceAv?.narration_sha256 || !sourceAv?.part_sha256))
+        throw Error('Sichere Wiederverwendung verweigert: Sprach- oder Schnittprüfsumme fehlt.');
       let copiedVoice=false;
       if(oldBase && sourceAv?.narration_sha256){
         await verifiedArtifactCopy(
@@ -520,6 +522,15 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
         return reply.code(422).send({error:'Der Aufnahmeplan wurde seit der Quellproduktion geändert. Bitte neue Gesamtproduktion starten.'});
       if(parsed.recaptureScenes.some(i => (source.capture_attempts?.[i] || source.captures?.find(x=>x.scene===i)?.attempt || 0)>=3))
         return reply.code(422).send({error:'Für diese Szene wurden bereits drei Aufnahmeversuche verwendet.'});
+      const retained=parsed.scenes.map((_,i)=>i+1).filter(i=>!parsed.recaptureScenes.includes(i));
+      if(retained.some(i=>{
+        const capture=source.captures?.find(x=>x.scene===i);
+        const av=source.av_scenes?.find(x=>x.scene===i);
+        return !/^[a-f0-9]{64}$/.test(capture?.sha256||'') ||
+          !/^[a-f0-9]{64}$/.test(av?.narration_sha256||'') ||
+          !/^[a-f0-9]{64}$/.test(av?.part_sha256||'');
+      }))
+        return reply.code(422).send({error:'Nicht erneut aufgenommene Szene hat unvollständige SHA-256-Nachweise.'});
     }
     if(queue.length+active>=MAX_JOBS)return reply.code(429).send({error:'Video queue full.'});
     if(parsed.voiceProvider==='openai' && !req.body.openaiApiKey && !process.env.OPENAI_API_KEY)return reply.code(422).send({error:'Für OpenAI-Sprachausgabe fehlt der Schlüssel. In den Suite-Einstellungen speichern oder OPENAI_API_KEY auf dem Runner setzen.'});
