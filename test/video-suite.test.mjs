@@ -144,12 +144,14 @@ test('team review runs Producer then independent Quality and saves one chat resu
     mode: 'review',
     context: {
       ...context,
-      scenes: [{
-        headline: 'Show browser steps',
-        narration: context.script,
-        capture_mode: 'recording',
-        visual_directions: 'Show the browser export.'
-      }]
+      scenes: [
+        {
+          headline: 'Show browser steps',
+          narration: context.script,
+          capture_mode: 'recording',
+          visual_directions: 'Show the browser export.'
+        }
+      ]
     }
   });
   assert.equal(calls.length, 2);
