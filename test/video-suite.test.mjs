@@ -126,6 +126,43 @@ test('agent rejects invalid output and masks upstream secrets and error details'
     e => e.statusCode === 401 && !e.message.includes('sk-test')
   );
 });
+test('team review runs Producer then independent Quality and saves one chat result', async () => {
+  let n = 0;
+  const review = {
+    summary: 'The browser walkthrough is not recorded.',
+    findings: [],
+    next_step: 'Configure a safe demo and test the capture.'
+  };
+  const { service, calls } = fixture(() => {
+    n++;
+    return response({ ...review, summary: n === 1 ? 'Producer requires footage.' : 'Quality cannot verify footage.' });
+  });
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  const result = await service.chat({
+    project_id: project,
+    message: 'Please review every planned recording',
+    mode: 'review',
+    context: {
+      ...context,
+      scenes: [{
+        headline: 'Show browser steps',
+        narration: context.script,
+        capture_mode: 'recording',
+        visual_directions: 'Show the browser export.'
+      }]
+    }
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(JSON.parse(calls[0][1].body).store, false);
+  assert.equal(JSON.parse(calls[1][1].body).store, false);
+  assert.equal(JSON.parse(calls[1][1].body).input.includes('Producer requires footage.'), true);
+  assert.match(result.reply, /Producer-Agent/);
+  assert.match(result.reply, /Quality-Agent/);
+  assert.match(result.reply, /Aufnahmesperren/);
+  assert.equal(result.draft, null);
+  const history = await service.conversation(result.conversation_id, project);
+  assert.equal(history.messages.at(-1).result.reply, result.reply);
+});
 test('working draft survives a reload without saving a render job', async () => {
   const { service } = fixture();
   const draft = { ...context, scene_json: '[]', youtube_json: '{}' };
