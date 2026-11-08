@@ -54,6 +54,7 @@ function fixture(t, jobScene = scene, protocol = 1) {
     if (url.endsWith('/capabilities'))
       return Response.json({
         capturePreflightVersion: protocol,
+        audiovisualQaVersion: protocol,
         demoPolicyVersion: 1,
         demoEnvironmentPolicy: { version: 1, hosts: ['demo.example.com'] }
       });
