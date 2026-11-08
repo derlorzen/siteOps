@@ -48,6 +48,10 @@ jobs:
         run: npm run check
       - name: Lint
         run: npm run lint
+      - name: Temporary formatting diagnostics
+        run: |
+          npx prettier --write lib/video-studio.mjs lib/video-suite-agent.mjs test/video-av-qa.test.mjs test/video-retake-safety.test.mjs test/video-scene-repair.test.mjs test/video-suite.test.mjs
+          git diff -- lib/video-studio.mjs lib/video-suite-agent.mjs test/video-av-qa.test.mjs test/video-retake-safety.test.mjs test/video-scene-repair.test.mjs test/video-suite.test.mjs
       - name: Format check
         run: npm run format:check
       - name: Install browser runner dependencies
