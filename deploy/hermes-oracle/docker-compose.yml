@@ -17,7 +17,7 @@ services:
               '  enabled: true' \
               '  host: 0.0.0.0' \
               '  port: 9120' \
-              '  public_url: https://hermes.lorzen.de' \
+              '  public_url: https://ki.lorzen.net' \
               'tool_loop_guardrails:' \
               '  non_interactive_hard_stop_enabled: true' \
               > /opt/data/config.yaml
