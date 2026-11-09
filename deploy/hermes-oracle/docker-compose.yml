@@ -23,7 +23,7 @@ services:
               > /opt/data/config.yaml
           fi
           # Reconcile only the prior generated public origin; leave other user settings untouched.
-          sed -i 's#https://ki.lorzen.net#https://ki.lorzen.net#g' /opt/data/config.yaml
+          sed -i 's#https://ki.lorzen.de#https://ki.lorzen.net#g' /opt/data/config.yaml
           chown 10000:10000 /opt/data /opt/data/config.yaml
   hermes:
     image: nousresearch/hermes-agent:stable
