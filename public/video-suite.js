@@ -77,13 +77,13 @@
   let availableTemplates=[];
   const captureTests=new WeakMap();
   const captureMode=scene=>scene.capture_mode || (scene.demoUrl ? (scene.demoSteps?.length ? 'recording' : 'screenshot') : scene.template_id ? 'recording' : 'text');
-  const captureLabel=scene=>scene.outro?'Outro & Abschied':({text:'Texttafel',screenshot:'Browser-Standbild',recording:'Bildschirmaufnahme'})[captureMode(scene)] || 'Unbekannte Aufnahmeart';
+  const captureLabel=scene=>scene.outro?'Outro & Abschied':({text:'Texttafel',screenshot:'Browser-Standbild',recording:'Bildschirmaufnahme',ai_video:'NVIDIA Cosmos KI-Video'})[captureMode(scene)] || 'Unbekannte Aufnahmeart';
   const captureSignature=scene=>JSON.stringify({scene,template:availableTemplates.find(t=>t.id===scene.template_id)?.scene,project:projectId,format:$('vs-format').value,language:$('vs-language').value});
   document.addEventListener('suite-templates-loaded',event=>{availableTemplates=event.detail || [];drawScenes();});
   function drawScenes() {
     const container = $('suite-scene-list'); container.replaceChildren();
     const count=mode=>scenes.filter(s=>captureMode(s)===mode).length;
-    $('suite-capture-summary').textContent=scenes.length?count('recording')+' Bildschirmaufnahmen · '+count('screenshot')+' Browser-Standbilder · '+count('text')+' Texttafeln. '+(count('recording')?'Aufnahmen vor dem Rendern einzeln testen.':'Es ist keine bewegte Bildschirmaufnahme geplant.'):'Noch keine Szenen geplant.';
+    $('suite-capture-summary').textContent=scenes.length?count('recording')+' Bildschirmaufnahmen · '+count('screenshot')+' Browser-Standbilder · '+count('text')+' Texttafeln · '+count('ai_video')+' NVIDIA KI-Szenen. '+(count('recording')?'Aufnahmen vor dem Rendern einzeln testen.':'KI-Clips werden erst nach Produktionsfreigabe erzeugt.'):'Noch keine Szenen geplant.';
     let elapsed=0;
     scenes.forEach((scene, i) => {
       const card = document.createElement('div'); card.className = 'suite-scene-card';
@@ -107,9 +107,20 @@
       }
       const modeLabel=document.createElement('label');modeLabel.textContent='Geplantes Bild';
       const modeSelect=document.createElement('select');modeSelect.setAttribute('aria-label','Geplantes Bild');
-      for(const [value,label] of [['text','Texttafel'],['screenshot','Browser-Standbild'],['recording','Bildschirmaufnahme erforderlich']])modeSelect.append(new Option(label,value));
+      for(const [value,label] of [['text','Texttafel'],['screenshot','Browser-Standbild'],['recording','Bildschirmaufnahme erforderlich'],['ai_video','NVIDIA Cosmos KI-Video']])modeSelect.append(new Option(label,value));
       modeSelect.value=captureMode(scene);
-      modeSelect.addEventListener('change',()=>{scene.capture_mode=modeSelect.value;if(modeSelect.value==='screenshot' && !scene.template_id)delete scene.demoSteps;if(modeSelect.value==='text')for(const key of ['template_id','demoUrl','demoSteps','login_profile_id','test_data_only'])delete scene[key];commitScenes();drawScenes();});
+      modeSelect.addEventListener('change',()=>{
+        scene.capture_mode=modeSelect.value;
+        if(modeSelect.value==='screenshot' && !scene.template_id)delete scene.demoSteps;
+        if(modeSelect.value==='text' || modeSelect.value==='ai_video')
+          for(const key of ['template_id','demoUrl','demoSteps','login_profile_id','test_data_only'])delete scene[key];
+        if(modeSelect.value==='ai_video')scene.ai_video={
+          provider:'nvidia', prompt:(scene.visual_directions || scene.headline || 'A cinematic product closeup with smooth camera movement').padEnd(12,' '),
+          num_frames:121, seed:42
+        };
+        else delete scene.ai_video;
+        commitScenes();drawScenes();
+      });
       modeLabel.append(modeSelect);modeLabel.hidden=Boolean(scene.outro);card.append(modeLabel);
       if(scene.outro){
         const note=document.createElement('p');note.className='vs-note';note.textContent='Abschluss mit Dankeschön, zwei freien Videoflächen (eine im Hochformat) und Abo-Bereich. Klickbare Elemente nach dem Upload in YouTube Studio verknüpfen.';card.append(note);
@@ -117,6 +128,27 @@
           const l=document.createElement('label'),field=document.createElement('input');l.textContent=label;field.type=type;field.maxLength=max;field.value=scene.outro[key] || '';field.addEventListener('input',()=>{scene.outro[key]=field.value.trim();commitScenes();});l.append(field);card.append(l);
         }
         const l=document.createElement('label'),duration=document.createElement('select');l.textContent='Outro-Dauer';duration.setAttribute('aria-label','Outro-Dauer');for(const seconds of [10,15,20])duration.append(new Option(seconds+' Sekunden',seconds));duration.value=scene.outro.duration_seconds;duration.addEventListener('change',()=>{scene.outro.duration_seconds=Number(duration.value);commitScenes();drawScenes();});l.append(duration);card.append(l);
+      }
+      if(captureMode(scene)==='ai_video') {
+        const l=document.createElement('label');l.textContent='NVIDIA Cosmos Prompt (englisch empfohlen)';
+        const prompt=document.createElement('textarea');prompt.rows=3;prompt.maxLength=1200;
+        prompt.value=scene.ai_video?.prompt || '';
+        prompt.placeholder='Describe the subject, motion, camera, lighting and background.';
+        prompt.addEventListener('input',()=>{
+          scene.ai_video={provider:'nvidia',prompt:prompt.value,num_frames:scene.ai_video?.num_frames ?? 121,seed:scene.ai_video?.seed ?? 42};
+          commitScenes();
+        });
+        l.append(prompt);card.append(l);
+        const f=document.createElement('label');f.textContent='Clipdauer';
+        const frames=document.createElement('select');
+        for(const [n,label] of [[25,'ca. 1 Sek.'],[73,'ca. 3 Sek.'],[121,'ca. 5 Sek.'],[193,'ca. 8 Sek.']])
+          frames.append(new Option(label,String(n)));
+        frames.value=String(scene.ai_video?.num_frames ?? 121);
+        frames.addEventListener('change',()=>{scene.ai_video.num_frames=Number(frames.value);commitScenes();});
+        f.append(frames);card.append(f);
+        const note=document.createElement('small');
+        note.textContent='NVIDIA Cosmos 3 Nano über deinen Video-Runner. Benötigt NVIDIA_API_KEY; keine Generierung vor Renderfreigabe. Freie Playground-API kann derzeit HTTP 404 liefern. Bei Fehlern kein automatischer Ersatz.';
+        card.append(note);
       }
       const demoLabel=document.createElement('label'); demoLabel.textContent='Ausführbarer Browser-Ablauf';
       const demoSelect=document.createElement('select'); demoSelect.append(new Option('Noch kein Ablauf zugeordnet',''));
@@ -129,7 +161,7 @@
         if(template)Object.assign(scene,template.scene,{template_id:template.id,narration:scene.narration,headline:scene.headline,capture_mode:template.scene.capture_mode || (template.scene.demoSteps?.length ? 'recording' : 'screenshot')});
         commitScenes();drawScenes();
       });
-      if(captureMode(scene)!=='text'){
+      if(['screenshot','recording'].includes(captureMode(scene))){
         demoLabel.append(demoSelect);card.append(demoLabel);
         if(!scene.template_id){
           const urlLabel=document.createElement('label');urlLabel.textContent='Aufnahmeseite';
@@ -155,10 +187,10 @@
       const refreshStatus=()=>{
         const checked=captureTests.get(scene),current=checked?.signature===captureSignature(scene);
         const configured={...scene,...(availableTemplates.find(t=>t.id===scene.template_id)?.scene || {})};
-        hint.textContent=captureMode(scene)==='text'?'Diese Szene wird als Texttafel gerendert.':current?checked.message:!configured.demoUrl && !scene.template_id?'Aufnahme blockiert: Aufnahmeseite eingeben oder eine Demoszene auswählen.':captureMode(scene)==='recording'&&!configured.demoSteps?.length?'Aufnahme blockiert: Aufnahme-Ablauf auswählen.':configured.test_data_only!==true?'Aufnahme blockiert: Testdaten bestätigen.':'Noch nicht getestet · '+(configured.demoUrl || 'Gespeicherte Demoszene')+' · '+(configured.login_profile_id?'Anmeldung vor der Aufnahme':'ohne gespeicherten Login')+' · '+(configured.demoSteps?.length || 0)+' Aktionen.';
+        hint.textContent=captureMode(scene)==='ai_video'?(scene.ai_video?.prompt?.trim().length>=12?'NVIDIA Cosmos KI-Clip wird erst bei Produktionsfreigabe erzeugt.':'KI-Clip blockiert: Prompt mit mindestens 12 Zeichen angeben.'):captureMode(scene)==='text'?'Diese Szene wird als Texttafel gerendert.':current?checked.message:!configured.demoUrl && !scene.template_id?'Aufnahme blockiert: Aufnahmeseite eingeben oder eine Demoszene auswählen.':captureMode(scene)==='recording'&&!configured.demoSteps?.length?'Aufnahme blockiert: Aufnahme-Ablauf auswählen.':configured.test_data_only!==true?'Aufnahme blockiert: Testdaten bestätigen.':'Noch nicht getestet · '+(configured.demoUrl || 'Gespeicherte Demoszene')+' · '+(configured.login_profile_id?'Anmeldung vor der Aufnahme':'ohne gespeicherten Login')+' · '+(configured.demoSteps?.length || 0)+' Aktionen.';
       };
       card.addEventListener('input',refreshStatus);card.addEventListener('change',refreshStatus);refreshStatus();card.append(hint);
-      if(captureMode(scene)!=='text'){
+      if(['screenshot','recording'].includes(captureMode(scene))){
         const test=document.createElement('button');test.type='button';test.className='ghost';test.textContent='Aufnahme dieser Szene testen';
         const note=document.createElement('small');note.textContent='Führt den hinterlegten Ablauf mit Testdaten aus, einschließlich seiner Aktionen. Prüft echte Aufnahme und Full HD, ohne Sprachausgabe. Testergebnisse gelten nur für diese Konfiguration.';
         test.addEventListener('click',async()=>{
