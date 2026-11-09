@@ -22,6 +22,8 @@ services:
               '  non_interactive_hard_stop_enabled: true' \
               > /opt/data/config.yaml
           fi
+          # Reconcile only the prior generated public origin; leave other user settings untouched.
+          sed -i 's#https://ki.lorzen.net#https://ki.lorzen.de#g' /opt/data/config.yaml
           chown 10000:10000 /opt/data /opt/data/config.yaml
   hermes:
     image: nousresearch/hermes-agent:stable
@@ -48,7 +50,7 @@ services:
         - CMD
         - python3
         - -c
-        - "import http.client,sys; c=http.client.HTTPConnection('127.0.0.1',9120,timeout=4); c.request('GET','/'); r=c.getresponse(); sys.exit(0 if r.status in (200,301,302,303,307,308,401,403) else 1)"
+        - "import http.client,sys; c=http.client.HTTPConnection('127.0.0.1',9119,timeout=4); c.request('GET','/'); r=c.getresponse(); sys.exit(0 if r.status in (200,301,302,303,307,308,401,403) else 1)"
       interval: 30s
       timeout: 8s
       start_period: 90s
