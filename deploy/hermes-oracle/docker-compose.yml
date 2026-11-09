@@ -1,4 +1,4 @@
-# Hermes Agent on Oracle A1 via Coolify. Public endpoint: Webapp only (9120).
+# Hermes Agent on Oracle A1 via Coolify. Public endpoint: Hermes dashboard (9119) and optional Webapp (9120).
 # Credentials live exclusively in Coolify application environment variables.
 services:
   hermes-config:
@@ -17,7 +17,7 @@ services:
               '  enabled: true' \
               '  host: 0.0.0.0' \
               '  port: 9120' \
-              '  public_url: https://ki.lorzen.net' \
+              '  public_url: https://ki.lorzen.de' \
               'tool_loop_guardrails:' \
               '  non_interactive_hard_stop_enabled: true' \
               > /opt/data/config.yaml
@@ -31,12 +31,17 @@ services:
     environment:
       HERMES_DASHBOARD: "1"
       HERMES_TIMEZONE: Europe/Berlin
+      HERMES_DASHBOARD_HOST: "0.0.0.0"
+      HERMES_DASHBOARD_PORT: "9119"
+      HERMES_DASHBOARD_PUBLIC_URL: "https://ki.lorzen.de"
+      HERMES_DASHBOARD_OAUTH_CLIENT_ID: ${HERMES_DASHBOARD_OAUTH_CLIENT_ID:-}
       HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:?Missing dashboard username}
       HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?Missing dashboard password}
       HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${HERMES_DASHBOARD_BASIC_AUTH_SECRET:?Missing dashboard secret}
     volumes:
       - hermes-oracle-data:/opt/data
     expose:
+      - "9119"
       - "9120"
     healthcheck:
       test:
