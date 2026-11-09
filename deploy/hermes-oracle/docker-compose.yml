@@ -1,0 +1,50 @@
+# Hermes Agent on Oracle A1 via Coolify. Public endpoint: Webapp only (9120).
+# Credentials live exclusively in Coolify application environment variables.
+services:
+  hermes-config:
+    image: alpine:3.21
+    restart: "no"
+    volumes:
+      - hermes-oracle-data:/opt/data
+    command:
+      - /bin/sh
+      - -ec
+      - |
+          mkdir -p /opt/data
+          if [ ! -f /opt/data/config.yaml ]; then
+            printf '%s\n' \
+              'webapp:' \
+              '  enabled: true' \
+              '  host: 0.0.0.0' \
+              '  port: 9120' \
+              '  public_url: https://hermes.lorzen.de' \
+              'tool_loop_guardrails:' \
+              '  non_interactive_hard_stop_enabled: true' \
+              > /opt/data/config.yaml
+          fi
+          chown 10000:10000 /opt/data /opt/data/config.yaml
+  hermes:
+    image: nousresearch/hermes-agent:stable
+    command: ["gateway", "run"]
+    restart: unless-stopped
+    init: false
+    environment:
+      HERMES_DASHBOARD: "1"
+      HERMES_TIMEZONE: Europe/Berlin
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:?Missing dashboard username}
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?Missing dashboard password}
+      HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${HERMES_DASHBOARD_BASIC_AUTH_SECRET:?Missing dashboard secret}
+    volumes:
+      - hermes-oracle-data:/opt/data
+    expose:
+      - "9120"
+    depends_on:
+      hermes-config:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1536M
+volumes:
+  hermes-oracle-data:
