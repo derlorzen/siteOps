@@ -11,6 +11,7 @@ import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
 import { authenticateDemo, validateDemoLogin } from './video-login.mjs';
 import { narrateWithOpenAI } from './openai-audio.mjs';
+import { generateCosmosVideo } from './nvidia-cosmos.mjs';
 import { videoFileRange } from './video-file-range.mjs';
 
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
@@ -74,7 +75,7 @@ function validate(payload){
     if(narration.length<5||narration.length>1400||headline.length>160)throw new Error('Invalid scene '+(i+1));
     const demoUrl=safeDemoUrl(s.demoUrl,policy.hosts);
     if(s.login_profile_id && (!uuid(s.login_profile_id) || !demoUrl || s.test_data_only!==true))throw Error('Authenticated demos require a valid profile and confirmed test data.');
-    return {narration,headline,outro:outroSettings(s.outro),demoUrl,capture_mode:s.capture_mode,test_data_only:s.test_data_only,login_profile_id:s.login_profile_id,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,policy.hosts)};
+    return {narration,headline,outro:outroSettings(s.outro),demoUrl,capture_mode:s.capture_mode,ai_video:s.ai_video,test_data_only:s.test_data_only,login_profile_id:s.login_profile_id,demoSteps:validatedDemoSteps(s.demoSteps||[],demoUrl,policy.hosts)};
   });
   validateOutroScenes(scenes);
   requireCapturePlan(scenes);
@@ -219,7 +220,14 @@ async function render(job){
       const recording = captureMode(scene)==='recording';
       const png = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
-      if (recording) {
+      if (captureMode(scene)==='ai_video') {
+        const clip=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.mp4');
+        await generateCosmosVideo({
+          prompt:scene.ai_video.prompt, format:job.format, numFrames:scene.ai_video.num_frames,
+          seed:scene.ai_video.seed, outputPath:clip
+        });
+        await exec('ffmpeg',['-y','-i',clip,'-frames:v','1',png],{timeoutMs:30000});
+      } else if (recording) {
         await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png,undefined,storageState);
       } else {
         await captureSceneScreenshot(browser,scene,job,i,dir,undefined,storageState);
@@ -239,11 +247,19 @@ async function render(job){
       const scene={...job.scenes[i],language:job.language};
       job.progress=30+Math.round(i/job.scenes.length*55);await persist(job);
       const recording=captureMode(scene)==='recording';
+      const aiVideo=captureMode(scene)==='ai_video';
       const png=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
       const wav=await voice(scene,job,i,dir);
       const audioLen=await duration(wav),len=outroDuration(scene,audioLen),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
-      if (recording) {
+      if (aiVideo) {
+        const mp4=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.mp4');
+        await exec('ffmpeg',['-y','-i',mp4,'-i',wav,
+          '-map','0:v:0','-map','1:a:0',
+          '-vf','scale='+width+':'+height+':force_original_aspect_ratio=decrease,pad='+width+':'+height+':(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25,tpad=stop_mode=clone:stop_duration=180',
+          '-t',String(len),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-r','25',
+          '-c:a','aac','-ar','48000','-ac','2','-b:a','128k','-movflags','+faststart',out]);
+      } else if (recording) {
         await exec('ffmpeg',['-y','-i',webm,'-i',wav,
           '-vf','scale='+width+':'+height+',setsar=1,fps=25,tpad=stop_mode=clone:stop_duration=125',
           '-t',String(len),'-c:v','libx264','-preset','veryfast',
@@ -311,6 +327,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
       offlineModels:{kokoro:kokoroFiles.every(Boolean),piper:piperFiles.every(Boolean)},
       modelAutoinstall:true, openaiConfigured:Boolean(process.env.OPENAI_API_KEY),
+      nvidiaVideo:{version:1,configured:Boolean(process.env.NVIDIA_API_KEY),model:'cosmos3-nano',apiVerified:false},
       ffmpegRequired:true,queued:queue.length,running:active
     };
   });
@@ -372,6 +389,8 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(old) return reply.code(409).send({error:'Job already exists.'});
     if(queue.length+active>=MAX_JOBS)return reply.code(429).send({error:'Video queue full.'});
     if(parsed.voiceProvider==='openai' && !req.body.openaiApiKey && !process.env.OPENAI_API_KEY)return reply.code(422).send({error:'Für OpenAI-Sprachausgabe fehlt der Schlüssel. In den Suite-Einstellungen speichern oder OPENAI_API_KEY auf dem Runner setzen.'});
+    if(parsed.scenes.some(scene=>captureMode(scene)==='ai_video') && !process.env.NVIDIA_API_KEY)
+      return reply.code(422).send({error:'NVIDIA_API_KEY fehlt auf dem Runner. Kein KI-Videoauftrag gestartet.'});
     const job={...parsed,status:'queued',progress:0,files:[],error:null,createdAt:new Date().toISOString()};
     const profiles=(req.body.demoLogins||[]).map(x=>validateDemoLogin(x,parsed.demoPolicy.hosts));
     if(profiles.length)jobLogins.set(job.id,profiles);
