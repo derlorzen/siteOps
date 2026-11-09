@@ -17,13 +17,13 @@ services:
               '  enabled: true' \
               '  host: 0.0.0.0' \
               '  port: 9120' \
-              '  public_url: https://ki.lorzen.de' \
+              '  public_url: https://ki.lorzen.net' \
               'tool_loop_guardrails:' \
               '  non_interactive_hard_stop_enabled: true' \
               > /opt/data/config.yaml
           fi
           # Reconcile only the prior generated public origin; leave other user settings untouched.
-          sed -i 's#https://ki.lorzen.net#https://ki.lorzen.de#g' /opt/data/config.yaml
+          sed -i 's#https://ki.lorzen.net#https://ki.lorzen.net#g' /opt/data/config.yaml
           chown 10000:10000 /opt/data /opt/data/config.yaml
   hermes:
     image: nousresearch/hermes-agent:stable
@@ -35,8 +35,8 @@ services:
       HERMES_TIMEZONE: Europe/Berlin
       HERMES_DASHBOARD_HOST: "0.0.0.0"
       HERMES_DASHBOARD_PORT: "9119"
-      HERMES_DASHBOARD_PUBLIC_URL: "https://ki.lorzen.de"
-      HERMES_DASHBOARD_OAUTH_CLIENT_ID: ${HERMES_DASHBOARD_OAUTH_CLIENT_ID:-}
+      HERMES_DASHBOARD_PUBLIC_URL: "https://ki.lorzen.net"
+      HERMES_DASHBOARD_OAUTH_CLIENT_ID: "agent:cmw9u54gn005alh0hkcwuqd4r"
       HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:?Missing dashboard username}
       HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?Missing dashboard password}
       HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${HERMES_DASHBOARD_BASIC_AUTH_SECRET:?Missing dashboard secret}
