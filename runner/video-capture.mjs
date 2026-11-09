@@ -5,9 +5,20 @@ export function captureMode(scene) {
 export function capturePlan(scenes) {
   return scenes.map((scene, index) => {
     const mode = captureMode(scene), issues = [];
-    if (!['text', 'screenshot', 'recording'].includes(mode)) issues.push('Unbekannte Aufnahmeart.');
+    if (!['text', 'screenshot', 'recording', 'ai_video'].includes(mode)) issues.push('Unbekannte Aufnahmeart.');
+    if (mode === 'ai_video') {
+      if (scene.demoUrl || scene.template_id || scene.demoSteps?.length || scene.login_profile_id || scene.test_data_only)
+        issues.push('KI-Video darf keine Browser-Demo oder Zugangsdaten enthalten.');
+      if (scene.outro) issues.push('Outro darf kein KI-Video sein.');
+      if (scene.ai_video?.provider !== 'nvidia' || typeof scene.ai_video?.prompt !== 'string' ||
+          scene.ai_video.prompt.trim().length < 12 || scene.ai_video.prompt.length > 1200)
+        issues.push('NVIDIA Cosmos Prompt fehlt oder ist ungültig.');
+      if (!Number.isInteger(scene.ai_video?.num_frames) || scene.ai_video.num_frames < 25 ||
+          scene.ai_video.num_frames > 197) issues.push('NVIDIA Frames müssen zwischen 25 und 197 liegen.');
+    }
+    if (mode !== 'ai_video' && scene.ai_video) issues.push('KI-Videoeinstellungen nur für KI-Szenen zulässig.');
     if (mode === 'text' && (scene.demoUrl || scene.template_id || scene.demoSteps?.length || scene.login_profile_id)) issues.push('Texttafel enthält einen Browser-Ablauf. Aufnahmeart korrigieren.');
-    if (mode !== 'text') {
+    if (mode === 'screenshot' || mode === 'recording') {
       if (!scene.demoUrl) issues.push('Keine Demo-URL hinterlegt. Gespeicherte Demoszene auswählen.');
       if (scene.test_data_only !== true) issues.push('Testkonto und Testdaten bestätigen.');
       if (mode === 'recording' && !scene.demoSteps?.length) issues.push('Kein ausführbarer Aufnahme-Ablauf hinterlegt. Demoszene mit Aktionen auswählen.');
