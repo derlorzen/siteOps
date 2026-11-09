@@ -38,6 +38,16 @@ services:
       - hermes-oracle-data:/opt/data
     expose:
       - "9120"
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import http.client,sys; c=http.client.HTTPConnection('127.0.0.1',9120,timeout=4); c.request('GET','/'); r=c.getresponse(); sys.exit(0 if r.status in (200,301,302,303,307,308,401,403) else 1)"
+      interval: 30s
+      timeout: 8s
+      start_period: 90s
+      retries: 4
     depends_on:
       hermes-config:
         condition: service_completed_successfully
@@ -45,6 +55,6 @@ services:
       resources:
         limits:
           cpus: "1.0"
-          memory: 1536M
+          memory: 2048M
 volumes:
   hermes-oracle-data:
