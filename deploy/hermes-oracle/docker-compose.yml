@@ -64,17 +64,8 @@ services:
         limits:
           cpus: "1.0"
           memory: 2048M
-  # Initialize a read-only copy of the matching Hermes source for the WebUI.
-  # This intentionally does not change the running gateway container.
-  hermes-source:
-    exclude_from_hc: true
-    image: nousresearch/hermes-agent:stable
-    entrypoint: ["/bin/sh", "-ec"]
-    command: ["test -f /opt/hermes/run_agent.py || test -d /opt/hermes/agent"]
-    restart: "no"
-    volumes:
-      - hermes-agent-src:/opt/hermes
-
+  # The hermes-agent-src named volume was initialized from the Hermes image
+  # during the first deployment and is retained while mounted by hermes-webui.
   # Parallel ChatGPT-like UI. Existing Hermes dashboard and OAuth remain intact.
   hermes-webui:
     build:
@@ -97,8 +88,6 @@ services:
       - "8787"
     depends_on:
       hermes-config:
-        condition: service_completed_successfully
-      hermes-source:
         condition: service_completed_successfully
     networks:
       - default
