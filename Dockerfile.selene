@@ -1,0 +1,7 @@
+# Portable root-context version of the Selene WebUI image.
+# Coolify may resolve the Compose build context from repository root.
+FROM ghcr.io/nesquena/hermes-webui:0.52.659
+USER root
+COPY --chown=1024:1024 deploy/hermes-oracle/selene/ /opt/hermes-webui-selene/
+ENV HERMES_WEBUI_EXTENSION_DIR=/opt/hermes-webui-selene \
+    HERMES_WEBUI_EXTENSION_MANIFEST=manifest.json
