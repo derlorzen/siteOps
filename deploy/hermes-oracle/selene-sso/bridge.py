@@ -90,22 +90,69 @@ def note(event, **fields):
     print(f"SeleneSSO {event} {safe}", file=sys.stderr, flush=True)
 
 def dashboard_identity(cookie_header):
-    """Trust only an identity checked by the existing Nous-gated dashboard."""
-    conn = http.client.HTTPConnection("hermes", 9119, timeout=5)
+    """Verify the exact public Hermes dashboard origin used by the browser.
+
+    The external route may be served by a different reverse-proxy backend from
+    the internal Docker service. Only the official /api/auth/me session identity
+    with provider=nous is accepted. Never decode or log user session cookies.
+    """
+    raw_cookie_names = [
+        segment.split("=", 1)[0].strip()
+        for segment in cookie_header.split(";") if "=" in segment
+    ] if cookie_header else []
+    has_hermes_cookie = any("hermes_session_" in name for name in raw_cookie_names)
+    note("verify_cookie_shape", has_hermes_cookie=has_hermes_cookie, count=len(raw_cookie_names))
+
+    def request_public():
+        # http.client verifies DNS hostname + certificate using system trust store.
+        conn = http.client.HTTPSConnection(KI_HOST, 443, timeout=7)
+        try:
+            conn.request("GET", "/api/auth/me", headers={
+                "Cookie": cookie_header,
+                "Accept": "application/json",
+                "User-Agent": "Selene-SSO-Bridge/1.1",
+            })
+            response = conn.getresponse()
+            return response.status, response.read(32769)
+        finally:
+            conn.close()
+
+    def request_internal():
+        # Fallback only if HTTPS cannot be reached; not on authentication rejection.
+        conn = http.client.HTTPConnection("hermes", 9119, timeout=5)
+        try:
+            conn.request("GET", "/api/auth/me", headers={
+                "Host": KI_HOST,
+                "X-Forwarded-Proto": "https",
+                "Cookie": cookie_header,
+                "Accept": "application/json",
+                "User-Agent": "Selene-SSO-Bridge/1.1",
+            })
+            response = conn.getresponse()
+            return response.status, response.read(32769)
+        finally:
+            conn.close()
+
     try:
-        conn.request("GET", "/api/auth/me", headers={
-            "Host": KI_HOST,
-            "X-Forwarded-Proto": "https",
-            "Cookie": cookie_header,
-            "Accept": "application/json",
-            "User-Agent": "Selene-SSO-Bridge/1.0",
-        })
-        response = conn.getresponse()
-        body = response.read(32769)
-        note("dashboard_check", status=response.status, has_cookie=bool(cookie_header))
-        if response.status in (401, 403, 302, 303, 307, 308):
+        try:
+            status, body = request_public()
+            via = "public_https"
+        except (OSError, TimeoutError, http.client.HTTPException) as error:
+            note("public_verification_unavailable", error=type(error).__name__)
+            status, body = request_internal()
+            via = "internal_fallback"
+        note("dashboard_check", status=status, via=via)
+        if status in (401, 403, 302, 303, 307, 308):
+            if status == 401:
+                try:
+                    payload = json.loads(body)
+                    reason = payload.get("reason") or payload.get("error") or "none"
+                    if isinstance(reason, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,48}", reason):
+                        note("dashboard_denied", reason=reason)
+                except (ValueError, TypeError, AttributeError):
+                    pass
             return None, "login"
-        if response.status != 200 or len(body) > 32768:
+        if status != 200 or len(body) > 32768:
             return None, "unavailable"
         value = json.loads(body)
         if not isinstance(value, dict) or value.get("provider") != "nous":
@@ -113,13 +160,12 @@ def dashboard_identity(cookie_header):
             return None, "login"
         user = value.get("user_id")
         if not isinstance(user, str) or not USER_PATTERN.fullmatch(user):
+            note("invalid_identity_shape")
             return None, "login"
         return user, None
     except (OSError, ValueError, http.client.HTTPException) as error:
         note("dashboard_connection_error", kind=type(error).__name__)
         return None, "unavailable"
-    finally:
-        conn.close()
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "SeleneSSO/1.0"
