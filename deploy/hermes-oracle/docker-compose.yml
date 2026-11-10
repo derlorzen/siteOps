@@ -81,11 +81,15 @@ services:
       HERMES_WEBUI_PASSWORD: ${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?Missing Hermes WebUI authentication}
       WANTED_UID: "10000"
       WANTED_GID: "10000"
+      # Only the local nginx sidecar may assert a verified Nous identity.
+      HERMES_WEBUI_TRUSTED_AUTH_HEADER: "X-Hermes-SSO-User"
+      HERMES_WEBUI_TRUSTED_PROXY_CIDRS: "127.0.0.1/32"
     volumes:
       - hermes-oracle-data:/home/hermeswebui/.hermes
       - hermes-agent-src:/home/hermeswebui/.hermes/hermes-agent:ro
     expose:
       - "8787"
+      - "8080"
     depends_on:
       hermes-config:
         condition: service_completed_successfully
@@ -99,7 +103,56 @@ services:
       - "traefik.http.routers.hermes-selene.entrypoints=https"
       - "traefik.http.routers.hermes-selene.tls=true"
       - "traefik.http.routers.hermes-selene.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.hermes-selene.service=hermes-selene"
       - "traefik.http.services.hermes-selene.loadbalancer.server.port=8787"
+      - "traefik.http.routers.hermes-selene-sso.rule=Host(`selene-sso.lorzen.net`)"
+      - "traefik.http.routers.hermes-selene-sso.entrypoints=https"
+      - "traefik.http.routers.hermes-selene-sso.tls=true"
+      - "traefik.http.routers.hermes-selene-sso.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.hermes-selene-sso.service=hermes-selene-sso"
+      - "traefik.http.services.hermes-selene-sso.loadbalancer.server.port=8080"
+
+  # OAuth-to-SSO broker: verifies the existing Nous dashboard session; no password or portal token is stored.
+  hermes-sso:
+    build:
+      context: .
+      dockerfile: Dockerfile.selene-sso
+    restart: unless-stopped
+    expose:
+      - "8181"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8181/health',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - default
+      - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.routers.hermes-sso-ki.rule=Host(`ki.lorzen.net`) && PathPrefix(`/selene-sso/authorize`)"
+      - "traefik.http.routers.hermes-sso-ki.entrypoints=https"
+      - "traefik.http.routers.hermes-sso-ki.priority=1000"
+      - "traefik.http.routers.hermes-sso-ki.tls=true"
+      - "traefik.http.routers.hermes-sso-ki.tls.certresolver=letsencrypt"
+      - "traefik.http.services.hermes-sso-ki.loadbalancer.server.port=8181"
+
+  # Shares the WebUI network namespace, so the trusted identity header arrives
+  # exclusively from 127.0.0.1. Public traffic to the normal 8787 password URL
+  # continues unchanged until the preview is verified end-to-end.
+  selene-sso-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.selene-nginx
+    restart: unless-stopped
+    network_mode: "service:hermes-webui"
+    depends_on:
+      hermes-webui:
+        condition: service_started
+      hermes-sso:
+        condition: service_healthy
 
 volumes:
   hermes-agent-src:
