@@ -244,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
                     if attempts >= 1:
                         note("login_rejected_after_oauth")
                         return self.respond(401, b"Nous session was not accepted by Hermes. Please sign in at https://ki.lorzen.net first, verify that the dashboard opens, and restart at https://selene-sso.lorzen.net.")
-                    STATES[state] = (pending[0], attempts + 1)
+                    STATES[state] = (pending[0], attempts + 1, pending[2])
                 target = PREFIX + "/authorize?" + urlencode({"state": state})
                 login_url = KI_ORIGIN + "/auth/login?" + urlencode({"provider": "nous", "next": target})
                 note("redirect_to_nous_oauth")
