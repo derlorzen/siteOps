@@ -2,6 +2,7 @@
 # Credentials live exclusively in Coolify application environment variables.
 services:
   hermes-config:
+    exclude_from_hc: true
     image: alpine:3.21
     restart: "no"
     volumes:
@@ -66,6 +67,7 @@ services:
   # Initialize a read-only copy of the matching Hermes source for the WebUI.
   # This intentionally does not change the running gateway container.
   hermes-source:
+    exclude_from_hc: true
     image: nousresearch/hermes-agent:stable
     entrypoint: ["/bin/sh", "-ec"]
     command: ["test -f /opt/hermes/run_agent.py || test -d /opt/hermes/agent"]
