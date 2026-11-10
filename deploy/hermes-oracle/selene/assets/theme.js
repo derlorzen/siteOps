@@ -17,6 +17,14 @@
   };
   window.registerHermesSkin(descriptor);
 
+  // Select Selene for first-time visitors only. Native Appearance choices win after that.
+  try {
+    if (!localStorage.getItem("hermes-skin")) {
+      localStorage.setItem("hermes-skin", "selene");
+      document.documentElement.dataset.skin = "selene";
+    }
+  } catch (_) { /* Private-mode storage may be disabled. */ }
+
   document.addEventListener("input", (event) => {
     const input = event.target;
     if (!(input instanceof HTMLTextAreaElement) || input.id !== "msg") return;
