@@ -1,0 +1,8 @@
+# Hermes WebUI with reviewed Selene 1.1.5 presentation bundle.
+# WebUI version is pinned; community theme assets are vendored under ./selene.
+FROM ghcr.io/nesquena/hermes-webui:0.52.659
+
+USER root
+COPY --chown=1024:1024 selene/ /opt/hermes-webui-selene/
+ENV HERMES_WEBUI_EXTENSION_DIR=/opt/hermes-webui-selene \
+    HERMES_WEBUI_EXTENSION_MANIFEST=manifest.json
