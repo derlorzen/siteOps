@@ -63,5 +63,57 @@ services:
         limits:
           cpus: "1.0"
           memory: 2048M
+  # Initialize a read-only copy of the matching Hermes source for the WebUI.
+  # This intentionally does not change the running gateway container.
+  hermes-source:
+    image: nousresearch/hermes-agent:stable
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["test -f /opt/hermes/run_agent.py || test -d /opt/hermes/agent"]
+    restart: "no"
+    volumes:
+      - hermes-agent-src:/opt/hermes
+
+  # Parallel ChatGPT-like UI. Existing Hermes dashboard and OAuth remain intact.
+  hermes-webui:
+    build:
+      context: .
+      dockerfile: Dockerfile.selene
+    restart: unless-stopped
+    environment:
+      HERMES_HOME: /home/hermeswebui/.hermes
+      HERMES_WEBUI_AGENT_DIR: /home/hermeswebui/.hermes/hermes-agent
+      HERMES_WEBUI_HOST: "0.0.0.0"
+      HERMES_WEBUI_PORT: "8787"
+      HERMES_WEBUI_STATE_DIR: /home/hermeswebui/.hermes/webui
+      HERMES_WEBUI_PASSWORD: ${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?Missing Hermes WebUI authentication}
+      WANTED_UID: "10000"
+      WANTED_GID: "10000"
+    volumes:
+      - hermes-oracle-data:/home/hermeswebui/.hermes
+      - hermes-agent-src:/home/hermeswebui/.hermes/hermes-agent:ro
+    expose:
+      - "8787"
+    depends_on:
+      hermes-config:
+        condition: service_completed_successfully
+      hermes-source:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.routers.hermes-selene.rule=Host(`selene.lorzen.net`)"
+      - "traefik.http.routers.hermes-selene.entrypoints=https"
+      - "traefik.http.routers.hermes-selene.tls=true"
+      - "traefik.http.routers.hermes-selene.tls.certresolver=letsencrypt"
+      - "traefik.http.services.hermes-selene.loadbalancer.server.port=8787"
+
 volumes:
+  hermes-agent-src:
   hermes-oracle-data:
+
+networks:
+  coolify:
+    external: true
