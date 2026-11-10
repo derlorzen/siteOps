@@ -76,7 +76,7 @@ services:
   # Parallel ChatGPT-like UI. Existing Hermes dashboard and OAuth remain intact.
   hermes-webui:
     build:
-      context: ./deploy/hermes-oracle
+      context: .
       dockerfile: Dockerfile.selene
     restart: unless-stopped
     environment:
