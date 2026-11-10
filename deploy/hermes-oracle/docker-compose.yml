@@ -64,6 +64,18 @@ services:
         limits:
           cpus: "1.0"
           memory: 2048M
+    networks:
+      - default
+      - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.routers.hermes-admin.rule=Host(`hermes-admin.lorzen.net`)"
+      - "traefik.http.routers.hermes-admin.entrypoints=https"
+      - "traefik.http.routers.hermes-admin.tls=true"
+      - "traefik.http.routers.hermes-admin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.hermes-admin.service=hermes-admin"
+      - "traefik.http.services.hermes-admin.loadbalancer.server.port=9119"
   # The hermes-agent-src named volume was initialized from the Hermes image
   # during the first deployment and is retained while mounted by hermes-webui.
   # Parallel ChatGPT-like UI. Existing Hermes dashboard and OAuth remain intact.
@@ -111,6 +123,15 @@ services:
       - "traefik.http.routers.hermes-selene-sso.tls.certresolver=letsencrypt"
       - "traefik.http.routers.hermes-selene-sso.service=hermes-selene-sso"
       - "traefik.http.services.hermes-selene-sso.loadbalancer.server.port=8080"
+      # Primary application routing wins over the old Hermes dashboard and
+      # the legacy /selene-sso/authorize sidecar route.
+      - "traefik.http.routers.hermes-ki.rule=Host(`ki.lorzen.net`)"
+      - "traefik.http.routers.hermes-ki.priority=3000"
+      - "traefik.http.routers.hermes-ki.entrypoints=https"
+      - "traefik.http.routers.hermes-ki.tls=true"
+      - "traefik.http.routers.hermes-ki.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.hermes-ki.service=hermes-ki"
+      - "traefik.http.services.hermes-ki.loadbalancer.server.port=8080"
 
   # OAuth-to-SSO broker: verifies the existing Nous dashboard session; no password or portal token is stored.
   hermes-sso:
@@ -159,6 +180,8 @@ services:
         condition: service_started
       hermes-sso:
         condition: service_healthy
+      hermes:
+        condition: service_started
 
 volumes:
   hermes-agent-src:
