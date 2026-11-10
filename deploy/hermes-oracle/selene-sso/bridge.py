@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import sys
 import os
 import re
 import secrets
@@ -83,6 +84,11 @@ def prune():
             if store[key][0] <= now:
                 store.pop(key, None)
 
+def note(event, **fields):
+    """Log only diagnostic category and HTTP status, never tokens, IDs or URLs."""
+    safe = " ".join(f"{k}={v}" for k, v in fields.items())
+    print(f"SeleneSSO {event} {safe}", file=sys.stderr, flush=True)
+
 def dashboard_identity(cookie_header):
     """Trust only an identity checked by the existing Nous-gated dashboard."""
     conn = http.client.HTTPConnection("hermes", 9119, timeout=5)
@@ -96,18 +102,21 @@ def dashboard_identity(cookie_header):
         })
         response = conn.getresponse()
         body = response.read(32769)
+        note("dashboard_check", status=response.status, has_cookie=bool(cookie_header))
         if response.status in (401, 403, 302, 303, 307, 308):
             return None, "login"
         if response.status != 200 or len(body) > 32768:
             return None, "unavailable"
         value = json.loads(body)
         if not isinstance(value, dict) or value.get("provider") != "nous":
+            note("unexpected_provider", provider_is_nous=False)
             return None, "login"
         user = value.get("user_id")
         if not isinstance(user, str) or not USER_PATTERN.fullmatch(user):
             return None, "login"
         return user, None
-    except (OSError, ValueError, http.client.HTTPException):
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        note("dashboard_connection_error", kind=type(error).__name__)
         return None, "unavailable"
     finally:
         conn.close()
@@ -164,7 +173,7 @@ class Handler(BaseHTTPRequestHandler):
                 if len(STATES) >= 512:
                     return self.respond(429, b"Try again")
                 state = secrets.token_urlsafe(32)
-                STATES[state] = (time.time() + PENDING_SECONDS, None)
+                STATES[state] = (time.time() + PENDING_SECONDS, 0)
             dest = KI_ORIGIN + PREFIX + "/authorize?" + urlencode({"state": state})
             cookie = STATE_COOKIE + "=" + state + "; Path=/; Max-Age=300; Secure; HttpOnly; SameSite=Lax"
             return self.redirect(dest, cookie)
@@ -180,11 +189,22 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(400, b"Expired authorization")
             user, error = dashboard_identity(self.headers.get("Cookie", ""))
             if error == "login":
+                with LOCK:
+                    pending = STATES.get(state)
+                    if pending is None:
+                        return self.respond(400, b"Expired authorization")
+                    attempts = pending[1]
+                    if attempts >= 1:
+                        note("login_rejected_after_oauth")
+                        return self.respond(401, b"Nous session was not accepted by Hermes. Please sign in at https://ki.lorzen.net first, verify that the dashboard opens, and restart at https://selene-sso.lorzen.net.")
+                    STATES[state] = (pending[0], attempts + 1)
                 target = PREFIX + "/authorize?" + urlencode({"state": state})
-                login_url = KI_ORIGIN + "/login?" + urlencode({"next": target})
+                login_url = KI_ORIGIN + "/auth/login?" + urlencode({"provider": "nous", "next": target})
+                note("redirect_to_nous_oauth")
                 return self.redirect(login_url)
             if error:
                 return self.respond(503, b"Authentication service unavailable")
+            note("dashboard_identity_verified")
             with LOCK:
                 prune()
                 if state not in STATES or len(CODES) >= 512:
