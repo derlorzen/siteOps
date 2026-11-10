@@ -133,12 +133,36 @@ services:
       - "traefik.http.routers.hermes-ki.service=hermes-ki"
       - "traefik.http.services.hermes-ki.loadbalancer.server.port=8080"
 
+
+  # One-time secret init. Signing key survives SSO and WebUI deployments.
+  selene-sso-init:
+    exclude_from_hc: true
+    image: alpine:3.21
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: |
+      mkdir -p /state
+      if [ ! -s /state/signing-key ]; then
+        (umask 077; head -c 32 /dev/urandom > /state/signing-key)
+      fi
+      chmod 600 /state/signing-key
+      chown 11001:11001 /state/signing-key
+    volumes:
+      - selene-sso-state:/state
+
   # OAuth-to-SSO broker: verifies the existing Nous dashboard session; no password or portal token is stored.
   hermes-sso:
     build:
       context: .
       dockerfile: Dockerfile.selene-sso
     restart: unless-stopped
+    environment:
+      SELENE_SSO_SECRET_FILE: /sso-state/signing-key
+    volumes:
+      - selene-sso-state:/sso-state:ro
+    depends_on:
+      selene-sso-init:
+        condition: service_completed_successfully
     expose:
       - "8181"
     healthcheck:
@@ -186,6 +210,7 @@ services:
 volumes:
   hermes-agent-src:
   hermes-oracle-data:
+  selene-sso-state:
 
 networks:
   coolify:
