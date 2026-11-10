@@ -140,13 +140,14 @@ services:
     image: alpine:3.21
     restart: "no"
     entrypoint: ["/bin/sh", "-ec"]
-    command: |
-      mkdir -p /state
-      if [ ! -s /state/signing-key ]; then
-        (umask 077; head -c 32 /dev/urandom > /state/signing-key)
-      fi
-      chmod 600 /state/signing-key
-      chown 11001:11001 /state/signing-key
+    command:
+      - |
+        mkdir -p /state
+        if [ ! -s /state/signing-key ]; then
+          (umask 077; head -c 32 /dev/urandom > /state/signing-key)
+        fi
+        chmod 600 /state/signing-key
+        chown 11001:11001 /state/signing-key
     volumes:
       - selene-sso-state:/state
 
