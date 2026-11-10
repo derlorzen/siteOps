@@ -212,14 +212,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(401, b"Unauthorized")
             return self.respond(204, headers=[("X-Sso-User", user)])
         if route == PREFIX + "/start":
-            if self.host() != SELENE_HOST:
+            browser_host = self.host()
+            if browser_host not in (KI_HOST, SELENE_HOST):
                 return self.respond(404, b"Not found")
             with LOCK:
                 prune()
                 if len(STATES) >= 512:
                     return self.respond(429, b"Try again")
                 state = secrets.token_urlsafe(32)
-                STATES[state] = (time.time() + PENDING_SECONDS, 0)
+                STATES[state] = (time.time() + PENDING_SECONDS, 0, browser_host)
             dest = KI_ORIGIN + PREFIX + "/authorize?" + urlencode({"state": state})
             cookie = STATE_COOKIE + "=" + state + "; Path=/; Max-Age=300; Secure; HttpOnly; SameSite=Lax"
             return self.redirect(dest, cookie)
@@ -255,12 +256,16 @@ class Handler(BaseHTTPRequestHandler):
                 prune()
                 if state not in STATES or len(CODES) >= 512:
                     return self.respond(400, b"Expired authorization")
+                browser_host = STATES[state][2]
+                if browser_host not in (KI_HOST, SELENE_HOST):
+                    return self.respond(403, b"Invalid login destination")
                 code = secrets.token_urlsafe(36)
-                CODES[code] = (time.time() + 90, state, user)
-            dest = SELENE_ORIGIN + PREFIX + "/callback?" + urlencode({"code": code, "state": state})
+                CODES[code] = (time.time() + 90, state, user, browser_host)
+            browser_origin = KI_ORIGIN if browser_host == KI_HOST else SELENE_ORIGIN
+            dest = browser_origin + PREFIX + "/callback?" + urlencode({"code": code, "state": state})
             return self.redirect(dest)
         if route == PREFIX + "/callback":
-            if self.host() != SELENE_HOST:
+            if self.host() not in (KI_HOST, SELENE_HOST):
                 return self.respond(404, b"Not found")
             code = query.get("code", [""])[0]
             state = query.get("state", [""])[0]
@@ -270,13 +275,15 @@ class Handler(BaseHTTPRequestHandler):
                 prune()
                 entry = CODES.pop(code, None)
                 pending = STATES.pop(state, None)
-            if not entry or not pending or entry[1] != state:
+            if (not entry or not pending or entry[1] != state
+                or entry[3] != self.host() or pending[2] != self.host()):
                 return self.respond(403, b"Invalid or expired login")
             value = mint_session(entry[2])
             cookie = SESSION_COOKIE + "=" + value + "; Path=/; Max-Age=3600; Secure; HttpOnly; SameSite=Lax"
-            return self.redirect(SELENE_ORIGIN + "/", cookie)
+            browser_origin = KI_ORIGIN if self.host() == KI_HOST else SELENE_ORIGIN
+            return self.redirect(browser_origin + "/", cookie)
         if route == PREFIX + "/logout":
-            if self.host() != SELENE_HOST:
+            if self.host() not in (KI_HOST, SELENE_HOST):
                 return self.respond(404, b"Not found")
             clear = SESSION_COOKIE + "=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
             return self.redirect(KI_ORIGIN + "/auth/logout", clear)
