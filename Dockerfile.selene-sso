@@ -1,0 +1,8 @@
+FROM python:3.12-alpine
+WORKDIR /srv
+COPY deploy/hermes-oracle/selene-sso/bridge.py /srv/bridge.py
+RUN adduser -D -u 11001 sso && chown -R sso:sso /srv
+USER sso
+ENV PYTHONUNBUFFERED=1 SELENE_SSO_PORT=8181
+EXPOSE 8181
+CMD ["python", "/srv/bridge.py"]
