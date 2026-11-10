@@ -28,11 +28,19 @@ STATE_COOKIE = "__Host-selene_sso_state"
 SESSION_COOKIE = "__Host-selene_sso_session"
 USER_PATTERN = re.compile(r"^[A-Za-z0-9_.:@-]{1,128}$")
 STATE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{25,128}$")
-SECRET = secrets.token_bytes(32)
+# Never silently generate a new signing key on container restart.
+# The one-time init service creates a protected key in the dedicated named volume.
+SECRET_FILE = os.environ.get("SELENE_SSO_SECRET_FILE", "/sso-state/signing-key")
+with open(SECRET_FILE, "rb") as secret_file:
+    SECRET = secret_file.read()
+if len(SECRET) != 32:
+    raise RuntimeError("SSO signing key must be exactly 32 bytes")
 LOCK = threading.Lock()
 STATES = {}
 CODES = {}
-SESSION_SECONDS = 3600
+# Sessions previously expired after one hour, triggering many concurrent OAuth
+# redirects from background API polls. Limit the login to one working day instead.
+SESSION_SECONDS = 8 * 3600
 PENDING_SECONDS = 300
 
 def b64(data):
@@ -279,7 +287,7 @@ class Handler(BaseHTTPRequestHandler):
                 or entry[3] != self.host() or pending[2] != self.host()):
                 return self.respond(403, b"Invalid or expired login")
             value = mint_session(entry[2])
-            cookie = SESSION_COOKIE + "=" + value + "; Path=/; Max-Age=3600; Secure; HttpOnly; SameSite=Lax"
+            cookie = SESSION_COOKIE + "=" + value + "; Path=/; Max-Age=" + str(SESSION_SECONDS) + "; Secure; HttpOnly; SameSite=Lax"
             browser_origin = KI_ORIGIN if self.host() == KI_HOST else SELENE_ORIGIN
             return self.redirect(browser_origin + "/", cookie)
         if route == PREFIX + "/logout":
