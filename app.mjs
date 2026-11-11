@@ -22,6 +22,7 @@ import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/cry
 import { siteFilePath, normalizeChangeFiles } from './lib/site-paths.mjs';
 import { websiteToolResult } from './lib/website-tool-result.mjs';
 import { createSerialLock } from './lib/serial-lock.mjs';
+import { createFullBackup } from './lib/full-backup.mjs';
 import { createChangeApplyJobs } from './lib/change-apply-jobs.mjs';
 import { createCmsController, cmsInstallRequestSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
 import { renderCmsWorkspace } from './lib/lorzcms-workspace.mjs';
@@ -1268,7 +1269,8 @@ async function readRemoteText(siteId, path) {
 
 // All writes to the shared backup repository are serialised. Each holder gets a bounded hold
 // time so one hung FTP/GitHub call can no longer block every later change_apply and backup
-// (see lib/serial-lock.mjs). Snapshots of a few files finish in seconds; full backups get more.
+// (see lib/serial-lock.mjs). Full backups read the website outside the lock and only hold it
+// for their commit; SITEOPS_FULL_BACKUP_LOCK_MS bounds that unlocked read instead.
 const BACKUP_LOCK_SNAPSHOT_MS = Number(process.env.SITEOPS_SNAPSHOT_LOCK_MS || 3 * 60 * 1000);
 const BACKUP_LOCK_FULL_MS = Number(process.env.SITEOPS_FULL_BACKUP_LOCK_MS || 20 * 60 * 1000);
 const withBackupLock = createSerialLock({
@@ -1495,6 +1497,8 @@ function applyTreeMapUpdates(treeMap, updates) {
 // window between that prior call and this one (see the comment on branchHeadMatches);
 // always safe to omit, or to pass a now-stale one - branchState() is fetched fresh instead.
 async function commitPaths(site, paths, message, knownState = null) {
+  // Scheduled backups of this website step aside while changes are being applied.
+  fullBackup.noteChange(site.id);
   return withBackupLock(
     async () => {
       const state =
@@ -1581,64 +1585,30 @@ async function changedFiles(site, before, after) {
     .map(p => p.slice(prefix.length))
     .sort();
 }
-async function fullBackup(site, maxFiles = 10000) {
-  return withBackupLock(
-    async () => {
-      const state = await branchState(),
-        remote = await connectSite(site),
-        prefix = 'sites/' + site.slug + '/',
-        publicPrefix = prefix + 'public/',
-        changes = [],
-        seen = new Set();
-      let count = 0;
-      const patterns = Array.isArray(site.exclude_patterns) ? site.exclude_patterns : [],
-        excluded = p => patterns.some(x => p.includes(x));
-      async function addFile(rel) {
-        if (++count > maxFiles) throw new Error('Backup stopped after ' + maxFiles + ' files');
-        const repoPath = publicPrefix + rel,
-          content = await remote.read(joinRemote(site.remote_root, rel)),
-          existing = state.treeMap.get(repoPath);
-        seen.add(repoPath);
-        if (existing?.sha !== gitBlobSha(content)) changes.push(await gitTreeChangeFor(repoPath, content));
-      }
-      async function walk(rel = '') {
-        for (const e of await remote.list(joinRemote(site.remote_root, rel))) {
-          const child = rel ? rel + '/' + e.name : e.name;
-          if (excluded(child) || !websitePathAllowed(child)) continue;
-          if (e.type === 'directory') await walk(child);
-          else if (e.type === 'file') await addFile(child);
-        }
-      }
-      try {
-        await walk();
-        const metaPath = prefix + '.siteops.json',
-          meta = Buffer.from(JSON.stringify({ domain: site.domain, fileCount: count }, null, 2) + '\n'),
-          metaExisting = state.treeMap.get(metaPath);
-        seen.add(metaPath);
-        if (metaExisting?.sha !== gitBlobSha(meta)) changes.push(await gitTreeChangeFor(metaPath, meta));
-        for (const p of state.treeMap.keys())
-          if (p.startsWith(prefix) && !seen.has(p)) changes.push({ path: p, mode: '100644', type: 'blob', sha: null });
-        const { sha: commit } = await commitTreeChanges(state, changes, '[' + site.domain + '] Full backup'),
-          changed = commit !== state.headSha;
-        const backupId = crypto.randomUUID();
-        await q('insert into backups(id,site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?,?)', [
-          backupId,
-          site.id,
-          commit,
-          'full',
-          count,
-          changed
-        ]);
-        return { commit, files: count, changed };
-      } finally {
-        try {
-          await remote.close();
-        } catch {}
-      }
-    },
-    { maxHoldMs: BACKUP_LOCK_FULL_MS, label: 'full backup ' + site.domain }
-  );
-}
+// Reads the website without the backup lock and only locks for the final commit, so a
+// change_apply never waits for a download (see lib/full-backup.mjs for the merge rules).
+const fullBackup = createFullBackup({
+  withLock: withBackupLock,
+  branchState,
+  branchHeadMatches,
+  connectSite: site => connectSite(site),
+  joinRemote,
+  pathAllowed: websitePathAllowed,
+  gitBlobSha,
+  treeChangeFor: gitTreeChangeFor,
+  commitTreeChanges,
+  recordBackup: ({ site, commit, files, changed }) =>
+    q('insert into backups(id,site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?,?)', [
+      crypto.randomUUID(),
+      site.id,
+      commit,
+      'full',
+      files,
+      changed
+    ]),
+  readDeadlineMs: BACKUP_LOCK_FULL_MS,
+  commitLockMs: BACKUP_LOCK_SNAPSHOT_MS
+});
 async function listBackups(site, limit = 30) {
   return (
     await q(
@@ -2484,6 +2454,9 @@ function startBackupWorker() {
         )
       ).rows;
       for (const site of sites) {
+        // An interactive change is in progress or just finished: let it go first. The site
+        // stays due and is picked up on a later round.
+        if (fullBackup.changedRecently(site.id)) continue;
         const previous = (await q('select * from backup_state where site_id=?', [site.id])).rows[0];
         await q(
           `insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,

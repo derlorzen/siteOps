@@ -260,8 +260,15 @@ pre-change snapshot and skips files that already have the target content, so not
 written twice and no change is left without a post snapshot and history entry.
 
 Backup-repository writes are serialised with a bounded hold time
-(`SITEOPS_SNAPSHOT_LOCK_MS`, default 3 min; `SITEOPS_FULL_BACKUP_LOCK_MS`, default 20 min), so a
-single hung FTP or GitHub call can no longer block every later apply.
+(`SITEOPS_SNAPSHOT_LOCK_MS`, default 3 min), so a single hung FTP or GitHub call can no longer
+block every later apply.
+
+Full backups read the website **outside** that lock and only take it for their final commit, so
+a `change_apply` does not wait for a running backup of any website. The read is bounded by
+`SITEOPS_FULL_BACKUP_LOCK_MS` (default 20 min). If a change snapshot touches a file while a
+full backup of the same website is being read, the snapshot's version stays in the repository
+and the backup result reports it as `keptNewer`. Scheduled backups skip a website for a round
+when it had a change snapshot in the last two minutes.
 
 A domain preview is created first; only `change_apply` writes/commits it, after the additional server-bound personal approval described above.
 
