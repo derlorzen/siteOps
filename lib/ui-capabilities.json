@@ -437,6 +437,23 @@
   "GET /api/tools/projects": {
     "tools": ["projects_list"]
   },
+  "GET /api/calendar-bridge": {
+    "tools": ["calendar_bridge_status"],
+    "reason": "Das Dashboard zeigt zusätzlich die geheime Abo-Adresse und eine Terminvorschau. MCP erhält nur Regeln, Zeitpunkte und Zählwerte."
+  },
+  "POST /api/calendar-bridge/refresh": {
+    "tools": ["calendar_bridge_refresh"]
+  },
+  "PUT /api/calendar-bridge": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Die geheime iCal-Adresse des Quellkalenders und die Anonymisierungsregeln werden unmittelbar im Dashboard hinterlegt. Ein KI-Agent darf die Datenschutzgrenze des Feeds nicht selbst verändern."
+  },
+  "POST /api/calendar-bridge/token": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Das Erzeugen einer neuen geheimen Abo-Adresse ist eine persönliche Sicherheitsentscheidung im Dashboard."
+  },
   "POST /api/website-factory/plan": {
     "tools": ["website_create_plan"]
   },

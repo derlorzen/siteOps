@@ -29,6 +29,7 @@ import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
 import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-projects.mjs';
 import { registerToolsRoutes, createToolsService, passivePhpCheck } from './lib/tools.mjs';
+import { createCalendarBridge, registerCalendarBridgeRoutes } from './lib/calendar-bridge.mjs';
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
 import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
 import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
@@ -309,6 +310,7 @@ const billingWorkflows = createBillingWorkflows({
 
 const workspaceSearch = createWorkspaceSearch({ db });
 const toolsService = createToolsService(db);
+const calendarBridge = createCalendarBridge({ db, encrypt, decrypt, publicBaseUrl: () => cfg.publicBaseUrl });
 const aiUsage = createAiUsage({ db });
 const backupJobs = createBackupJobs({ db, getSite, backup: site => fullBackup(site, site.backup_max_files || 10000) });
 const workspaceActivity = createWorkspaceActivity(db);
@@ -5541,6 +5543,7 @@ function mcpServer(principal) {
     billing: billingController,
     workflows: billingWorkflows,
     tools: toolsService,
+    calendar: calendarBridge,
     phpCheck: passivePhpCheck,
     videoSuite: () => ready(videoSuiteService),
     studio: () => ready(videoStudioService),
@@ -7751,7 +7754,9 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
       path.startsWith('/assets/') ||
       oauthPublic ||
       path === '/login' ||
-      path.startsWith('/video-studio/download/')
+      path.startsWith('/video-studio/download/') ||
+      // Abo-Adresse der Kalender-Brücke: das geheime Token im Pfad ist die Berechtigung.
+      path.startsWith('/calendar/feed/')
     )
       return;
     if (path === '/mcp') {
@@ -7970,6 +7975,11 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   }
   registerCoolifyDeploymentRoutes(app, coolifyDeployer);
   registerToolsRoutes(app, { db, page, publicBaseUrl: () => cfg.publicBaseUrl, service: toolsService });
+  registerCalendarBridgeRoutes(app, { service: calendarBridge, page, publicBaseUrl: () => cfg.publicBaseUrl });
+  if (databaseReady) {
+    const stopCalendarBridge = calendarBridge.start();
+    app.addHook('onClose', async () => stopCalendarBridge());
+  }
   app.addHook('preHandler', async (req, reply) => {
     if (
       !['/api/hosting/allinkl/', '/api/website-factory/', '/api/coolify/'].some(prefix => req.url.startsWith(prefix)) ||
