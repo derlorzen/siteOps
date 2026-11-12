@@ -118,3 +118,55 @@ body.siteops-workspace .ops-main form.ui-toolbar{max-width:none;width:100%;paddi
 .siteops-workspace [tabindex]:focus-visible{outline:3px solid var(--siteops-accent-strong);outline-offset:3px}.siteops-workspace main :is(p,.notice) a{text-decoration:underline;text-underline-offset:.15em}.ui-field-error{color:var(--danger)!important;font-size:var(--fs-control)!important;margin:6px 0 0}
 
 .ui-settings-disclosure{border-top:1px solid var(--line);padding-top:12px}.ui-settings-disclosure>summary{cursor:pointer;color:var(--ink);min-height:44px;display:list-item;padding:10px 0;font-size:var(--fs-control);font-weight:600}.ui-settings-disclosure[open]>summary{margin-bottom:12px}.ui-more-actions{position:relative}.ui-more-actions>summary{min-height:40px;padding:9px 12px;cursor:pointer;font-size:var(--fs-control)}
+
+/* ==========================================================================================
+   Shared page pattern. Every workspace uses the same header, tab bar and button hierarchy;
+   module stylesheets only add what is specific to them.
+   ========================================================================================== */
+/* Page header: title and one line of purpose on the left, page actions on the right. */
+body.siteops-workspace .ops-main>header,
+body.siteops-workspace .ops-main :is(.ui-page-heading,.cms-workspace-header,.analytics-header){
+  display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 24px;
+  margin:0 0 24px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+body.siteops-workspace .ops-main>header>div:first-child,
+body.siteops-workspace .ops-main :is(.ui-page-heading,.cms-workspace-header)>div:first-child{flex:1 1 320px;min-width:0}
+body.siteops-workspace .ops-main :is(header,.ui-page-heading,.cms-workspace-header,.analytics-header) h1{
+  font:600 var(--fs-title)/1.25 var(--font-ui);letter-spacing:-.02em;margin:0 0 6px;color:var(--ink)}
+body.siteops-workspace .ops-main>header p,
+body.siteops-workspace .ops-main :is(.ui-page-heading,.cms-workspace-header,.analytics-header) p{
+  margin:0;max-width:72ch;font-size:var(--fs-body);line-height:1.55;color:var(--ink-muted)}
+body.siteops-workspace .ops-main :is(header,.cms-workspace-header) .eyebrow{display:block;margin:0 0 4px}
+.ui-page-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex:none}
+.ui-page-actions a:not(.btn):not(.button){display:inline-flex;align-items:center;min-height:40px;font-size:var(--fs-control)}
+
+/* Tab bar: underlined text tabs, accent marks the current one. */
+body.siteops-workspace .ops-main :is(.ops-site-tabs,.cms-workspace-nav,.analytics-nav,.ui-tabs){
+  display:flex;flex-wrap:nowrap;gap:24px;overflow-x:auto;scrollbar-width:thin;margin:0 0 24px;padding:0;
+  border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent}
+body.siteops-workspace .ops-main :is(.ops-site-tabs,.cms-workspace-nav,.ui-tabs) a,
+body.siteops-workspace .ops-main :is(.analytics-nav,.ui-tabs) button{
+  flex:none;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:10px 0;border:0;
+  border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--ink-secondary);
+  font:400 var(--fs-control)/1.4 var(--font-ui);white-space:nowrap;text-decoration:none}
+body.siteops-workspace .ops-main :is(.ops-site-tabs,.cms-workspace-nav,.ui-tabs) a:hover,
+body.siteops-workspace .ops-main :is(.analytics-nav,.ui-tabs) button:hover{background:transparent;color:var(--ink);filter:none}
+body.siteops-workspace .ops-main :is(.ops-site-tabs,.cms-workspace-nav,.ui-tabs) a:is([aria-current=page],.is-active),
+body.siteops-workspace .ops-main :is(.analytics-nav,.ui-tabs) button:is([aria-selected=true],[aria-current=page]){
+  color:var(--ink);border-bottom-color:var(--siteops-accent);font-weight:600;background:transparent}
+
+/* Buttons: one accent-coloured main action; everything else is quiet. */
+body.siteops-workspace .siteops-topbar .ops-top-new{background:var(--siteops-accent);border-color:var(--siteops-accent);color:var(--siteops-on-accent)}
+body.siteops-workspace .ops-main :is(button,.btn,.button).ghost,
+body.siteops-workspace .ops-main .ui-secondary{background:var(--surface);color:var(--ink);border-color:var(--line-control)}
+
+/* Sections and cards share one frame. */
+.ui-card{min-width:0;padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.ui-card>h2:first-child,.ui-card>h3:first-child{margin-top:0}
+.ui-section-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;margin:0 0 16px}
+.ui-section-head h2{margin:0;font:600 var(--fs-section)/1.35 var(--font-ui)}
+.ui-section-head p{margin:4px 0 0;color:var(--ink-muted);font-size:var(--fs-control)}
+@media(max-width:600px){
+  body.siteops-workspace .ops-main :is(.ops-site-tabs,.cms-workspace-nav,.analytics-nav,.ui-tabs){gap:20px}
+  .ui-page-actions{width:100%}
+  .ui-card{padding:16px}
+}

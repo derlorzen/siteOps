@@ -237,8 +237,8 @@ body.siteops-workspace .ops-main #gsc .gsc-text-action:hover {
   padding: 9px 14px;
   min-height: 40px;
   border-radius: 6px;
-  background: var(--ink);
-  color: white;
+  background: var(--siteops-accent);
+  color: var(--siteops-on-accent);
   font-size: 13px;
   text-decoration: none;
 }
@@ -591,9 +591,9 @@ body.siteops-workspace .ops-main #gsc .gsc-text-action:hover {
   background: #fff;
 }
 #gsc-overview .gsc-site[data-state='connected'] .gsc-site-action {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: #fff;
+  border-color: var(--siteops-accent);
+  background: var(--siteops-accent);
+  color: var(--siteops-on-accent);
 }
 @media (max-width: 600px) {
   #gsc-overview .gsc-kpis {

@@ -36,10 +36,10 @@
 body.ops-mode .ops-main #google-reconnect button {
   min-height: 44px;
   padding: 10px 16px;
-  border: 1px solid #172338;
+  border: 1px solid var(--siteops-accent);
   border-radius: 6px;
-  background: #172338;
-  color: #fff;
+  background: var(--siteops-accent);
+  color: var(--siteops-on-accent);
   font-size: 14px;
   font-weight: 600;
   white-space: normal;

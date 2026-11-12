@@ -4234,7 +4234,7 @@ async function clientReportPage(slug) {
     esc(site.slug) +
     '">← ' +
     esc(site.name) +
-    '</a><header><div><span class="eyebrow">QUALITY REPORT</span><h1>' +
+    '</a><header><div><h1>' +
     esc(site.name) +
     '</h1><p>' +
     esc(site.domain) +
@@ -6237,7 +6237,7 @@ function settingsPage() {
   return page(
     'Einstellungen',
     `
-    <header><div><span class="eyebrow">System</span><h1>Einstellungen</h1><p>Zentrale Konfiguration für Backups, Standardwerte neuer Websites und Benachrichtigungen.</p></div><span class="pill ok">MySQL verbunden</span></header>
+    <header><div><h1>Einstellungen</h1><p>Zentrale Konfiguration für Backups, Standardwerte neuer Websites und Benachrichtigungen.</p></div><span class="pill ok">MySQL verbunden</span></header>
     <section class="form-card siteops-appearance-section" aria-labelledby="siteopsAppearanceHeading">
       <div class="sectionhead"><div><span class="eyebrow">Darstellung</span><h2 id="siteopsAppearanceHeading">Design & Farben</h2></div></div>
       <p class="lead">Passe die Akzentfarbe des gesamten SiteOps-Workspaces an. Die Einstellung gilt auch für die Kundenverwaltung.</p>
@@ -6489,7 +6489,7 @@ async function syntheticTestsPage(slug) {
     esc(site.slug) +
     '">← ' +
     esc(site.name) +
-    '</a><header><div><span class="eyebrow">PLAYWRIGHT SYNTHETICS</span><h1>Browser Tests · ' +
+    '</a><header><div><h1>Browser Tests · ' +
     esc(site.name) +
     '</h1><p>Echte Chromium-Journeys, Fehler-Screenshots und visuelle Regressionen.</p></div><span class="pill ' +
     (runner ? 'ok' : 'bad') +
@@ -6528,7 +6528,7 @@ function setupPage() {
   return page(
     'Website hinzufügen',
     `
-    <header><div><span class="eyebrow">Neue Website</span><h1>Website hinzufügen</h1><p>Lege zuerst fest, was für eine Website es ist und wie sie deployed wird. SiteOps behandelt einen Hostinger-Git-Deploy anders als einen klassischen FTP-/SFTP-Webspace.</p></div></header>
+    <header><div><h1>Website hinzufügen</h1><p>Lege zuerst fest, was für eine Website es ist und wie sie deployed wird. SiteOps behandelt einen Hostinger-Git-Deploy anders als einen klassischen FTP-/SFTP-Webspace.</p></div></header>
     <form id="siteForm" class="config-form" data-unsaved-guard>
       <section class="form-card">
         <div class="sectionhead"><div><span class="eyebrow">1 · Zuordnung</span><h2>Website & Deployment</h2></div></div>
@@ -6968,7 +6968,7 @@ async function seoDashboardPage(slug) {
   if (!rows) rows = '<tr><td colspan="10">Noch kein abgeschlossener Crawl.</td></tr>';
   let html = '<a class="backlink" href="/sites/' + esc(site.slug) + '">← ' + esc(site.name) + '</a>';
   html +=
-    '<header><div><span class="eyebrow">WEBSITE QUALITY SUITE</span><h1>SEO · ' +
+    '<header><div><h1>SEO · ' +
     esc(site.name) +
     '</h1><p>Technischer SEO-Crawl, Duplicate-/Linkanalyse, Accessibility, Security-Header, Social Metadata, interne Seitenstärke, WDF×IDF und Lighthouse/PageSpeed.</p></div><div class="actions"><button class="ghost" onclick="siteOpsCopyPrompt({kind:\'seo_site\',site:\'' +
     site.slug +
@@ -7190,7 +7190,7 @@ async function seoPageDetailPage(id) {
     esc(site.slug) +
     '/seo">← SEO · ' +
     esc(site.name) +
-    '</a><header><div><span class="eyebrow">SEO PAGE</span><h1>' +
+    '</a><header><div><h1>' +
     esc(p.title || p.path) +
     '</h1><p><a href="' +
     esc(p.url) +
