@@ -203,6 +203,23 @@ test(
     await page.waitForFunction(() =>
       document.getElementById('yt-channel-summary').textContent.includes('A real test channel')
     );
+    // The dashboard is the entry point: channel figures, latest videos and the main tasks.
+    assert.equal(await page.locator('[data-tab="overview"]').getAttribute('aria-current'), 'page');
+    await page.locator('#yt-dashboard').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#yt-onboarding').isVisible(), false);
+    assert.equal(await page.locator('#yt-ov-title').textContent(), 'A real test channel');
+    await page.locator('#yt-ov-videos .yt-ov-video').first().waitFor();
+    assert.match(await page.locator('#yt-ov-stats').textContent(), /Abonnenten.*Videos\s*1.*Aufrufe gesamt/s);
+    assert.equal(await page.locator('[data-tab="captions"]').count(), 0, 'thumbnail view is reached from a video');
+    await page.locator('.yt-action[data-go="comments"]').click();
+    assert.equal(await page.locator('[data-tab="comments"]').getAttribute('aria-current'), 'page');
+    await page.locator('#yt-comment-empty').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#yt-comments-status').textContent(), /keine Kommentare/);
+    await page.locator('[data-tab="playlists"]').click();
+    assert.equal(await page.locator('#yt-playlist-heading').textContent(), 'Neue Playlist');
+    assert.equal(await page.locator('#yt-playlist-contents').isVisible(), false);
+    assert.equal(await page.locator('#yt-playlist-pick option').count(), 2, 'loaded videos can be picked by title');
+    await page.locator('[data-tab="videos"]').click();
     assert.equal(await page.locator('[data-tab="videos"]').getAttribute('aria-current'), 'page');
     const card = page.getByRole('button', { name: 'An existing video', exact: true });
     await card.waitFor({ state: 'visible' });
@@ -239,6 +256,8 @@ test(
     );
     assert.match(await page.locator('#yt-player-note').textContent(), /Privates Video/);
     await page.locator('#yt-edit-assets').click();
+    assert.equal(await page.locator('#yt-panel-captions').isVisible(), true);
+    assert.equal(await page.locator('[data-tab="videos"]').getAttribute('aria-current'), 'page');
     assert.equal(await page.locator('#yt-player iframe').count(), 0, 'leaving videos stops playback');
     assert.equal(await page.locator('#yt-current-thumbnail').isVisible(), true);
     await page.locator('#yt-thumbnail').setInputFiles({

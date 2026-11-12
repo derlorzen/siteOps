@@ -10,11 +10,15 @@
     videoPage,
     commentPage,
     library = [],
+    playlists = [],
+    comments = [],
+    captions = [],
     videoRequest = 0,
     libraryRequest = 0,
     thumbnailUrl,
     categories,
-    selectedTab = 'videos',
+    selectedTab = 'overview',
+    overviewRequest = 0,
     analyticsRequest = 0,
     analyticsCache = null,
     analyticsContext = '',
@@ -65,21 +69,6 @@
       e.preventDefault();
       run(e.submitter || $(id).querySelector('button'), fn);
     });
-  const list = (id, items, label, choose, append = false) => {
-    const container = $(id);
-    if (!append) container.replaceChildren();
-    if (!items.length && !append) {
-      container.textContent = 'Keine Einträge vorhanden.';
-      return;
-    }
-    for (const item of items) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label(item);
-      b.addEventListener('click', () => run(b, () => choose(item)));
-      container.append(b);
-    }
-  };
   const choices = (id, items, label) => {
     const old = $(id).value;
     $(id).replaceChildren();
@@ -132,7 +121,141 @@
     $('yt-new-thumbnail').removeAttribute('src');
     $('yt-new-thumbnail-box').hidden = true;
   };
+  const number = value =>
+    value === undefined || value === null || value === '' || !Number.isFinite(Number(value))
+      ? '–'
+      : new Intl.NumberFormat('de-DE').format(Number(value));
+  const shortDate = value => {
+    const date = value && new Date(value);
+    return date && Number.isFinite(date.getTime()) ? date.toLocaleDateString('de-DE') : '';
+  };
+  const element = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const stat = (label, value, hint) => {
+    const box = element('div', 'yt-stat');
+    // The hint lives inside the <dd>: a definition list may only contain term/description pairs.
+    const description = element('dd');
+    description.append(element('b', '', value));
+    if (hint) description.append(element('small', '', hint));
+    box.append(element('dt', '', label), description);
+    return box;
+  };
+  const badge = (text, tone = '') => {
+    const node = element('span', 'yt-badge', text);
+    if (tone) node.dataset.tone = tone;
+    return node;
+  };
+  const emptyRow = (container, text) => container.replaceChildren(element('p', 'yt-note yt-empty-row', text));
+  // A selectable row: one button with a title line and a quieter meta line.
+  const rowButton = (title, meta, pressed, choose) => {
+    const b = element('button', 'yt-row');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(Boolean(pressed)));
+    const text = element('span', 'yt-row-text');
+    text.append(element('strong', '', title));
+    if (meta) text.append(element('small', '', meta));
+    b.append(text);
+    b.addEventListener('click', () => run(b, choose));
+    return b;
+  };
+  function renderOverviewVideos() {
+    const box = $('yt-ov-videos');
+    box.replaceChildren();
+    $('yt-ov-videos-status').textContent = library.length
+      ? ''
+      : 'Noch keine Videos vorhanden. Lade eine fertige Produktion hoch, um zu starten.';
+    for (const item of library.slice(0, 4)) {
+      const b = element('button', 'yt-ov-video');
+      b.type = 'button';
+      const cover = element('span', 'yt-video-cover');
+      thumbnail(cover, item.snippet.thumbnails, item.snippet.title);
+      const text = element('span', 'yt-row-text');
+      text.append(
+        element('strong', '', item.snippet.title),
+        element(
+          'small',
+          '',
+          [privacy(item.status?.privacyStatus), shortDate(item.snippet.publishedAt)].filter(Boolean).join(' · ')
+        )
+      );
+      b.append(cover, text);
+      b.addEventListener('click', () =>
+        run(b, async () => {
+          await loadVideo(item.id);
+          await selectTab('videos');
+        })
+      );
+      box.append(b);
+    }
+  }
+  function renderChannel() {
+    const statistics = channel?.statistics || {},
+      title = channel?.snippet?.title || '';
+    const tiles = () => [
+      stat('Abonnenten', statistics.hiddenSubscriberCount ? 'verborgen' : number(statistics.subscriberCount)),
+      stat('Videos', number(statistics.videoCount)),
+      stat('Aufrufe gesamt', number(statistics.viewCount))
+    ];
+    const summary = element('dl', 'yt-stats');
+    summary.append(...tiles());
+    $('yt-channel-summary').replaceChildren(element('p', 'yt-summary-title', title), summary);
+    $('yt-ov-title').textContent = title;
+    $('yt-ov-handle').textContent = channel?.snippet?.customUrl || '';
+    const avatar = $('yt-ov-avatar'),
+      url = imageUrl(channel?.snippet?.thumbnails?.default?.url || '');
+    avatar.replaceChildren();
+    if (url) {
+      const img = document.createElement('img');
+      img.alt = '';
+      img.src = url;
+      img.referrerPolicy = 'no-referrer';
+      img.addEventListener('error', () => avatar.replaceChildren(title.slice(0, 1).toUpperCase()), { once: true });
+      avatar.append(img);
+    } else avatar.textContent = title.slice(0, 1).toUpperCase();
+    $('yt-ov-open').hidden = !channel;
+    if (channel) $('yt-ov-open').href = 'https://www.youtube.com/channel/' + encodeURIComponent(channel.id);
+    $('yt-ov-stats').replaceChildren(
+      ...tiles(),
+      stat('Aufrufe', '…', 'letzte 28 Tage'),
+      stat('Wiedergabezeit', '…', 'letzte 28 Tage')
+    );
+  }
+  // The two 28-day tiles are optional: without the analytics permission they explain how to get it.
+  async function loadOverviewAnalytics() {
+    const request = ++overviewRequest,
+      tiles = [...$('yt-ov-stats').children].slice(3);
+    if (tiles.length < 2) return;
+    let row = null,
+      denied = false;
+    try {
+      row = (await api('analytics', { account_id: account(), days: 28, dimension: 'summary' }))?.rows?.[0] || null;
+    } catch (error) {
+      denied = error.status === 403;
+    }
+    if (request !== overviewRequest) return;
+    tiles[0].querySelector('dd b').textContent = row ? A.format(row.views, 'count') : '–';
+    tiles[1].querySelector('dd b').textContent = row ? A.format(row.estimatedMinutesWatched, 'hours') : '–';
+    if (!row)
+      for (const tile of tiles)
+        tile.querySelector('small').textContent = denied ? 'Analyse-Zugriff fehlt' : 'letzte 28 Tage · keine Daten';
+  }
+  function showConnected(connected) {
+    $('yt-onboarding').hidden = connected;
+    $('yt-dashboard').hidden = !connected;
+  }
   function resetVideos() {
+    overviewRequest++;
+    $('yt-ov-videos').replaceChildren();
+    $('yt-ov-stats').replaceChildren();
+    $('yt-ov-title').textContent = 'Kanal wird geladen …';
+    selectComment(null);
+    selectPlaylist(null);
+    $('yt-comments-status').textContent = '';
+    $('yt-playlists-status').textContent = '';
     analyticsRequest++;
     analyticsCache = null;
     analyticsContext = '';
@@ -142,6 +265,8 @@
     $('yt-analytics-empty').hidden = true;
     video = null;
     channel = null;
+    playlists = [];
+    comments = [];
     videoRequest++;
     libraryRequest++;
     library = [];
@@ -197,7 +322,7 @@
     const matches = library.filter(x => x.snippet.title.toLocaleLowerCase().includes(query));
     $('yt-video-list-status').textContent = library.length
       ? matches.length + ' von ' + library.length + ' geladenen Videos' + (videoPage ? ' · weitere verfügbar' : '')
-      : 'Noch keine Videos vorhanden. Eine fertige Produktion kannst du unter „Aus Video Studio hochladen“ übernehmen.';
+      : 'Noch keine Videos vorhanden. Eine fertige Produktion kannst du unter „Hochladen“ übernehmen.';
     if (!matches.length && library.length)
       $('yt-video-list-status').textContent = 'Kein geladenes Video passt zu deiner Suche.';
     for (const item of matches) {
@@ -496,8 +621,7 @@
   click('yt-analytics-load', loadAnalytics);
   click('yt-analytics-connect', async () => {
     if (!$('yt-account').value) {
-      $('yt-connection-settings').open = true;
-      (state?.configured ? $('yt-connect') : $('yt-client-id')).focus();
+      await openConnection();
       return;
     }
     const result = await api('oauth/start', { memberships: false, analytics: true });
@@ -507,7 +631,8 @@
     selectedTab = tab;
     for (const el of document.querySelectorAll('[data-panel]')) el.hidden = el.dataset.panel !== tab;
     for (const el of document.querySelectorAll('[data-tab]')) {
-      const selected = el.dataset.tab === tab;
+      // Thumbnail & Untertitel is a sub-view of the selected video.
+      const selected = el.dataset.tab === (tab === 'captions' ? 'videos' : tab);
       el.setAttribute('aria-current', selected ? 'page' : 'false');
       el.setAttribute('aria-selected', String(selected));
       el.tabIndex = selected ? 0 : -1;
@@ -519,8 +644,21 @@
       if (video) renderPlayer();
       if (channel && !library.length) await loadVideos();
     }
+    if (tab === 'overview' && channel) {
+      if (!library.length) await loadVideos();
+      await loadOverviewAnalytics();
+    }
     if (tab === 'analytics') await loadAnalytics();
-    if (tab === 'captions') await importSuiteThumbnail();
+    if (tab === 'comments' && channel && !comments.length) await loadComments();
+    if (tab === 'playlists' && channel) {
+      if (!playlists.length) await loadPlaylists();
+      if (!library.length) await loadVideos().catch(() => {});
+      renderPlaylistPicker();
+    }
+    if (tab === 'captions') {
+      await importSuiteThumbnail();
+      if (video && !captions.length) await loadCaptions().catch(() => {});
+    }
     if (tab === 'upload') {
       await loadJobs();
       if ($('yt-account').value) await loadUploads();
@@ -529,10 +667,22 @@
   };
   for (const b of document.querySelectorAll('[data-tab]'))
     b.addEventListener('click', () => run(b, () => selectTab(b.dataset.tab)));
+  for (const b of document.querySelectorAll('[data-go]'))
+    b.addEventListener('click', () => run(b, () => selectTab(b.dataset.go)));
+  async function openConnection() {
+    await selectTab('channel', false);
+    $('yt-connection-settings').open = true;
+    (state?.configured ? $('yt-connect') : $('yt-client-id')).focus();
+  }
+  click('yt-onboarding-start', openConnection);
   async function review(promise) {
     const result = await promise;
     pending = result;
     $('yt-review').hidden = false;
+    const [resource, verb] = String(result.action || '').split('.');
+    $('yt-review-action').textContent = result.action
+      ? (names[resource] || resource) + ' · ' + (verbs[verb] || verb)
+      : '';
     $('yt-review-warning').textContent = result.warning;
     $('yt-review-content').textContent = JSON.stringify({ ...result, preview_token: undefined }, null, 2);
     $('yt-review-result').textContent = 'Noch nicht ausgeführt. Diese Vorschau gilt zehn Minuten.';
@@ -568,6 +718,7 @@
         x.title +
         (state.accounts.filter(item => item.title === x.title).length > 1 ? ' · ' + x.channel_id.slice(-6) : '')
     );
+    if (!state.accounts.length) $('yt-account').append(new Option('Noch kein Kanal verbunden', ''));
     if (!state.accounts.length || previousAccount !== $('yt-account').value) resetVideos();
     $('yt-client-id').value = state.client_id;
     $('yt-client-secret').value = '';
@@ -579,9 +730,12 @@
         : 'Google-OAuth-Client einrichten und anschließend den Kanal verbinden.';
     $('yt-connect').disabled = !state.configured;
     $('yt-connect').textContent = state.accounts.length ? 'Weiteren Kanal verbinden' : 'Mit Google verbinden';
+    $('yt-status').dataset.state = state.accounts.length ? 'ready' : 'setup';
+    showConnected(Boolean(state.accounts.length));
     if (state.accounts.length) {
       await loadChannel();
-      if (selectedTab === 'videos') await loadVideos();
+      if (['videos', 'overview'].includes(selectedTab)) await loadVideos();
+      if (selectedTab === 'overview') loadOverviewAnalytics();
     }
   }
   click('yt-refresh', loadStatus);
@@ -616,8 +770,11 @@
       commentPage = null;
       for (const id of ['yt-videos', 'yt-playlists', 'yt-comments', 'yt-captions']) $(id).replaceChildren();
       await loadChannel();
-      if (selectedTab === 'videos') await loadVideos();
+      if (['videos', 'overview'].includes(selectedTab)) await loadVideos();
+      if (selectedTab === 'overview') await loadOverviewAnalytics();
       if (selectedTab === 'analytics') await loadAnalytics();
+      if (selectedTab === 'comments') await loadComments();
+      if (selectedTab === 'playlists') await loadPlaylists();
     })
   );
   async function loadChannel() {
@@ -629,15 +786,7 @@
     channel = result.items?.find(x => x.id === active.channel_id);
     if (!channel) throw Error('Der ausgewählte Kanal ist bei Google nicht mehr freigegeben. Bitte erneut verbinden.');
     const branding = channel.brandingSettings?.channel || {};
-    $('yt-channel-summary').textContent =
-      channel.snippet.title +
-      ' · ' +
-      (channel.statistics?.subscriberCount || '–') +
-      ' Abonnenten · ' +
-      (channel.statistics?.videoCount || '–') +
-      ' Videos · ' +
-      (channel.statistics?.viewCount || '–') +
-      ' Aufrufe';
+    renderChannel();
     $('yt-channel-title').value = branding.title || channel.snippet.title;
     $('yt-channel-description').value = branding.description || channel.snippet.description || '';
     $('yt-channel-keywords').value = branding.keywords || '';
@@ -691,6 +840,8 @@
       const items = ids.map(id => details.items?.find(x => x.id === id)).filter(Boolean);
       library = more ? [...new Map([...library, ...items].map(x => [x.id, x])).values()] : items;
       renderVideoList();
+      renderOverviewVideos();
+      renderPlaylistPicker();
     } catch (error) {
       if (request === libraryRequest)
         $('yt-video-list-status').textContent = 'Videos konnten nicht geladen werden. Bitte erneut versuchen.';
@@ -749,6 +900,7 @@
     if (url) $('yt-current-thumbnail').src = url;
     else $('yt-current-thumbnail').removeAttribute('src');
     clearThumbnailPreview();
+    captions = [];
     $('yt-captions').replaceChildren();
     $('yt-caption-id').value = '';
     $('yt-caption-text').value = '';
@@ -792,21 +944,68 @@
     await preview('videos.update', { part: 'snippet,status' }, { id, snippet, status }, undefined, video.etag);
   });
   click('yt-delete-video', () => preview('videos.delete', { id: $('yt-video-id').value }));
-  async function loadPlaylists() {
-    const result = await read('playlists.list', { part: 'snippet,status', mine: true, maxResults: 50 });
-    list(
-      'yt-playlists',
-      result.items || [],
-      x => x.snippet.title,
-      async x => {
-        playlist = x;
-        $('yt-playlist-id').value = x.id;
-        $('yt-playlist-title').value = x.snippet.title;
-        $('yt-playlist-description').value = x.snippet.description || '';
-        $('yt-playlist-privacy').value = x.status.privacyStatus;
-      }
-    );
+  function renderPlaylistPicker() {
+    const pick = $('yt-playlist-pick'),
+      old = pick.value;
+    pick.replaceChildren(new Option(library.length ? 'Video auswählen …' : 'Keine Videos geladen', ''));
+    for (const item of library) pick.append(new Option(item.snippet.title, item.id));
+    if (library.some(item => item.id === old)) pick.value = old;
   }
+  $('yt-playlist-pick').addEventListener('change', () => {
+    $('yt-playlist-video').value = $('yt-playlist-pick').value;
+  });
+  function renderPlaylists() {
+    const box = $('yt-playlists');
+    box.replaceChildren();
+    $('yt-playlists-status').textContent = playlists.length
+      ? playlists.length + (playlists.length === 1 ? ' Playlist' : ' Playlists')
+      : 'Noch keine Playlists. Lege rechts deine erste an.';
+    for (const item of playlists) {
+      const count = item.contentDetails?.itemCount;
+      box.append(
+        rowButton(
+          item.snippet.title,
+          [privacy(item.status?.privacyStatus), count === undefined ? '' : count + (count === 1 ? ' Video' : ' Videos')]
+            .filter(Boolean)
+            .join(' · '),
+          playlist?.id === item.id,
+          () => selectPlaylist(item)
+        )
+      );
+    }
+  }
+  // null starts a new playlist; an item opens it for editing together with its videos.
+  async function selectPlaylist(item) {
+    playlist = item;
+    $('yt-playlist-id').value = item?.id || '';
+    $('yt-playlist-title').value = item?.snippet.title || '';
+    $('yt-playlist-description').value = item?.snippet.description || '';
+    $('yt-playlist-privacy').value = item?.status.privacyStatus || 'private';
+    $('yt-playlist-heading').textContent = item ? 'Playlist bearbeiten' : 'Neue Playlist';
+    $('yt-playlist-submit').textContent = item ? 'Playliständerung prüfen' : 'Neue Playlist prüfen';
+    $('yt-playlist-contents').hidden = !item;
+    $('yt-playlist-items-list').replaceChildren();
+    renderPlaylists();
+    if (item) await loadPlaylistItems();
+  }
+  async function loadPlaylists() {
+    $('yt-playlists-status').textContent = 'Playlists werden geladen …';
+    const result = await read('playlists.list', { part: 'snippet,status,contentDetails', mine: true, maxResults: 50 });
+    playlists = result.items || [];
+    if (playlist) playlist = playlists.find(item => item.id === playlist.id) || null;
+    renderPlaylists();
+  }
+  click('yt-playlist-new', async () => {
+    await selectPlaylist(null);
+    $('yt-playlist-title').focus();
+  });
+  // Typing an ID by hand switches between "new" and "edit" like a selection does.
+  $('yt-playlist-id').addEventListener('input', () => {
+    const typed = Boolean($('yt-playlist-id').value.trim());
+    $('yt-playlist-heading').textContent = typed ? 'Playlist bearbeiten' : 'Neue Playlist';
+    $('yt-playlist-submit').textContent = typed ? 'Playliständerung prüfen' : 'Neue Playlist prüfen';
+    $('yt-playlist-contents').hidden = !typed;
+  });
   click('yt-load-playlists', loadPlaylists);
   submit('yt-playlist-form', () => {
     const id = $('yt-playlist-id').value.trim(),
@@ -820,19 +1019,28 @@
     return preview(id ? 'playlists.update' : 'playlists.insert', { part: 'snippet,status' }, body);
   });
   click('yt-playlist-delete', () => preview('playlists.delete', { id: $('yt-playlist-id').value }));
-  click('yt-playlist-items', async () => {
+  async function loadPlaylistItems() {
+    const box = $('yt-playlist-items-list');
     const result = await read('playlistItems.list', {
       part: 'snippet,contentDetails',
       playlistId: $('yt-playlist-id').value,
       maxResults: 50
     });
-    list(
-      'yt-playlist-items-list',
-      result.items || [],
-      x => x.snippet.title + ' – Aus Playlist entfernen',
-      x => preview('playlistItems.delete', { id: x.id })
-    );
-  });
+    box.replaceChildren();
+    if (!(result.items || []).length) return emptyRow(box, 'Diese Playlist enthält noch keine Videos.');
+    for (const item of result.items) {
+      const row = element('div', 'yt-row yt-row-static');
+      const text = element('span', 'yt-row-text');
+      text.append(element('strong', '', item.snippet.title));
+      const remove = element('button', 'yt-row-action', 'Entfernen');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', 'Aus Playlist entfernen: ' + item.snippet.title);
+      remove.addEventListener('click', () => run(remove, () => preview('playlistItems.delete', { id: item.id })));
+      row.append(text, remove);
+      box.append(row);
+    }
+  }
+  click('yt-playlist-items', loadPlaylistItems);
   click('yt-playlist-add', () =>
     preview(
       'playlistItems.insert',
@@ -845,7 +1053,60 @@
       }
     )
   );
+  function selectComment(thread) {
+    const top = thread?.snippet.topLevelComment;
+    $('yt-comment-id').value = top?.id || '';
+    $('yt-comment-text').value = '';
+    $('yt-comment-empty').hidden = Boolean(thread);
+    $('yt-comment-editor').hidden = !thread;
+    if (thread) {
+      const quote = $('yt-comment-quote');
+      quote.replaceChildren(
+        element('strong', '', top.snippet.authorDisplayName),
+        element('p', '', top.snippet.textOriginal)
+      );
+    }
+    for (const b of $('yt-comments').children) b.setAttribute('aria-pressed', String(b.dataset.commentId === top?.id));
+  }
+  function renderComments() {
+    const box = $('yt-comments');
+    box.replaceChildren();
+    $('yt-comments-status').textContent = comments.length
+      ? comments.length +
+        (comments.length === 1 ? ' Kommentar' : ' Kommentare') +
+        (commentPage ? ' · weitere verfügbar' : '')
+      : 'In dieser Ansicht gibt es keine Kommentare.';
+    const selected = $('yt-comment-id').value;
+    for (const thread of comments) {
+      const top = thread.snippet.topLevelComment,
+        b = element('button', 'yt-comment');
+      b.type = 'button';
+      b.dataset.commentId = top.id;
+      b.setAttribute('aria-pressed', String(top.id === selected));
+      const head = element('span', 'yt-comment-head');
+      head.append(
+        element('strong', '', top.snippet.authorDisplayName),
+        element('small', '', shortDate(top.snippet.publishedAt))
+      );
+      const replies = Number(thread.snippet.totalReplyCount) || 0,
+        about = library.find(item => item.id === thread.snippet.videoId)?.snippet.title;
+      b.append(head, element('span', 'yt-comment-text', top.snippet.textOriginal));
+      const meta = element('span', 'yt-comment-meta');
+      if (about) meta.append(element('small', '', 'Zu: ' + about));
+      meta.append(
+        badge(
+          replies ? replies + (replies === 1 ? ' Antwort' : ' Antworten') : 'Unbeantwortet',
+          replies ? '' : 'attention'
+        )
+      );
+      b.append(meta);
+      b.addEventListener('click', () => selectComment(thread));
+      box.append(b);
+    }
+  }
   async function loadComments(more = false) {
+    if (!channel) throw Error('Bitte zuerst einen YouTube-Kanal verbinden und auswählen.');
+    $('yt-comments-status').textContent = 'Kommentare werden geladen …';
     const result = await read('commentThreads.list', {
       part: 'snippet,replies',
       allThreadsRelatedToChannelId: channel.id,
@@ -855,17 +1116,19 @@
     });
     commentPage = result.nextPageToken;
     $('yt-more-comments').disabled = !commentPage;
-    list(
-      'yt-comments',
-      result.items || [],
-      x => x.snippet.topLevelComment.snippet.authorDisplayName + ': ' + x.snippet.topLevelComment.snippet.textOriginal,
-      async x => {
-        $('yt-comment-id').value = x.snippet.topLevelComment.id;
-        $('yt-comment-text').value = '';
-      },
-      more
-    );
+    $('yt-more-comments').hidden = !commentPage;
+    comments = more ? [...comments, ...(result.items || [])] : result.items || [];
+    if (!more) selectComment(null);
+    renderComments();
   }
+  $('yt-comment-filter').addEventListener('change', () => run($('yt-comment-filter'), () => loadComments()));
+  // A manually typed ID opens the editor without a quoted comment.
+  $('yt-comment-id').addEventListener('input', () => {
+    const typed = Boolean($('yt-comment-id').value.trim());
+    $('yt-comment-editor').hidden = !typed;
+    $('yt-comment-empty').hidden = typed;
+    $('yt-comment-quote').replaceChildren(element('p', '', 'Kommentar über ID gewählt.'));
+  });
   click('yt-load-comments', () => loadComments());
   click('yt-more-comments', () => loadComments(true));
   click('yt-comment-reply', () =>
@@ -890,20 +1153,38 @@
       banAuthor: $('yt-comment-ban').checked
     })
   );
-  click('yt-load-captions', async () => {
+  function selectCaption(track) {
+    $('yt-caption-id').value = track?.id || '';
+    $('yt-caption-name').value = track?.snippet.name || '';
+    $('yt-caption-draft').checked = Boolean(track?.snippet.isDraft);
+    if (track) $('yt-caption-language').value = track.snippet.language;
+    renderCaptions();
+  }
+  function renderCaptions() {
+    const box = $('yt-captions');
+    box.replaceChildren();
+    if (!captions.length) return emptyRow(box, 'Dieses Video hat noch keine Untertitelspur.');
+    for (const track of captions)
+      box.append(
+        rowButton(
+          track.snippet.name || 'Ohne Namen',
+          track.snippet.language + (track.snippet.isDraft ? ' · Entwurf' : ''),
+          $('yt-caption-id').value === track.id,
+          async () => selectCaption(track)
+        )
+      );
+  }
+  async function loadCaptions() {
     if (video?.id !== $('yt-caption-video').value.trim()) await loadVideo($('yt-caption-video').value.trim());
     const result = await read('captions.list', { part: 'snippet', videoId: $('yt-caption-video').value });
-    list(
-      'yt-captions',
-      result.items || [],
-      x => x.snippet.name + ' · ' + x.snippet.language,
-      async x => {
-        $('yt-caption-id').value = x.id;
-        $('yt-caption-language').value = x.snippet.language;
-        $('yt-caption-name').value = x.snippet.name;
-        $('yt-caption-draft').checked = Boolean(x.snippet.isDraft);
-      }
-    );
+    captions = result.items || [];
+    renderCaptions();
+  }
+  click('yt-load-captions', loadCaptions);
+  click('yt-caption-new', async () => {
+    selectCaption(null);
+    $('yt-caption-text').value = '';
+    $('yt-caption-name').focus();
   });
   const base64 = text => {
     const bytes = new TextEncoder().encode(text);
@@ -1017,26 +1298,59 @@
       })
     );
   });
+  const uploadStates = {
+    queued: ['Wartet', ''],
+    pending: ['Wartet', ''],
+    retry: ['Neuer Versuch folgt', 'progress'],
+    uploading: ['Lädt hoch', 'progress'],
+    processing: ['Wird verarbeitet', 'progress'],
+    done: ['Fertig', 'success'],
+    completed: ['Fertig', 'success'],
+    failed: ['Fehlgeschlagen', 'error'],
+    cancelled: ['Abgebrochen', '']
+  };
   async function loadUploads() {
     const rows = await api('uploads?account_id=' + encodeURIComponent(account()));
     const box = $('yt-uploads');
     box.replaceChildren();
-    if (!rows.length) box.textContent = 'Noch keine Uploads aus SiteOps.';
+    if (!rows.length) emptyRow(box, 'Noch keine Uploads aus SiteOps.');
     for (const row of rows) {
-      const article = document.createElement('article');
-      article.textContent =
-        row.status +
-        ' · ' +
-        (row.total_bytes
-          ? Math.round((Number(row.uploaded_bytes) / Number(row.total_bytes)) * 100) + ' %'
-          : 'Größe wird ermittelt') +
-        (row.error ? ' · ' + row.error : '');
+      const article = element('article', 'yt-upload'),
+        [label, tone] = uploadStates[row.status] || [row.status, ''],
+        percent = row.total_bytes
+          ? Math.max(0, Math.min(100, Math.round((Number(row.uploaded_bytes) / Number(row.total_bytes)) * 100)))
+          : null;
+      const head = element('div', 'yt-upload-head');
+      head.append(
+        element(
+          'strong',
+          '',
+          (row.kind === 'short' ? '9:16-Short' : 'Hauptvideo') +
+            (shortDate(row.created_at) ? ' · ' + shortDate(row.created_at) : '')
+        ),
+        badge(label, tone),
+        element('small', '', percent === null ? 'Größe wird ermittelt' : percent + ' %')
+      );
+      article.append(head);
+      if (percent !== null) {
+        const bar = element('div', 'yt-progress');
+        bar.setAttribute('role', 'progressbar');
+        bar.setAttribute('aria-valuemin', '0');
+        bar.setAttribute('aria-valuemax', '100');
+        bar.setAttribute('aria-valuenow', String(percent));
+        bar.setAttribute('aria-label', 'Upload-Fortschritt');
+        const fill = element('span');
+        fill.style.width = percent + '%';
+        bar.append(fill);
+        article.append(bar);
+      }
+      if (row.error) article.append(element('p', 'yt-error', row.error));
       if (row.remote_video_id) {
         const a = document.createElement('a');
         a.href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(row.remote_video_id);
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
-        a.textContent = ' Video auf YouTube öffnen';
+        a.textContent = 'Video auf YouTube öffnen ↗';
         article.append(a);
       }
       if (row.status === 'failed') {
@@ -1189,6 +1503,7 @@
     else await preview(definition.action, parameters, body, media);
   });
   const initialTab = [
+    'overview',
     'analytics',
     'upload',
     'videos',
@@ -1199,7 +1514,7 @@
     'advanced'
   ].includes(location.hash.slice(1).split('?')[0])
     ? location.hash.slice(1).split('?')[0]
-    : 'videos';
+    : 'overview';
   selectTab(initialTab, false);
   document.querySelector('.yt-tabs').addEventListener('keydown', event => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;

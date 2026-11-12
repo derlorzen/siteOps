@@ -210,6 +210,14 @@ test('sync uses final data, weighted metrics, separate dimensions, comparison an
   );
   assert.equal((await f.service.performance('demo', { dimension: 'page' })).rows[0].keys[0], 'https://example.com/');
   assert.equal((await f.service.performance('demo', { offset: 1 })).rows.length, 0);
+  // The central overview carries the same headline figures without the row data.
+  const summary = (await f.service.overview())[0].performance,
+    synced = await f.service.performance('demo');
+  assert.equal(summary.clicks, synced.totals.clicks);
+  assert.equal(summary.impressions, synced.totals.impressions);
+  assert.equal(summary.previous_clicks, synced.previous_totals.clicks);
+  assert.ok(summary.daily_clicks.every(Number.isFinite));
+  assert.equal(summary.queries, undefined);
   assert.equal(f.dnsEvents.length, 0);
   assert.ok(!f.requests.some(x => x.init.method === 'PUT' || x.url.includes('/webResource?')));
   assert.deepEqual(
