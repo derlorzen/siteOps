@@ -31,7 +31,11 @@ export function searchConsoleFixture(options = {}) {
       }
       if (sql.startsWith('SELECT id FROM search_console_accounts')) return [[...accounts.values()].slice(0, 1)];
       if (sql.startsWith('SELECT id,email'))
-        return [[...accounts.values()].filter(x => x.subject === a[0]).map(({ id, email }) => ({ id, email }))];
+        return [
+          [...accounts.values()]
+            .filter(x => x.subject === a[0])
+            .map(({ id, email, reauth_required_at }) => ({ id, email, reauth_required_at: reauth_required_at || null }))
+        ];
       if (sql.startsWith('SELECT * FROM search_console_accounts'))
         return [[accounts.get(a[0])].filter(x => x?.subject === a[1])];
       if (sql.startsWith('INSERT INTO search_console_accounts')) {
@@ -45,8 +49,13 @@ export function searchConsoleFixture(options = {}) {
         });
         return [{ affectedRows: 1 }];
       }
+      if (sql.startsWith('UPDATE search_console_accounts SET reauth_required_at=NOW')) {
+        accounts.get(a[0]).reauth_required_at ||= new Date();
+        return [{ affectedRows: 1 }];
+      }
       if (sql.startsWith('UPDATE search_console_accounts')) {
         accounts.get(a[1]).encrypted_credentials = a[0];
+        accounts.get(a[1]).reauth_required_at = null;
         return [{ affectedRows: 1 }];
       }
       if (sql.startsWith('SELECT encrypted_payload FROM search_console_previews')) {

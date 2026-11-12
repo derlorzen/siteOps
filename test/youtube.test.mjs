@@ -29,9 +29,17 @@ function harness(fetcher, studio = () => ({})) {
       if (sql.startsWith('SELECT id,channel_id'))
         return [[...accounts.values()].map(({ encrypted_credentials: _credentials, ...x }) => x)];
       if (sql.startsWith('SELECT * FROM youtube_accounts')) return [[accounts.get(args[0])].filter(Boolean)];
-      if (sql.startsWith('INSERT INTO youtube_accounts'))
-        accounts.set(args[0], { id: args[0], channel_id: args[1], title: args[2], encrypted_credentials: args[3] });
-      if (sql.startsWith('UPDATE youtube_accounts')) accounts.get(args[1]).encrypted_credentials = args[0];
+      if (sql.startsWith('INSERT INTO youtube_accounts')) {
+        // ON DUPLICATE KEY: a channel that is connected again keeps its row and loses the expiry mark.
+        const known = [...accounts.values()].find(row => row.channel_id === args[1])?.id || args[0];
+        accounts.set(known, { id: known, channel_id: args[1], title: args[2], encrypted_credentials: args[3] });
+      }
+      if (sql.startsWith('UPDATE youtube_accounts SET reauth_required_at=NOW'))
+        accounts.get(args[0]).reauth_required_at ||= new Date(clock);
+      else if (sql.startsWith('UPDATE youtube_accounts')) {
+        accounts.get(args[1]).encrypted_credentials = args[0];
+        accounts.get(args[1]).reauth_required_at = null;
+      }
       if (sql.startsWith('INSERT INTO youtube_oauth_states'))
         states.set(args[0], { state_hash: args[0], encrypted_payload: args[1], expires_at: args[2] });
       if (sql.startsWith('SELECT * FROM youtube_oauth_states')) {
@@ -492,7 +500,10 @@ test('YouTube settings/OAuth use dashboard sessions and reject unauthenticated, 
         configured++;
         return {};
       },
-      completeOAuth: async (_query, session) => assert.ok(session.tokenHash)
+      finishOAuth: async (_query, session) => {
+        assert.ok(session.tokenHash);
+        return { accounts: [], return_to: '/youtube' };
+      }
     },
     { page: () => '', render: () => '', origin: () => 'https://siteops.test', worker: { stop: () => {} } }
   );
@@ -693,4 +704,87 @@ test('retry resumes only the same failed upload with a saved session and matchin
   await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 409 });
   row.account_id = 'other-account';
   await assert.rejects(service.retryUpload({ account_id: id, upload_id: id }), { statusCode: 404 });
+});
+
+test('an expired Google access is remembered and reconnecting restores the same channel and scopes', async () => {
+  const analytics = 'https://www.googleapis.com/auth/yt-analytics.readonly',
+    base = 'https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.force-ssl';
+  let mode = 'rejected',
+    refreshes = 0;
+  const h = harness(async (url, options) => {
+    if (String(url).includes('/token')) {
+      if (options.body.get('grant_type') === 'refresh_token') {
+        refreshes++;
+        if (mode === 'offline') throw new Error('network down');
+        return Response.json(
+          { error: 'invalid_grant', error_description: 'Token has been expired or revoked.' },
+          { status: 400 }
+        );
+      }
+      return Response.json({
+        access_token: 'fresh',
+        refresh_token: 'fresh-refresh',
+        expires_in: 3600,
+        scope: base + ' ' + analytics
+      });
+    }
+    return Response.json({ items: [{ id: 'UCtest', snippet: { title: 'Test channel' } }] });
+  });
+  await h.service.configure({ client_id: 'google-test-client-id', client_secret: 'client-secret' });
+  h.accounts.get(id).encrypted_credentials = encrypt({
+    access_token: 'access-secret',
+    refresh_token: 'refresh-secret',
+    expires_at: 0,
+    scope: base + ' ' + analytics
+  });
+  assert.equal((await h.service.status()).reconnect_required, false);
+
+  // Google being unreachable says nothing about the grant.
+  mode = 'offline';
+  assert.equal((await h.service.verifyAccess())[0].reconnect_required, false);
+
+  mode = 'rejected';
+  const checked = await h.service.verifyAccess();
+  assert.equal(checked[0].reconnect_required, true);
+  assert.ok(!JSON.stringify(checked).includes('refresh-secret'));
+  const status = await h.service.status();
+  assert.equal(status.reconnect_required, true);
+  assert.equal(status.accounts[0].reconnect_required, true);
+  await assert.rejects(
+    h.service.read({ account_id: id, action: 'channels.list', parameters: { part: 'snippet', mine: true } }),
+    { statusCode: 401 }
+  );
+  // A connection already known to be expired is not probed again on every page view.
+  const before = refreshes;
+  await h.service.verifyAccess();
+  assert.equal(refreshes, before);
+
+  const session = { tokenHash: 'session-hash' },
+    url = new URL(
+      (await h.service.beginOAuth(session, { account_id: id, return_to: '/youtube?google_reconnected=1' })).url
+    ),
+    scope = url.searchParams.get('scope').split(' ');
+  assert.ok(scope.includes(analytics), 'previously granted analytics access is requested again');
+  assert.ok(!scope.some(x => x.includes('channel-memberships')), 'nothing beyond the previous grant is requested');
+  const done = await h.service.finishOAuth(
+    { state: url.searchParams.get('state'), code: 'authorization-code' },
+    session
+  );
+  assert.equal(done.return_to, '/youtube?google_reconnected=1');
+  assert.equal(h.accounts.size, 1, 'the channel keeps its row');
+  assert.deepEqual(
+    done.accounts.map(row => [row.id, row.reconnect_required]),
+    [[id, false]]
+  );
+  assert.equal((await h.service.status()).reconnect_required, false);
+
+  // The return path can only be one of the two workspaces.
+  for (const target of ['https://evil.example/', '//evil.example', '/api/youtube/disconnect', '/youtube/../admin']) {
+    const next = new URL((await h.service.beginOAuth(session, { return_to: target })).url);
+    const result = await h.service.finishOAuth(
+      { state: next.searchParams.get('state'), code: 'authorization-code' },
+      session
+    );
+    assert.equal(result.return_to, '/youtube', target);
+  }
 });

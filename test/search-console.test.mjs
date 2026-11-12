@@ -433,3 +433,42 @@ test('local unlink/disconnect do not revoke remote properties or DNS', async () 
   assert.equal(f.dnsEvents.length, 0);
   assert.ok(txt.startsWith('google-site-verification='));
 });
+
+test('an expired Search Console access is remembered and reconnecting clears it', async () => {
+  let rejected = true;
+  const f = searchConsoleFixture({
+    fetcher: async (url, init) =>
+      rejected && url.includes('oauth2.googleapis.com/token') && String(init.body).includes('grant_type=refresh_token')
+        ? Response.json({ error: 'invalid_grant' }, { status: 400 })
+        : null
+  });
+  assert.equal((await f.service.status()).reconnect_required, false);
+  f.expireToken();
+  const checked = await f.service.verifyAccess();
+  assert.deepEqual(
+    checked.map(row => row.reconnect_required),
+    [true]
+  );
+  const status = await f.service.status();
+  assert.equal(status.reconnect_required, true);
+  assert.ok(!JSON.stringify(status).includes('refresh-test'));
+  const probes = f.requests.length;
+  await f.service.verifyAccess();
+  assert.equal(f.requests.length, probes, 'a known expired account is not probed again');
+
+  rejected = false;
+  const target = '/sites/demo/search-console?google_reconnected=1',
+    state = new URL((await f.service.beginOAuth(f.session, { return_to: target })).url).searchParams.get('state');
+  const done = await f.service.finishOAuth({ state, code: 'code' }, f.session);
+  assert.equal(done.return_to, target);
+  assert.deepEqual(
+    done.accounts.map(row => row.reconnect_required),
+    [false]
+  );
+  assert.equal((await f.service.status()).reconnect_required, false);
+
+  // Without a valid workspace path the callback keeps its previous destination.
+  const plain = new URL((await f.service.beginOAuth(f.session, { return_to: 'https://evil.example' })).url);
+  const fallback = await f.service.finishOAuth({ state: plain.searchParams.get('state'), code: 'code' }, f.session);
+  assert.equal(fallback.return_to, '/?search_console_connected=1');
+});

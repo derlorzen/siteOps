@@ -31,6 +31,7 @@ import { createBillingController, registerBillingRoutes } from './lib/billing.mj
 import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-projects.mjs';
 import { registerToolsRoutes, createToolsService, passivePhpCheck } from './lib/tools.mjs';
 import { createCalendarBridge, registerCalendarBridgeRoutes } from './lib/calendar-bridge.mjs';
+import { registerGoogleReconnectRoutes } from './lib/google-reconnect.mjs';
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
 import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
 import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
@@ -7936,6 +7937,7 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
     const html = renderSearchConsoleOverview(sites, status, overview, buildInfo.build);
     return reply.type('text/html').send(page('Google Search Console', html));
   });
+  registerGoogleReconnectRoutes(app, { youtube: youtubeService, searchConsole: searchConsoleService });
   registerSearchConsoleRoutes(app, searchConsoleService, {
     page,
     render: site => renderSearchConsole(site, buildInfo.build),

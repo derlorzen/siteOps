@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 281 API-Funktionen, 247 MCP-Tools, 44 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 282 API-Funktionen, 247 MCP-Tools, 44 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -274,6 +274,7 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | workspace | /billing | workspace.projectOverview | GET /api/workspace/projects/:id/overview | project_overview | Lesen | Keine zusätzliche | Zugeordnet |  |
 | workspace | / | workspace.search | GET /api/workspace/search | workspace_search | Lesen | Keine zusätzliche | Zugeordnet |  |
 | workspace | /websites | workspace.portfolio | GET /api/workspace/websites | websites_search | Lesen | Keine zusätzliche | Zugeordnet |  |
+| youtube | /youtube | youtube_status, search_console_status | GET /api/google-connections | youtube_status, search_console_status | Lesen | Keine zusätzliche | Zugeordnet | Fasst für den Hinweis im Dashboard zusammen, ob eine Google-Freigabe abgelaufen ist. Dieselbe Angabe steht je Dienst als reconnect_required im Status. |
 | youtube | /youtube | youtube_analytics | POST /api/youtube/analytics | youtube_analytics | Lesen | Keine zusätzliche | Zugeordnet |  |
 | youtube | /youtube | youtube_studio_asset_preview | POST /api/youtube/asset-preview | youtube_studio_asset_preview | Ändern | Keine zusätzliche | Zugeordnet |  |
 | youtube | /youtube | youtube_api_catalog | GET /api/youtube/catalog | youtube_api_catalog | Lesen | Keine zusätzliche | Zugeordnet |  |

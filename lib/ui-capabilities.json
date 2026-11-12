@@ -266,6 +266,10 @@
   "GET /api/youtube/status": {
     "tools": ["youtube_status"]
   },
+  "GET /api/google-connections": {
+    "tools": ["youtube_status", "search_console_status"],
+    "reason": "Fasst für den Hinweis im Dashboard zusammen, ob eine Google-Freigabe abgelaufen ist. Dieselbe Angabe steht je Dienst als reconnect_required im Status."
+  },
   "GET /api/youtube/catalog": {
     "tools": ["youtube_api_catalog"]
   },

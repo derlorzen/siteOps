@@ -18,6 +18,7 @@
     thumbnailUrl,
     categories,
     selectedTab = 'overview',
+    EXPIRED = 'Google-Freigabe abgelaufen. Verbinde den Kanal oben mit einem Klick neu.',
     overviewRequest = 0,
     analyticsRequest = 0,
     analyticsCache = null,
@@ -47,6 +48,8 @@
       body: data ? JSON.stringify(data) : undefined
     });
     const x = await r.json().catch(() => ({}));
+    // An expired Google access surfaces the reconnect notice at the top of the page.
+    if (r.status === 401) window.SiteOpsGoogleReconnect?.refresh();
     if (!r.ok) throw Object.assign(Error(x.message || x.error || 'HTTP ' + r.status), { status: r.status });
     return x;
   };
@@ -723,16 +726,24 @@
     $('yt-client-id').value = state.client_id;
     $('yt-client-secret').value = '';
     $('yt-callback').textContent = state.redirect_uri;
-    $('yt-status').textContent = state.accounts.length
-      ? 'Google-Verbindung bereit. Änderungen benötigen eine eigene Freigabe.'
-      : state.configured
-        ? 'Google-Client bereit. Verbinde jetzt deinen Kanal.'
-        : 'Google-OAuth-Client einrichten und anschließend den Kanal verbinden.';
+    const selected = state.accounts.find(row => row.id === $('yt-account').value),
+      expired = Boolean(selected?.reconnect_required);
+    $('yt-status').textContent = expired
+      ? EXPIRED
+      : state.accounts.length
+        ? 'Google-Verbindung bereit. Änderungen benötigen eine eigene Freigabe.'
+        : state.configured
+          ? 'Google-Client bereit. Verbinde jetzt deinen Kanal.'
+          : 'Google-OAuth-Client einrichten und anschließend den Kanal verbinden.';
     $('yt-connect').disabled = !state.configured;
     $('yt-connect').textContent = state.accounts.length ? 'Weiteren Kanal verbinden' : 'Mit Google verbinden';
-    $('yt-status').dataset.state = state.accounts.length ? 'ready' : 'setup';
+    $('yt-status').dataset.state = state.accounts.length && !expired ? 'ready' : 'setup';
     showConnected(Boolean(state.accounts.length));
-    if (state.accounts.length) {
+    if (expired) {
+      // Nothing can be loaded until Google is reconnected; the notice above offers that.
+      $('yt-ov-title').textContent = selected.title;
+      $('yt-ov-handle').textContent = 'Google-Freigabe abgelaufen';
+    } else if (state.accounts.length) {
       await loadChannel();
       if (['videos', 'overview'].includes(selectedTab)) await loadVideos();
       if (selectedTab === 'overview') loadOverviewAnalytics();
@@ -1535,7 +1546,8 @@
     .then(() => selectTab(initialTab))
     .catch(e => {
       notify(e.message, true);
-      $('yt-status').textContent = 'Verbindung konnte nicht geprüft werden.';
+      $('yt-status').textContent = e.status === 401 ? EXPIRED : 'Verbindung konnte nicht geprüft werden.';
+      $('yt-status').dataset.state = 'setup';
       if (initialTab === 'analytics')
         analyticsGate('Verbindung nicht verfügbar', 'Prüfe die Kanalverbindung und lade die Ansicht erneut.', true);
     });

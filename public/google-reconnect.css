@@ -1,0 +1,77 @@
+.google-reconnect {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 16px 20px;
+  border: 1px solid #ecd3a4;
+  border-left: 5px solid #c77d0a;
+  border-radius: 12px;
+  background: #fdf8ec;
+  color: #3d2c06;
+}
+.google-reconnect[hidden] {
+  display: none;
+}
+.google-reconnect[data-state='done'] {
+  border-color: #bfe2cf;
+  border-left-color: #1f9d61;
+  background: #edf8f1;
+  color: #14442b;
+}
+.google-reconnect h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+}
+.google-reconnect p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.google-reconnect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+body.ops-mode .ops-main #google-reconnect button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid #172338;
+  border-radius: 6px;
+  background: #172338;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: normal;
+  text-align: left;
+}
+body.ops-mode .ops-main #google-reconnect button:disabled {
+  opacity: 0.6;
+}
+.google-reconnect details {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.google-reconnect summary {
+  cursor: pointer;
+  min-height: 28px;
+}
+.google-reconnect details p {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.google-reconnect a {
+  color: inherit;
+}
+.google-reconnect-error {
+  color: #9a2730;
+  font-weight: 600;
+}
+@media (max-width: 600px) {
+  .google-reconnect {
+    padding: 14px 16px;
+  }
+  body.ops-mode .ops-main #google-reconnect button {
+    width: 100%;
+  }
+}
