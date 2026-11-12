@@ -158,7 +158,7 @@ test(
       return route.fulfill({ json: data });
     });
     await page.goto('https://workflow.test/video-suite#assets');
-    await page.getByLabel('Du arbeitest an dieser Produktion', { exact: true }).selectOption(id);
+    await page.getByLabel('Produktion', { exact: true }).selectOption(id);
     await page.waitForFunction(() => document.querySelector('#suite-seo-title').value === 'Original title');
     await page.getByLabel('Veröffentlichungstitel', { exact: true }).fill('Reviewed production title');
     await page.getByLabel('Eigenes Titelbild oder Screenshot auswählen', { exact: true }).setInputFiles({

@@ -594,7 +594,10 @@
   async function navigate(){
     const id=stage(),index=stages.findIndex(x=>x[0]===id),current=stages[index];
     document.querySelectorAll('[data-journey]').forEach(link=>{if(link.dataset.journey===id)link.setAttribute('aria-current','step');else link.removeAttribute('aria-current');});
-    $('suite-stage-kicker').textContent=index>=0?'Schritt '+(index+1)+' von '+stages.length:'Dein Studio';
+    const phases=[...document.querySelectorAll('.suite-phase')],phaseIndex=phases.findIndex(phase=>phase.querySelector('[data-journey="'+id+'"]'));
+    phases.forEach((phase,i)=>{phase.classList.toggle('is-current',i===phaseIndex);phase.classList.toggle('is-before',phaseIndex>=0&&i<phaseIndex);});
+    phases[phaseIndex]?.scrollIntoView({block:'nearest',inline:'nearest'});
+    $('suite-stage-kicker').textContent=phaseIndex>=0?'Phase '+(phaseIndex+1)+' von '+phases.length+' · '+phases[phaseIndex].querySelector('.suite-phase-name').lastChild.textContent:'Dein Studio';
     $('suite-stage-title').textContent=current?.[1] || 'Ein Video, ein durchgängiger Ablauf.';$('suite-stage-help').textContent=current?.[2] || 'Beginne mit einer Idee oder setze eine Produktion fort.';
     const next=stages[Math.min(index+1,stages.length-1)] || stages[0],link=$('suite-stage-next');link.href='#'+next[0];link.dataset.suiteGo=next[0];link.textContent='Weiter: '+next[1]+' →';link.hidden=['assets','review','publish','repurpose'].includes(id);
     $('suite-production-context').hidden=!['assets','review','publish','repurpose'].includes(id);
@@ -604,7 +607,7 @@
       if(id==='review'){if(packageDirty)await savePackage();if(job){publication=await api(endpoint(job.id));drawReview();}}
       if(id==='assets' && publication && !packageDirty)fillMetadata(publication);
       if(id==='publish'){
-        if(!publication || reviewed!==signature(publication)){$('suite-upload-prepare').disabled=true;$('suite-upload-status').textContent='Bitte zuerst die Gesamtvorschau prüfen und dort fortfahren.';}
+        if(!publication || reviewed!==signature(publication)){$('suite-upload-prepare').disabled=true;const hint=$('suite-upload-status');hint.textContent='Bitte zuerst die Gesamtvorschau prüfen. ';const go=document.createElement('a');go.href='#review';go.dataset.suiteGo='review';go.textContent='Zur Gesamtvorschau →';hint.append(go);}
         else{$('suite-upload-prepare').disabled=false;$('suite-upload-status').textContent='Geprüftes Paket: '+publication.youtube.title;}
         await channels();await uploads();
       }
@@ -711,3 +714,23 @@
   window.addEventListener('beforeunload',event=>{if(uploading){event.preventDefault();event.returnValue='';}});
   if($('vs-project').value)load().catch(e=>$('suite-intro-status').textContent=e.message);
 })();
+// Without a project there is nothing to continue with: "Weiter" points at the project
+// selection instead of opening an empty step.
+(() => {
+  'use strict';
+  const select = document.getElementById('vs-project'), next = document.getElementById('suite-stage-next'), suite = document.querySelector('.suite');
+  if (!select || !next || !suite) return;
+  const sync = () => { suite.dataset.project = select.value ? 'selected' : 'missing'; };
+  select.addEventListener('change', sync);
+  new MutationObserver(sync).observe(select, { childList: true });
+  sync();
+  next.addEventListener('click', event => {
+    if (select.value) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    select.focus();
+    const note = document.getElementById('vs-message');
+    if (note) note.textContent = 'Wähle zuerst ein Projekt aus. Danach geht es mit dem nächsten Schritt weiter.';
+  }, true);
+})();
+
