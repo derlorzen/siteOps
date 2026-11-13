@@ -216,7 +216,9 @@ test(
     await page.locator('#yt-comment-empty').waitFor({ state: 'visible' });
     // The empty-state element is visible while the async comments request runs.
     // Wait for the response before asserting the final status text.
-    await page.waitForFunction(() => /keine Kommentare/.test(document.getElementById('yt-comments-status')?.textContent || ''));
+    await page.waitForFunction(() =>
+      /keine Kommentare/.test(document.getElementById('yt-comments-status')?.textContent || '')
+    );
     assert.match(await page.locator('#yt-comments-status').textContent(), /keine Kommentare/);
     await page.locator('[data-tab="playlists"]').click();
     assert.equal(await page.locator('#yt-playlist-heading').textContent(), 'Neue Playlist');
