@@ -272,3 +272,10 @@ the job's Full-HD resolution without cropping. Audio is retained or filled with 
 and all segments use 48 kHz stereo AAC. Subtitle and outro timestamps include the
 actual intro duration. Status reports an `intro` object with ID, duration and output
 resolution. No source bytes or filesystem paths are exposed to the producer agent.
+
+
+## Browser Runner 1.5.1: Schutz gegen Zombie-Prozesse
+
+Docker verwendet `tini -g` als PID 1, damit verwaiste Chromium-/FFmpeg-Prozesse eingesammelt werden. Alle Browser-Endpunkte (einschließlich Video Studio) teilen sich `BROWSER_MAX_SESSIONS=2` als Standard, zulässige Werte 1–8. Bei ausgelasteten Browser-Slots wird HTTP 503 zurückgegeben. Für Docker-Compose `pids_limit: 256` und für systemd `TasksMax=256` sowie `KillMode=control-group` setzen.
+
+Wichtig: Für `browse.lorzen.de` in Hostinger Docker Manager die **tatsächlich verwendete** Compose-Datei aktualisieren, nicht nur die Vorlage. Tokens, Persistenzverzeichnisse für Videos/Modelle und Traefik-Labels unverändert lassen. Nach dem Update `/health` auf Version 1.5.1, `/video/capabilities` auf `audiovisualQaVersion:1` und `browserCapacity.max:2` prüfen. Zusätzlich Prozessorlast und Zombie-Anzahl über mehrere echte Browseraufrufe beobachten. Das Git-Merge führt kein automatisches Hostinger-Redeployment durch.
