@@ -25,6 +25,16 @@ services:
           fi
           # Reconcile only the prior generated public origin; leave other user settings untouched.
           sed -i 's#https://ki.lorzen.de#https://ki.lorzen.net#g' /opt/data/config.yaml
+          # Add the requested MCP without replacing user settings. Existing MCP
+          # sections are intentionally left alone for manual merging.
+          if ! grep -q '^mcp_servers:' /opt/data/config.yaml; then
+            printf '\n%s\n' \
+              'mcp_servers:' \
+              '  siteops:' \
+              '    url: https://siteops.lorzen.cloud/mcp' \
+              '    auth: oauth' \
+              >> /opt/data/config.yaml
+          fi
           chown 10000:10000 /opt/data /opt/data/config.yaml
   hermes:
     image: nousresearch/hermes-agent:stable
@@ -43,6 +53,10 @@ services:
       HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${HERMES_DASHBOARD_BASIC_AUTH_SECRET:?Missing dashboard secret}
     volumes:
       - hermes-oracle-data:/opt/data
+      # Make the agent, not Selene, the owner/initializer of this source volume.
+      # IMPORTANT: refresh the existing stale hermes-agent-src volume from the
+      # official image before deploying (see README.mcp-repair.md).
+      - hermes-agent-src:/opt/hermes
     expose:
       - "9119"
       - "9120"
@@ -105,6 +119,9 @@ services:
     depends_on:
       hermes-config:
         condition: service_completed_successfully
+      # Ensures source volume is initialized by the official Hermes image first.
+      hermes:
+        condition: service_healthy
     networks:
       - default
       - coolify
