@@ -186,5 +186,5 @@ body.siteops-workspace .ops-main [data-site-view]>section,
 body.siteops-workspace .ops-main [data-site-view] .twocol>section{margin-bottom:24px}
 body.siteops-workspace .ops-main .site-danger{border-color:#f0cdd0}
 @media(max-width:600px){.ops-site-subtabs{display:flex}.ops-site-subtabs a{flex:1;justify-content:center;padding:6px 8px}}
-body:is([data-site-view=settings],[data-site-view=history]) :is(#opsSiteProject,.ops-site-project){display:none}
+body:is([data-site-current=settings],[data-site-current=history]) :is(#opsSiteProject,.ops-site-project){display:none}
 .ui-link-cards li{margin:0;padding:0;border:0}

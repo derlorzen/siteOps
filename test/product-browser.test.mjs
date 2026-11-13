@@ -521,6 +521,60 @@ test(
     await page.getByText('Änderung ausgeführt und Dateiinhalt erneut geprüft.').waitFor();
     assert.equal(executed, 1);
     assert.equal(fileContent, '<h1>Neue Startseite</h1>');
+    // Hosting and Coolify are split into tabbed areas; the open area is part of the address.
+    await page.setViewportSize({ width: 1440, height: 960 });
+    for (const [route, keys] of [
+      ['hosting', ['accounts', 'dns', 'ssl']],
+      ['coolify', ['connections', 'apps', 'projects', 'supabase']]
+    ]) {
+      await page.goto('https://siteops.test/' + route);
+      const visible = () =>
+        page.locator('[data-ui-panel]:visible').evaluateAll(nodes => nodes.map(node => node.dataset.uiPanel));
+      assert.deepEqual(await visible(), [keys[0]], route + ' opens on its first area');
+      for (const key of keys) {
+        await page.locator('[data-ui-tab="' + key + '"]').click();
+        assert.deepEqual(await visible(), [key]);
+        assert.equal(new URL(page.url()).hash, '#' + key);
+        assert.equal(await page.locator('[data-ui-tab="' + key + '"]').getAttribute('aria-selected'), 'true');
+      }
+      await page.keyboard.press('Home');
+      assert.deepEqual(await visible(), [keys[0]], 'Home returns to the first tab');
+      await page.keyboard.press('ArrowLeft');
+      assert.deepEqual(await visible(), [keys.at(-1)], 'arrow keys wrap around');
+      await page.goto('https://siteops.test/' + route + '#' + keys[1]);
+      await page.reload();
+      assert.deepEqual(await visible(), [keys[1]], 'a reload keeps the open area');
+    }
+    // The website page has three views; tabs follow the address.
+    await page.goto('https://siteops.test/sites/nordlicht');
+    const siteView = () =>
+      page.locator('[data-site-view]:visible').evaluateAll(nodes => nodes.map(node => node.dataset.siteView));
+    assert.deepEqual(await siteView(), ['overview']);
+    assert.deepEqual(await page.locator('.ops-site-tabs a').allTextContents(), [
+      'Übersicht',
+      'Dateien',
+      'Sichtbarkeit',
+      'Tests',
+      'Bericht',
+      'Verlauf',
+      'Einstellungen'
+    ]);
+    for (const [label, view] of [
+      ['Einstellungen', 'settings'],
+      ['Verlauf', 'history'],
+      ['Übersicht', 'overview']
+    ]) {
+      await page.locator('.ops-site-tabs a', { hasText: label }).click();
+      assert.deepEqual(await siteView(), [view]);
+      assert.equal(await page.locator('.ops-site-tabs a[aria-current="page"]').textContent(), label);
+    }
+    await page.goto('https://siteops.test/sites/nordlicht/seo');
+    assert.equal(await page.locator('.ops-site-tabs a[aria-current="page"]').textContent(), 'Sichtbarkeit');
+    assert.deepEqual(await page.locator('.ops-site-subtabs a').allTextContents(), [
+      'SEO-Prüfung',
+      'Google-Suchleistung'
+    ]);
+    assert.equal(await page.locator('.ops-site-subtabs a[aria-current="page"]').textContent(), 'SEO-Prüfung');
     await page.goto('https://siteops.test/sites/nordlicht');
     await page.locator('#backupNow').click();
     await page.getByText('Sicherung erstellt und im Sicherungsverlauf gespeichert.', { exact: true }).waitFor();

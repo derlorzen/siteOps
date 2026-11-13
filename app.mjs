@@ -7410,7 +7410,7 @@ async function siteOperationsPage(slug) {
     <script>
     const slug=${JSON.stringify(site.slug)};
     // Übersicht, Einstellungen und Verlauf sind Ansichten derselben Seite (#settings, #history).
-    function showSiteView(){const view=['settings','history'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';for(const el of document.querySelectorAll('[data-site-view]'))el.hidden=el.dataset.siteView!==view;document.body.dataset.siteView=view;document.dispatchEvent(new CustomEvent('siteops:site-view',{detail:view}));}
+    function showSiteView(){const view=['settings','history'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';for(const el of document.querySelectorAll('[data-site-view]'))el.hidden=el.dataset.siteView!==view;document.body.dataset.siteCurrent=view;document.dispatchEvent(new CustomEvent('siteops:site-view',{detail:view}));}
     window.addEventListener('hashchange',showSiteView);showSiteView();
     window.addEventListener('DOMContentLoaded',()=>siteOpsTableView({tableId:'monitorTable',searchId:'monitorSearch',pageSizeId:'monitorPageSize',pagerId:'monitorPager',defaultSize:20,filters:[{id:'monitorStatus',data:'status'}]}));
     const byId=id=>document.getElementById(id);

@@ -192,6 +192,31 @@
       bar.insertAdjacentElement('afterend',views);
     }
   }
+  // Generic in-page tabs: [data-ui-tabs] holds [data-ui-tab] buttons, panels carry [data-ui-panel].
+  // The open tab is kept in the address (#key) so links and reloads land on the same view.
+  function uiTabs(){
+    const nav=$('[data-ui-tabs]');if(!nav)return;
+    const tabs=[...nav.querySelectorAll('[data-ui-tab]')],keys=tabs.map(tab=>tab.dataset.uiTab);
+    const select=(key,focus)=>{
+      if(!keys.includes(key))key=keys[0];
+      for(const tab of tabs){const on=tab.dataset.uiTab===key;tab.setAttribute('aria-selected',String(on));tab.tabIndex=on?0:-1;if(on&&focus)tab.focus();}
+      for(const panel of document.querySelectorAll('[data-ui-panel]'))panel.hidden=panel.dataset.uiPanel!==key;
+      return key;
+    };
+    for(const tab of tabs){
+      tab.addEventListener('click',()=>{history.replaceState(null,'','#'+select(tab.dataset.uiTab));});
+      tab.addEventListener('keydown',event=>{
+        const move={ArrowRight:1,ArrowLeft:-1}[event.key],index=tabs.indexOf(tab);
+        const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:move?(index+move+tabs.length)%tabs.length:null;
+        if(next===null)return;event.preventDefault();history.replaceState(null,'','#'+select(keys[next],true));
+      });
+    }
+    select(location.hash.slice(1));
+    window.addEventListener('hashchange',()=>select(location.hash.slice(1)));
+    // A link or script that targets something inside a hidden panel opens that panel first.
+    window.SiteOpsTabs={show:id=>{const panel=document.getElementById(id)?.closest('[data-ui-panel]');if(panel)select(panel.dataset.uiPanel);}};
+  }
+  uiTabs();
   siteTabs();
   if(/^\/sites\/[^/]+$/.test(path)){
     void Promise.all([fetchRelations(),fetchJSON('/api/sites/'+decodeURIComponent(path.split('/')[2]))])
