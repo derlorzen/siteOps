@@ -9,9 +9,12 @@ services:
   siteops-browser-runner:
     build: .
     restart: unless-stopped
+    # Defense-in-depth against fork storms; image itself uses tini as PID 1.
+    pids_limit: 256
     environment:
       BROWSER_RUNNER_TOKEN: 'replace-with-a-long-random-token'
       VIDEO_OUTPUT_DIR: /data/video-studio
+      BROWSER_MAX_SESSIONS: "2"
       VIDEO_MODEL_DIR: /data/video-studio/models
       # Optional: OpenAI is only used when a project explicitly selects OpenAI.
       # OPENAI_API_KEY: 'set-through-your-secret-manager'
