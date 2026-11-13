@@ -565,6 +565,9 @@ test(
       ['Übersicht', 'overview']
     ]) {
       await page.locator('.ops-site-tabs a', { hasText: label }).click();
+      // The view follows the address change, which the browser reports asynchronously.
+      await page.locator('[data-site-view="' + view + '"]').waitFor({ state: 'visible' });
+      await page.locator('.ops-site-tabs a[aria-current="page"]', { hasText: label }).waitFor();
       assert.deepEqual(await siteView(), [view]);
       assert.equal(await page.locator('.ops-site-tabs a[aria-current="page"]').textContent(), label);
     }
