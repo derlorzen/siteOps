@@ -6,7 +6,9 @@ import { launchGuarded, browserCapacityStatus } from '../runner/browser-capacity
 
 class FakeBrowser extends EventEmitter {
   connected = true;
-  isConnected() { return this.connected; }
+  isConnected() {
+    return this.connected;
+  }
   async close() {
     this.connected = false;
     this.emit('disconnected');
@@ -33,7 +35,12 @@ test('concurrent Chromium launches have one shared cap and release on close', as
 });
 
 test('failed browser launches never leak an active slot', async () => {
-  await assert.rejects(launchGuarded(async () => { throw Error('spawn failure'); }, {}), /spawn failure/);
+  await assert.rejects(
+    launchGuarded(async () => {
+      throw Error('spawn failure');
+    }, {}),
+    /spawn failure/
+  );
   assert.equal(browserCapacityStatus().active, 0);
 });
 
