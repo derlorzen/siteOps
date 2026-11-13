@@ -57,7 +57,11 @@ function studioFixture(t, { protocol = 1, status = 'draft', provider = 'openai' 
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     requests.push({ url, options });
     if (url.endsWith('/capabilities'))
-      return Response.json({ openaiKeyForwardingVersion: protocol, openaiConfigured: false });
+      return Response.json({
+        openaiKeyForwardingVersion: protocol,
+        audiovisualQaVersion: 1,
+        openaiConfigured: false
+      });
     if (url.endsWith('/openai-audio-test')) return Response.json({ ok: true, model: 'gpt-audio-1.5' });
     return Response.json({ id: JSON.parse(options.body).id }, { status: 202 });
   });
@@ -88,7 +92,10 @@ test('old runner is stopped before receiving any Suite key or queuing a broken r
     requests.push({ url, options });
     return Response.json({ openaiConfigured: false });
   });
-  await assert.rejects(studio.renderJob(id), error => error.statusCode === 409 && error.message.includes('1.1.1'));
+  await assert.rejects(
+    studio.renderJob(id),
+    error => error.statusCode === 409 && /Audio-\/Video-QA|1\.1\.1/.test(error.message)
+  );
   assert.ok(requests.every(x => !x.options.body));
 });
 test('local narration never forwards the OpenAI key, and failed jobs get a fresh runner ID', async t => {

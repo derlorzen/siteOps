@@ -79,7 +79,7 @@ if [[ "$MODE" == "--systemd" ]]; then
   TOKEN="$(sed -n 's/^BROWSER_RUNNER_TOKEN=//p' /etc/siteops-browser-runner.env | head -n 1)"
   curl -fsS --max-time 15 -H "Authorization: Bearer $TOKEN" \
     http://127.0.0.1:3200/video/capabilities |
-    python3 -c 'import json,sys; x=json.load(sys.stdin); assert "de" in x.get("languages",[]); assert "en" in x.get("languages",[]); print("Runner: German and English supported.")'
+    python3 -c 'import json,sys; x=json.load(sys.stdin); assert "de" in x.get("languages",[]); assert "en" in x.get("languages",[]); assert x.get("audiovisualQaVersion")==1, "Audiovisual QA unavailable"; assert x.get("sceneReuseVersion")==1, "Safe scene retakes unavailable"; print("Runner 1.5: German/English, audiovisual QA and scene retakes supported.")'
   unset TOKEN
   echo "Upgrade completed. Existing bearer token preserved."
   exit 0
@@ -125,7 +125,9 @@ const base="http://127.0.0.1:"+(process.env.PORT||3200);
   if(!cap.ok)throw Error("Bilingual endpoint failed (HTTP "+cap.status+").");
   const info=await cap.json();
   if(!info.languages?.includes("de")||!info.languages?.includes("en"))throw Error("Missing German or English support");
-  console.log("Runner healthy. German and English supported.");
+  if(info.audiovisualQaVersion!==1||info.sceneReuseVersion!==1)
+    throw Error("Runner lacks audiovisual QA or verified scene retakes.");
+  console.log("Runner 1.5 healthy. AV-QA and selective retakes supported.");
 })().catch(e=>{console.error(e.message);process.exit(1);});
 '
   echo "Upgrade completed. Existing Compose credentials and video volume preserved."

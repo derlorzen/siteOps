@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAiUsage, aiLimitsSchema } from '../lib/ai-usage.mjs';
+import { createAiUsage, aiLimitsSchema, aiReservation } from '../lib/ai-usage.mjs';
 
 function fixture({ calls = 0, monthlyUsd = null, prices = {}, unknownCosts = 0 } = {}) {
   const statements = [];
@@ -91,4 +91,28 @@ test('uncertain failures keep a recorded reservation and are not replayed', asyn
   assert.equal(calls, 1);
   assert.ok(statements.some(row => row.sql.includes("state='unconfirmed'")));
   assert.equal(aiLimitsSchema.safeParse({ monthly_calls: 0, monthly_tokens: 100, monthly_usd: null }).success, false);
+});
+
+test('vision cost reservation counts images, not huge JPEG base64 as text tokens', () => {
+  const fakeJpeg = Buffer.alloc(100000, 19).toString('base64');
+  const plan = aiReservation(
+    {
+      model: 'test',
+      input: [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: 'Review two authentic frames.' },
+            { type: 'input_image', image_url: 'data:image/jpeg;base64,' + fakeJpeg },
+            { type: 'input_image', image_url: 'data:image/jpeg;base64,' + fakeJpeg }
+          ]
+        }
+      ],
+      max_output_tokens: 3500
+    },
+    'responses'
+  );
+  assert.ok(plan.input >= 10000);
+  assert.ok(plan.input < 30000);
+  assert.ok(plan.tokens > plan.input);
 });

@@ -264,6 +264,7 @@
     catch (e) { $('suite-agent-status').textContent = e.message; }
   });
   const presets = {
+    review: 'Prüft bitte im Team aus Producer und unabhängiger Qualitätskontrolle meinen aktuellen Szenenplan. Welche echten Bildschirmaufnahmen sind erforderlich, welche Browserabläufe fehlen, und welche Aussagen sind ohne Bildmaterial noch nicht nachgewiesen? Führt nichts aus und verändert keine Szenen.',
     script: 'Erstelle aus meinem Thema ein vollständiges, etwa vierminütiges Tutorial mit Hook, Sprechertext, Szenenplan, Bildanweisungen und YouTube-Metadaten. Nutze die Projektsprache und erfinde keine Produktfunktionen.',
     edit: 'Prüfe mein vorhandenes Skript auf Einstieg, Tempo und Verständlichkeit. Straffe es und schlage eine bessere Szenenfolge vor. Erhalte bestätigte Demo-Aktionen.',
     seo: 'Optimiere das Packaging meines vorhandenen Videos: drei ehrliche Titel, Beschreibung, Keywords, drei Hashtags und Kapitel. Verändere den Sprechertext nicht.',
@@ -613,6 +614,23 @@
     const hd=p.resolution && Math.min(p.resolution.width,p.resolution.height)>=1080;
     $('suite-review-resolution').textContent=p.resolution?p.resolution.width+' × '+p.resolution.height+(hd?' · Full HD':' · Auflösung prüfen'):'Auflösung nicht bestätigt';
     const captures=p.captures || [];$('suite-review-captures').textContent=captures.length?captures.map(c=>'Szene '+c.scene+': '+({recording:'Bildschirmaufnahme',screenshot:'Browser-Standbild',text:'Texttafel'}[c.mode] || c.mode)).join(' · '):'Für diese ältere Produktion liegt kein Aufnahmeprotokoll vor. Prüfe das Video vollständig.';
+    const av=job.result?.quality,sceneChecks=av?.audiovisual_scene_reports || job.result?.av_scenes || [];
+    const blocked=sceneChecks.filter(scene=>scene.status==='blocked');
+    const cautions=sceneChecks.filter(scene=>scene.status==='needs_review');
+    const issueDetails=cautions.map(scene=>'Szene '+scene.scene+': '+(scene.warnings || []).join(', ')+(Number.isFinite(scene.audio_alignment?.offset_ms)?' (gemessener Audioversatz '+scene.audio_alignment.offset_ms+' ms)':'')).join(' · ');
+    $('suite-review-av-quality').textContent=!av?'Keine audiovisuelle Qualitätsmessung vorhanden (ältere Produktion). Das gesamte Video persönlich kontrollieren.':blocked.length?'Audiovisuelle Prüfung blockiert: '+blocked.map(scene=>'Szene '+scene.scene+': '+scene.blockers.join(', ')).join(' · '):sceneChecks.length?'Geprüfte Szenen: '+sceneChecks.length+'. '+(cautions.length?cautions.length+' benötigen Sichtkontrolle. '+issueDetails+'. ':'')+'Automatische Messwerte ersetzen keine persönliche Inhaltskontrolle.':'Technische Dateiprüfung vorhanden; keine audiovisuelle Szenenmessung.';
+    const visual=job.result?.visual_review,visualList=$('suite-visual-findings');
+    visualList.replaceChildren();
+    if(visual){
+      const heading=document.createElement('strong');heading.textContent='KI-Bildprüfung vom '+new Date(visual.reviewed_at).toLocaleString('de-DE')+': '+visual.summary;visualList.append(heading);
+      for(const finding of visual.findings){
+        const line=document.createElement('p');
+        line.textContent='Szene '+finding.scene+' · '+({matches:'Kein sichtbarer Widerspruch',mismatch:'Abweichung erkannt',uncertain:'Nicht eindeutig'}[finding.verdict]||finding.verdict)+': '+finding.visible_observation+' · '+finding.reason+(finding.suggested_fix?' · Vorschlag: '+finding.suggested_fix:'');
+        visualList.append(line);
+      }
+      const reminder=document.createElement('p');reminder.textContent='Nur Einzelbilder durch KI geprüft. Finale persönliche Video- und Tonkontrolle bleibt erforderlich.';visualList.append(reminder);
+    }
+    $('suite-visual-review').disabled=!$('suite-visual-consent').checked;
     $('suite-review-thumbnail').hidden=!p.has_thumbnail;if(p.thumbnail_url)$('suite-review-thumbnail').src=p.thumbnail_url;
     $('suite-review-thumbnail-note').textContent=p.has_thumbnail?'Dieses Bild wird beim Upload übernommen.':'Titelbild fehlt. Wähle unter SEO & Titelbild ein Motiv aus.';
     const checks=[['Video fertig gerendert',job.status==='done'],['Full HD bestätigt',hd],['Titel und Beschreibung vorhanden',Boolean(p.youtube?.title && p.youtube?.description)],['Titelbild ausgewählt',p.has_thumbnail]];
@@ -620,6 +638,39 @@
     $('suite-review-continue').disabled=!checks.every(x=>x[1]);$('suite-review-note').textContent=checks.every(x=>x[1])?'Alles vollständig. Prüfe nun Inhalt, Schnitt und Texte.':'Ergänze die offenen Punkte, bevor du weitergehst.';
     const short=$('suite-short-preview');short.hidden=!job.result?.files?.includes('short');if(!short.hidden){short.src='/api/video-studio/jobs/'+job.id+'/file?kind=short';$('suite-short-download').href=short.src;$('suite-short-download').hidden=false;$('suite-short-upload').href='/youtube#upload?job='+job.id+'&kind=short';$('suite-short-upload').hidden=false;}
   }
+  $('suite-visual-consent').addEventListener('change',()=>{
+    $('suite-visual-review').disabled=!$('suite-visual-consent').checked || !job;
+  });
+  $('suite-visual-review').addEventListener('click',async()=>{
+    const button=$('suite-visual-review');
+    if(!job || job.status!=='done' || !$('suite-visual-consent').checked)return;
+    const recording=job.scenes.map((scene,index)=>({index:index+1,scene}))
+      .filter(item=>item.scene.capture_mode==='recording' || (!item.scene.capture_mode && item.scene.demoSteps?.length))
+      .map(item=>item.index);
+    const answer=window.prompt('Welche Szenen mit echten Videoframes prüfen? Bis zu drei Nummern, durch Komma getrennt.',(recording.length?recording:[1]).slice(0,3).join(','));
+    if(answer===null)return;
+    const selected=answer.split(',').map(s=>Number(s.trim()));
+    if(!selected.length || selected.length>3 || selected.some(n=>!Number.isSafeInteger(n)||n<1||n>job.scenes.length) || new Set(selected).size!==selected.length){
+      $('suite-visual-status').textContent='Bitte 1–3 unterschiedliche Szenennummern dieser Produktion angeben.';
+      return;
+    }
+    const original=job.id;button.disabled=true;
+    $('suite-visual-status').textContent='Echte Standbilder werden gelesen und mit OpenAI geprüft …';
+    try{
+      const review=await api('/api/video-suite/visual-review',{
+        project_id:job.project_id,job_id:original,scene_numbers:selected,approved_to_send_frames:true
+      });
+      if(job?.id===original){
+        job=await api('/api/video-studio/jobs/'+encodeURIComponent(original));
+        drawReview();
+        $('suite-visual-status').textContent='KI-Prüfung gespeichert: '+review.findings.length+' Szenen. Bitte Befunde und gesamte Videovorschau selbst überprüfen.';
+      }
+    }catch(e){
+      $('suite-visual-status').textContent='KI-Bildprüfung fehlgeschlagen: '+e.message;
+    }finally{
+      button.disabled=!$('suite-visual-consent').checked;
+    }
+  });
   async function navigate(){
     const id=stage(),index=stages.findIndex(x=>x[0]===id),current=stages[index];
     document.querySelectorAll('[data-journey]').forEach(link=>{if(link.dataset.journey===id)link.setAttribute('aria-current','step');else link.removeAttribute('aria-current');});

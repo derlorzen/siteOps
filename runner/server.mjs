@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 import { chromium } from 'playwright';
+import { launchGuarded } from './browser-capacity.mjs';
 import { registerRunnerHealth } from './version.mjs';
 import { registerVideoRunner } from './video-studio.mjs';
 
@@ -128,7 +129,7 @@ app.post('/render', async (req, reply) => {
     finalUrl = null,
     statusCode = null;
   try {
-    browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] });
+    browser = await launchGuarded(chromium.launch.bind(chromium), { headless: true, args: ['--disable-dev-shm-usage'] });
     const context = await browser.newContext({ ignoreHTTPSErrors: false });
     const page = await context.newPage();
     page.setDefaultTimeout(timeoutMs);
@@ -170,7 +171,7 @@ app.post('/run', async (req, reply) => {
     visual = null,
     lastUrl = null;
   try {
-    browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] });
+    browser = await launchGuarded(chromium.launch.bind(chromium), { headless: true, args: ['--disable-dev-shm-usage'] });
     const context = await browser.newContext({
       viewportSize: viewport,
       ignoreHTTPSErrors: false,

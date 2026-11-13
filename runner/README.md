@@ -1,5 +1,52 @@
 # SiteOps Browser Runner
 
+## Browser Runner 1.5.0 – Release-Abnahme und Reihenfolge
+
+Ab Runner **1.5.0** prüft die Video Suite echte gerenderte Video- und
+Tonspuren, erkennt deutlich zeitverschobene Sprache und stellt eine
+SHA-256-geprüfte Wiederverwendung unveränderter Szenen bereit. Die
+entsprechende Serverfunktion benötigt **`audiovisualQaVersion: 1`** und
+für Reparaturaufträge **`sceneReuseVersion: 1`**.
+
+**Abnahme im CI:** Der Browser Runner Smoke führt nicht nur Codectests aus,
+sondern rendert mit Chromium eine echte HTTPS-Demoaufnahme mit zweiter
+unveränderter Szene, nimmt anschließend ausschließlich die Browser-Szene
+erneut auf und vergleicht die SHA-256-Hashes der wiederverwendeten
+Ton- und Szenendateien. Der CI-Demoablauf verwendet keine produktiven Daten.
+Ein separater lesender Aufnahme-Vortest wurde für
+`https://shop.lorzen.link/demo-designer-artikel` mit 1920 × 1080
+und zwei erfolgreich ausgeführten Browseraktionen durchgeführt. Dieser
+Vortest allein ersetzt keinen Test des aktualisierten Runners am Live-Host.
+
+**Bereitstellungsreihenfolge für `browse.lorzen.de`:**
+
+1. Vorher auf dem echten Runner-Host prüfen, **welche** Installation
+   läuft (Hostinger Docker Manager, Docker Compose oder systemd).
+   Den bestehenden Container bzw. Dienst, das HTTPS-Routing, sein
+   `BROWSER_RUNNER_TOKEN` und das persistente Video-/Modell-Volume erhalten.
+2. Sicherung der vorhandenen Umgebungsvariablen und Konfiguration
+   erstellen; keine Tokens kopieren oder in Git veröffentlichen.
+3. Die vorhandene Runner-Installation aus dem geprüften Release-Stand
+   (Runner 1.5.0) nach der jeweils unten beschriebenen Methode
+   aktualisieren. Kein paralleler Runner auf demselben Port.
+4. **Vor** SiteOps-Webdeployment die authentifizierten
+   `/video/capabilities` prüfen: beide oben genannten Versionen müssen
+   `1` sein. `runner/update-existing.sh --apply` prüft sie für
+   systemd und Docker Compose jetzt automatisch.
+5. Erst anschließend den SiteOps-Webcode bereitstellen und die
+   vollständige Video-Suite-Verbindung sowie einen **neuen**
+   Testdatenauftrag abnehmen. Ein abgeschlossener Test muss im
+   Status ein `quality`-Protokoll enthalten. Bestehende Videojobs und
+   YouTube-Veröffentlichungen nicht verändern.
+
+**Wichtig:** Das verbundene Produktivsystem meldete beim letzten
+Lesetest die neuen Capability-Felder noch **nicht**.
+Ein `git merge` oder Coolify-Redeploy der Webanwendung alleine
+aktualisiert den separaten Hostinger-Runner nicht und blockiert dann
+neue Renderaufträge bewusst, statt die audiovisuelle Qualitätskontrolle
+zu überspringen.
+
+
 Video demo domains can be managed under **SiteOps → Video Studio → Demo-Domains**.
 Rules support exact DNS names and `*.domain.tld` for true subdomains (excluding the
 apex). No allow-all rule is accepted. The authenticated backend transmits a
@@ -225,3 +272,10 @@ the job's Full-HD resolution without cropping. Audio is retained or filled with 
 and all segments use 48 kHz stereo AAC. Subtitle and outro timestamps include the
 actual intro duration. Status reports an `intro` object with ID, duration and output
 resolution. No source bytes or filesystem paths are exposed to the producer agent.
+
+
+## Browser Runner 1.5.1: Schutz gegen Zombie-Prozesse
+
+Docker verwendet `tini -g` als PID 1, damit verwaiste Chromium-/FFmpeg-Prozesse eingesammelt werden. Alle Browser-Endpunkte (einschließlich Video Studio) teilen sich `BROWSER_MAX_SESSIONS=2` als Standard, zulässige Werte 1–8. Bei ausgelasteten Browser-Slots wird HTTP 503 zurückgegeben. Für Docker-Compose `pids_limit: 256` und für systemd `TasksMax=256` sowie `KillMode=control-group` setzen.
+
+Wichtig: Für `browse.lorzen.de` in Hostinger Docker Manager die **tatsächlich verwendete** Compose-Datei aktualisieren, nicht nur die Vorlage. Tokens, Persistenzverzeichnisse für Videos/Modelle und Traefik-Labels unverändert lassen. Nach dem Update `/health` auf Version 1.5.1, `/video/capabilities` auf `audiovisualQaVersion:1` und `browserCapacity.max:2` prüfen. Zusätzlich Prozessorlast und Zombie-Anzahl über mehrere echte Browseraufrufe beobachten. Das Git-Merge führt kein automatisches Hostinger-Redeployment durch.

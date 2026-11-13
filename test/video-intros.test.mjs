@@ -133,7 +133,7 @@ test('video jobs snapshot a project-owned intro and forward its ID only to a com
   let payload;
   t.mock.method(globalThis, 'fetch', async (url, options) =>
     url.endsWith('/capabilities')
-      ? Response.json({ introVersion: 1 })
+      ? Response.json({ introVersion: 1, audiovisualQaVersion: 1 })
       : ((payload = JSON.parse(options.body)), Response.json({ id: payload.id }, { status: 202 }))
   );
   const studio = createVideoStudio({ db, runnerUrl: () => 'https://runner.example.com', runnerToken: () => 'token' });

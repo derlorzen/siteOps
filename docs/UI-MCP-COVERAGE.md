@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 288 API-Funktionen, 252 MCP-Tools, 44 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 291 API-Funktionen, 253 MCP-Tools, 46 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -186,8 +186,10 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | video-studio | /mcp-info | Dashboard-Administration | POST /api/video-studio/intro-assets/:id/complete | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Original-Introdateien bis 50 MB und ihre Upload-Chunks werden direkt zwischen Dashboard und Runner übertragen. MCP wählt vorhandene geprüfte Intro-IDs im Szenen-/Renderauftrag. |
 | video-studio | /mcp-info | Dashboard-Administration | GET /api/video-studio/intro-assets/:id/file | – | Lesen | Dashboard-Entscheidung | Begründete Ausnahme | Original-Introdateien bis 50 MB und ihre Upload-Chunks werden direkt zwischen Dashboard und Runner übertragen. MCP wählt vorhandene geprüfte Intro-IDs im Szenen-/Renderauftrag. |
 | video-studio | /mcp-info | Dashboard-Administration | POST /api/video-studio/intro-assets | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Original-Introdateien bis 50 MB und ihre Upload-Chunks werden direkt zwischen Dashboard und Runner übertragen. MCP wählt vorhandene geprüfte Intro-IDs im Szenen-/Renderauftrag. |
+| video-studio | /mcp-info | Dashboard-Administration | GET /api/video-studio/jobs/:id/frame | – | Lesen | Dashboard-Entscheidung | Begründete Ausnahme | Authentisches JPEG-Binärmaterial aus geschützten Videojobs nur über die angemeldete Dashboard-Sitzung; keine unkontrollierten Frame-URLs per MCP. |
 | video-suite | /mcp-info | Dashboard-Administration | POST /api/video-suite/chat-images | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Originalbilder werden über die UI übertragen; MCP verwendet vorhandene projektgebundene Bildkennungen. Große Base64-Bildtransfers durch den Sprachmodellkontext werden vermieden. |
 | video-suite | /mcp-info | Dashboard-Administration | POST /api/video-suite/settings | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | API-Schlüssel werden unmittelbar im Dashboard hinterlegt. MCP kann den bereinigten Verbindungszustand und echte Tests nach Freigabe abrufen. |
+| video-suite | /mcp-info | Dashboard-Administration | POST /api/video-suite/visual-review | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Versand echter Szenenbilder an OpenAI kostet API-Gebühren und erfordert eine ausdrückliche, projektspezifische Zustimmung im Dashboard. Kein automatischer MCP-Aufruf. |
 | video | /video-suite | video_studio_runner_status | GET /api/video-studio/capabilities | video_studio_runner_status | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#script | video.testCapture | POST /api/video-studio/capture-test | video_capture_test | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | video | /video-suite#settings | video.testDemoLogin | POST /api/video-studio/demo-logins/:id/test | video_demo_login_test | Ändern | Gebundene Freigabe | Zugeordnet |  |
@@ -205,6 +207,7 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | video | /video-suite#review | video.publication.read | GET /api/video-studio/jobs/:id/publication | video_publication_get | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#assets | video.publication.save | POST /api/video-studio/jobs/:id/publication | video_publication_save | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite | video_studio_render_job | POST /api/video-studio/jobs/:id/render | video_studio_render_job | Ändern | Gebundene Freigabe | Zugeordnet |  |
+| video | /video-suite | video_studio_repair_job | POST /api/video-studio/jobs/:id/repair | video_studio_repair_job | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#production | video.restoreJob | POST /api/video-studio/jobs/:id/restore | video_job_restore | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#production | video.trashJob | POST /api/video-studio/jobs/:id/trash | video_job_trash | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite | video_studio_job_status | GET /api/video-studio/jobs/:id | video_studio_job_status | Lesen | Keine zusätzliche | Zugeordnet |  |

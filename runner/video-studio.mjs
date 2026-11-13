@@ -6,12 +6,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
+import { launchGuarded, browserCapacityStatus } from './browser-capacity.mjs';
 import { captureMode, requireCapturePlan } from './video-capture.mjs';
+import { producerAgentPlan, recordingAgentEvidence, qualityAgentAudit, requireTechnicalQuality, fileSha256, verifiedArtifactCopy } from './video-agent-workflow.mjs';
 import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
 import { authenticateDemo, validateDemoLogin } from './video-login.mjs';
 import { narrateWithOpenAI } from './openai-audio.mjs';
 import { videoFileRange } from './video-file-range.mjs';
+import { inspectRenderedScene, extractSceneFrame } from './video-av-qa.mjs';
 
 const ROOT=process.env.VIDEO_OUTPUT_DIR||path.join(os.tmpdir(),'siteops-video-studio');
 const KOKORO_VOICES=new Set(['am_michael','am_adam','af_heart','bf_emma','bm_george']);
@@ -84,8 +87,23 @@ function validate(payload){
     const login=logins.find(x=>x.id===scene.login_profile_id);
     if(!login || new URL(login.login_url).origin!==new URL(scene.demoUrl).origin)throw Error('Matching demo login profile required.');
   }
+  const resumeFrom = payload.resumeFrom;
+  const recaptureScenes = payload.recaptureScenes || [];
+  if (resumeFrom !== undefined && !uuid(resumeFrom))
+    throw Error('Ungültige Quellproduktion für gezielte Szenenreparatur.');
+  if (!Array.isArray(recaptureScenes) || recaptureScenes.length > 6 ||
+      new Set(recaptureScenes).size !== recaptureScenes.length ||
+      recaptureScenes.some(index => !Number.isSafeInteger(index) || index < 1 || index > scenes.length) ||
+      (resumeFrom && recaptureScenes.length === 0) || (!resumeFrom && recaptureScenes.length))
+    throw Error('Szenenreparatur benötigt 1–6 eindeutige, explizit gewählte Szenen.');
   return {id:payload.id,introId:payload.introId,title:String(payload.title||'').slice(0,200),voice:payload.voice,
-    voiceProvider,language:payload.language,format:payload.format,scenes,demoPolicy:policy};
+    voiceProvider,language:payload.language,format:payload.format,scenes,demoPolicy:policy,resumeFrom,recaptureScenes};
+}
+function productionFingerprint(job){
+  return crypto.createHash('sha256').update(JSON.stringify({
+    title:job.title,introId:job.introId,voice:job.voice,voiceProvider:job.voiceProvider,
+    language:job.language,format:job.format,scenes:job.scenes,demoPolicy:job.demoPolicy
+  })).digest('hex');
 }
 async function persist(job){
   await fs.mkdir(path.join(ROOT,job.id),{recursive:true});
@@ -192,6 +210,24 @@ export async function verifyVideoDimensions(filename,width,height) {
   if(actual!==width+','+height)throw Error('Full-HD-Prüfung fehlgeschlagen: erwartet '+width+'×'+height+', erhalten '+actual+'.');
   return {width,height};
 }
+async function outputEvidence(filename, requireAudio = false) {
+  const file = await fs.stat(filename);
+  const result = { bytes: file.size };
+  if (!requireAudio) return result;
+  const raw = await new Promise((resolve, reject) => {
+    const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'json', filename]);
+    let output = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('Media stream check timed out.')); }, 30000);
+    child.stdout.on('data', chunk => { output += String(chunk).slice(0, 10000); });
+    child.on('error', error => { clearTimeout(timer); reject(error); });
+    child.on('close', code => {
+      clearTimeout(timer);
+      code === 0 ? resolve(output) : reject(new Error('Media stream check failed.'));
+    });
+  });
+  result.streams = (JSON.parse(raw).streams || []).map(stream => stream.codec_type);
+  return result;
+}
 function srtTime(seconds){
   const ms=Math.round(seconds*1000),h=Math.floor(ms/3600000),m=Math.floor(ms/60000)%60,s=Math.floor(ms/1000)%60,n=ms%1000;
   return [h,m,s].map(x=>String(x).padStart(2,'0')).join(':')+','+String(n).padStart(3,'0');
@@ -205,29 +241,67 @@ async function render(job){
   const sessions=new Map();
   let current=0;
   try{
-    browser=await chromium.launch({headless:true,args:demoBrowserArgs});
-    requireCapturePlan(job.scenes);
+    browser=await launchGuarded(chromium.launch.bind(chromium), {headless:true,args:demoBrowserArgs});
+    const agentPlan = producerAgentPlan(job.scenes);
+    job.agent_workflow = { producer: 'planned', recording: 'running', quality: 'pending' };
     job.captures=[];
+    job.av_scenes=[];
+    job.capture_attempts={};
+    const source = job.resumeFrom ? await load(job.resumeFrom) : null;
+    if (job.resumeFrom && (!source || !['done','failed'].includes(source.status) ||
+        source.fingerprint !== job.fingerprint))
+      throw Error('Quellproduktion für Szenenreparatur fehlt oder stimmt nicht mit dem unveränderten Aufnahmeplan überein.');
     for(let i=0;i<job.scenes.length;i++){
       const scene={...job.scenes[i],language:job.language};
       job.progress=Math.round(i/job.scenes.length*30);
       await persist(job);
       try {
-      const profile=(jobLogins.get(job.id)||[]).find(x=>x.id===scene.login_profile_id);
-      if(scene.login_profile_id && !sessions.has(scene.login_profile_id)) sessions.set(scene.login_profile_id,await authenticateDemo(browser,profile,job.demoPolicy.hosts));
-      const storageState=sessions.get(scene.login_profile_id);
       const recording = captureMode(scene)==='recording';
       const png = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm = path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
-      if (recording) {
-        await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png,undefined,storageState);
-      } else {
-        await captureSceneScreenshot(browser,scene,job,i,dir,undefined,storageState);
+      const sourceCapture=source?.captures?.find(x=>x.scene===i+1);
+      const retryRequested=job.recaptureScenes?.includes(i+1);
+      const attempts=source?.capture_attempts?.[i+1] || sourceCapture?.attempt || 0;
+      if(retryRequested && attempts>=3)throw Error('Maximal drei Aufnahmeversuche pro Szene.');
+      let evidence;
+      if(source && !retryRequested){
+        if(!sourceCapture || !sourceCapture.sha256 || sourceCapture.status!=='captured')
+          throw Error('Kein überprüfbarer Quellclip vorhanden. Szene '+(i+1)+' zur Neuaufnahme markieren.');
+        const sourceDir=path.join(ROOT,source.id);
+        await fs.copyFile(path.join(sourceDir,recording?'scene-'+String(i).padStart(2,'0')+'.webm':'scene-'+String(i).padStart(2,'0')+'.png'),recording?webm:png);
+        if(recording) {
+          await fs.copyFile(path.join(sourceDir,'scene-'+String(i).padStart(2,'0')+'.png'),png);
+          await verifyVideoDimensions(webm,width,height);
+        }
+        evidence=await recordingAgentEvidence(agentPlan[i],recording?webm:png,{
+          resolution:{width,height},actions_executed:sourceCapture.actions_executed
+        });
+        if(evidence.sha256!==sourceCapture.sha256 || evidence.bytes!==sourceCapture.bytes)
+          throw Error('Quellclip stimmt nicht mit dem gespeicherten Prüfnachweis überein.');
+        evidence.reused_from=source.id;
+        evidence.attempt=attempts;
+        job.capture_attempts[i+1]=attempts;
+      }else{
+        const profile=(jobLogins.get(job.id)||[]).find(x=>x.id===scene.login_profile_id);
+        if(scene.login_profile_id && !sessions.has(scene.login_profile_id))
+          sessions.set(scene.login_profile_id,await authenticateDemo(browser,profile,job.demoPolicy.hosts));
+        const storageState=sessions.get(scene.login_profile_id);
+        job.capture_attempts[i+1]=attempts+1;
+        await persist(job);
+        let receipt;
+        if(recording){
+          receipt=await recordDemoScene(browser,scene,webm,{width,height},job.demoPolicy.hosts,png,undefined,storageState);
+          await verifyVideoDimensions(webm,width,height);
+        }else await captureSceneScreenshot(browser,scene,job,i,dir,undefined,storageState);
+        evidence=await recordingAgentEvidence(agentPlan[i],recording?webm:png,{
+          resolution:{width,height},actions_executed:receipt?.actions_executed
+        });
+        evidence.attempt=attempts+1;
       }
-      if(recording)await verifyVideoDimensions(webm,width,height);
-      job.captures.push({scene:i+1,mode:captureMode(scene),status:'captured',resolution:{width,height}});
+      job.captures.push(evidence);
       }catch(error){throw Error('Szene '+(i+1)+' – Aufnahme fehlgeschlagen: '+error.message);}
     }
+    job.agent_workflow.recording = 'complete';
     if(job.introId){
       const intro=await introAsset(job.introId),out=path.join(dir,'intro.mp4');
       await exec('ffmpeg',['-y','-protocol_whitelist','file','-format_whitelist','mov,matroska,webm','-i',intro.filename,...(intro.has_audio?[]:['-f','lavfi','-i','anullsrc=r=48000:cl=stereo']),'-map','0:v:0','-map',intro.has_audio?'0:a:0':'1:a:0','-vf','scale='+width+':'+height+':force_original_aspect_ratio=decrease,pad='+width+':'+height+':(ow-iw)/2:(oh-ih)/2:color=0x091a30,setsar=1,fps=25','-af','apad','-t',String(intro.duration),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-r','25','-c:a','aac','-ar','48000','-ac','2','-b:a','128k','-movflags','+faststart',out]);
@@ -241,9 +315,33 @@ async function render(job){
       const recording=captureMode(scene)==='recording';
       const png=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.png');
       const webm=path.join(dir,'scene-'+String(i).padStart(2,'0')+'.webm');
-      const wav=await voice(scene,job,i,dir);
+      const wav=path.join(dir,'voice-'+String(i).padStart(2,'0')+'.wav');
+      const oldBase=source && !job.recaptureScenes.includes(i+1)
+        ?path.join(ROOT,source.id):null;
+      const sourceAv=source?.av_scenes?.find(check=>check.scene===i+1);
+      if(oldBase && (!sourceAv?.narration_sha256 || !sourceAv?.part_sha256))
+        throw Error('Sichere Wiederverwendung verweigert: Sprach- oder Schnittprüfsumme fehlt.');
+      let copiedVoice=false;
+      if(oldBase && sourceAv?.narration_sha256){
+        await verifiedArtifactCopy(
+          path.join(oldBase,'voice-'+String(i).padStart(2,'0')+'.wav'),
+          wav,sourceAv.narration_sha256
+        );
+        copiedVoice=true;
+      }
+      if(!copiedVoice)await voice(scene,job,i,dir);
       const audioLen=await duration(wav),len=outroDuration(scene,audioLen),out=path.join(dir,'part-'+String(i).padStart(2,'0')+'.mp4');
-      if (recording) {
+      let reusedPart=false;
+      if(oldBase && sourceAv?.part_sha256){
+        await verifiedArtifactCopy(
+          path.join(oldBase,'part-'+String(i).padStart(2,'0')+'.mp4'),
+          out,sourceAv.part_sha256
+        );
+        reusedPart=true;
+      }
+      if(reusedPart) {
+        await verifyVideoDimensions(out,width,height);
+      } else if (recording) {
         await exec('ffmpeg',['-y','-i',webm,'-i',wav,
           '-vf','scale='+width+':'+height+',setsar=1,fps=25,tpad=stop_mode=clone:stop_duration=125',
           '-t',String(len),'-c:v','libx264','-preset','veryfast',
@@ -253,6 +351,29 @@ async function render(job){
         await exec('ffmpeg',['-y','-loop','1','-framerate','25','-i',png,'-i',wav,
           '-c:v','libx264','-preset','veryfast','-tune','stillimage','-pix_fmt','yuv420p',
           '-r','25','-c:a','aac','-ar','48000','-ac','2','-b:a','128k',...(scene.outro?['-af','apad','-t',String(len)]:[]),'-shortest','-movflags','+faststart',out]);
+      }
+      const av = await inspectRenderedScene({
+        video: out,
+        narration: wav,
+        mode: captureMode(scene),
+        silentFixture: process.env.VIDEO_TTS_MODE === 'silent'
+      });
+      job.av_scenes.push({
+        scene: i+1,...av,
+        part_sha256:await fileSha256(out),
+        narration_sha256:await fileSha256(wav),
+        reused_part:reusedPart
+      });
+      if (av.status === 'blocked') {
+        job.quality = {
+          technical_status: 'failed',
+          audio_visual_status: 'blocked',
+          visual_status: 'pending',
+          scenes_expected: job.scenes.length,
+          scenes_captured: job.captures.length,
+          issues: av.blockers.map(issue => 'Szene ' + (i+1) + ': ' + issue)
+        };
+        throw Error('Szene '+(i+1)+' – audiovisuelle Prüfung fehlgeschlagen: '+av.blockers.join(' '));
       }
       parts.push(out);
       subtitles.push(String(i+1)+'\n'+srtTime(current)+' --> '+srtTime(current+audioLen)+'\n'+scene.narration+'\n');
@@ -271,9 +392,29 @@ async function render(job){
     await verifyVideoDimensions(path.join(dir,'video.mp4'),width,height);
     await verifyVideoDimensions(path.join(dir,'short.mp4'),1080,1920);
     job.resolution={width,height};
+    job.quality=qualityAgentAudit({
+      plan: agentPlan,
+      captures: job.captures,
+      media: {
+        video: await outputEvidence(path.join(dir, 'video.mp4'), true),
+        short: await outputEvidence(path.join(dir, 'short.mp4'), true),
+        subtitles: await outputEvidence(path.join(dir, 'subtitles.srt')),
+        thumbnail: await outputEvidence(path.join(dir, 'thumbnail.png'))
+      }
+    });
+    requireTechnicalQuality(job.quality);
+    job.quality.audio_visual_status = job.av_scenes.some(scene => scene.status === 'needs_review')
+      ? 'needs_review'
+      : 'passed';
+    job.quality.audiovisual_scene_reports = job.av_scenes;
+    job.agent_workflow.quality = job.quality.audio_visual_status === 'passed'
+      ? 'audiovisual_passed'
+      : 'needs_visual_review';
     job.status='done';job.progress=100;job.duration=Math.round(current);
     job.files=['video','short','subtitles','thumbnail'];
   }catch(error){
+    if (job.agent_workflow && !['audiovisual_passed', 'needs_visual_review'].includes(job.agent_workflow.quality))
+      job.agent_workflow.quality = 'blocked';
     job.status='failed';job.error=String(error.message||error).slice(0,1000);
   }finally{
     jobLogins.delete(job.id); jobOpenAIKeys.delete(job.id); sessions.clear();
@@ -306,12 +447,13 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
       introVersion:1,outroVersion:1,capturePreflightVersion:1,openaiKeyForwardingVersion:1,
+      audiovisualQaVersion:1,sceneFrameVersion:1,sceneReuseVersion:1,
       demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
       offlineModels:{kokoro:kokoroFiles.every(Boolean),piper:piperFiles.every(Boolean)},
       modelAutoinstall:true, openaiConfigured:Boolean(process.env.OPENAI_API_KEY),
-      ffmpegRequired:true,queued:queue.length,running:active
+      ffmpegRequired:true,queued:queue.length,running:active,browserCapacity:browserCapacityStatus()
     };
   });
   app.post('/video/openai-audio-test',{config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async(req,reply)=>{
@@ -337,17 +479,19 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     }catch(error){return reply.code(422).send({error:error.message});}
     let browser,dir;
     try{
-      browser=await chromium.launch({headless:true,args:demoBrowserArgs});
+      browser=await launchGuarded(chromium.launch.bind(chromium), {headless:true,args:demoBrowserArgs});
       dir=await fs.mkdtemp(path.join(os.tmpdir(),'siteops-capture-test-'));
       const storageState=profile?await authenticateDemo(browser,profile,policy.hosts):undefined;
       const width=req.body.format==='portrait'?1080:1920,height=req.body.format==='portrait'?1920:1080;
       const mode=captureMode(scene);
+      let executed=0;
       if(mode==='recording'){
         const target=path.join(dir,'test.webm');
-        await recordDemoScene(browser,scene,target,{width,height},policy.hosts,path.join(dir,'test.png'),undefined,storageState);
+        const receipt=await recordDemoScene(browser,scene,target,{width,height},policy.hosts,path.join(dir,'test.png'),undefined,storageState);
+        executed=receipt.actions_executed;
         await verifyVideoDimensions(target,width,height);
       }else await captureSceneScreenshot(browser,scene,{demoPolicy:policy,format:req.body.format},0,dir,undefined,storageState);
-      return {ok:true,resolution:{width,height},actions_executed:scene.demoSteps?.length || 0,message:mode==='recording'?'Bildschirmaufnahme erfolgreich getestet: Zielseite, Anmeldung falls nötig, alle Aktionen und Full HD.':'Browser-Standbild erfolgreich getestet. Keine bewegte Bildschirmaufnahme.'};
+      return {ok:true,resolution:{width,height},actions_executed:executed,message:mode==='recording'?'Bildschirmaufnahme erfolgreich getestet: Zielseite, Anmeldung falls nötig, alle Aktionen und Full HD.':'Browser-Standbild erfolgreich getestet. Keine bewegte Bildschirmaufnahme.'};
     }catch(error){
       const detail=/^(Demo-|Only explicitly|Full-HD)/.test(error.message || '')?error.message:'Zielseite, Domainfreigabe, Demo-Login und Aktions-Selektoren prüfen.';
       return reply.code(422).send({error:('Aufnahme fehlgeschlagen: '+detail+' Es wird keine Texttafel als Ersatz erstellt.').slice(0,900)});
@@ -358,7 +502,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     let policy,profile;
     try{policy=demoPolicy(req.body?.demoPolicy);profile=validateDemoLogin(req.body?.profile,policy.hosts);}catch{return reply.code(422).send({error:'Ungültiges Demo-Loginprofil oder nicht freigegebene Domain.'});}
     let browser;
-    try{browser=await chromium.launch({headless:true,args:demoBrowserArgs});await authenticateDemo(browser,profile,policy.hosts);return {ok:true};}
+    try{browser=await launchGuarded(chromium.launch.bind(chromium), {headless:true,args:demoBrowserArgs});await authenticateDemo(browser,profile,policy.hosts);return {ok:true};}
     catch(error){return reply.code(422).send({error:error.message});}
     finally{await browser?.close().catch(()=>{});}
   });
@@ -370,9 +514,28 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(parsed.introId){try{await introAsset(parsed.introId);}catch(error){return reply.code(422).send({error:error.message});}}
     const old=await load(parsed.id);
     if(old) return reply.code(409).send({error:'Job already exists.'});
+    const fingerprint=productionFingerprint(parsed);
+    if(parsed.resumeFrom) {
+      const source=await load(parsed.resumeFrom);
+      if(!source || !['done','failed'].includes(source.status))
+        return reply.code(409).send({error:'Quellproduktion für die Reparatur nicht abgeschlossen.'});
+      if(source.fingerprint!==fingerprint)
+        return reply.code(422).send({error:'Der Aufnahmeplan wurde seit der Quellproduktion geändert. Bitte neue Gesamtproduktion starten.'});
+      if(parsed.recaptureScenes.some(i => (source.capture_attempts?.[i] || source.captures?.find(x=>x.scene===i)?.attempt || 0)>=3))
+        return reply.code(422).send({error:'Für diese Szene wurden bereits drei Aufnahmeversuche verwendet.'});
+      const retained=parsed.scenes.map((_,i)=>i+1).filter(i=>!parsed.recaptureScenes.includes(i));
+      if(retained.some(i=>{
+        const capture=source.captures?.find(x=>x.scene===i);
+        const av=source.av_scenes?.find(x=>x.scene===i);
+        return !/^[a-f0-9]{64}$/.test(capture?.sha256||'') ||
+          !/^[a-f0-9]{64}$/.test(av?.narration_sha256||'') ||
+          !/^[a-f0-9]{64}$/.test(av?.part_sha256||'');
+      }))
+        return reply.code(422).send({error:'Nicht erneut aufgenommene Szene hat unvollständige SHA-256-Nachweise.'});
+    }
     if(queue.length+active>=MAX_JOBS)return reply.code(429).send({error:'Video queue full.'});
     if(parsed.voiceProvider==='openai' && !req.body.openaiApiKey && !process.env.OPENAI_API_KEY)return reply.code(422).send({error:'Für OpenAI-Sprachausgabe fehlt der Schlüssel. In den Suite-Einstellungen speichern oder OPENAI_API_KEY auf dem Runner setzen.'});
-    const job={...parsed,status:'queued',progress:0,files:[],error:null,createdAt:new Date().toISOString()};
+    const job={...parsed,fingerprint,status:'queued',progress:0,files:[],error:null,createdAt:new Date().toISOString()};
     const profiles=(req.body.demoLogins||[]).map(x=>validateDemoLogin(x,parsed.demoPolicy.hosts));
     if(profiles.length)jobLogins.set(job.id,profiles);
     if(req.body.openaiApiKey){jobOpenAIKeys.set(job.id,req.body.openaiApiKey);delete req.body.openaiApiKey;}
@@ -385,7 +548,24 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!uuid(req.params.id))return reply.code(400).send({error:'Invalid job ID'});
     const job=await load(req.params.id);
     if(!job)return reply.code(404).send({error:'Job not found'});
-    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],outro:job.outro || null,intro:job.intro || null};
+    return {id:job.id,status:job.status,progress:job.progress,files:job.files,error:job.error,duration:job.duration,resolution:job.resolution,captures:job.captures || [],quality:job.quality || null,av_scenes:job.av_scenes || [],capture_attempts:job.capture_attempts || {},resume_from:job.resumeFrom || null,agent_workflow:job.agent_workflow || null,outro:job.outro || null,intro:job.intro || null};
+  });
+  app.get('/video/jobs/:id/frame',async(req,reply)=>{
+    if(!auth(req,reply))return;
+    const id=req.params.id,scene=Number(req.query?.scene),moment=String(req.query?.moment||'middle');
+    if(!uuid(id)||!Number.isSafeInteger(scene)||!['beginning','middle','end'].includes(moment))
+      return reply.code(400).send({error:'Invalid scene frame request.'});
+    const job=await load(id);
+    if(!job || job.status!=='done')return reply.code(404).send({error:'Finished video not found.'});
+    if(scene<1||scene>job.scenes.length)return reply.code(400).send({error:'Scene outside the production.'});
+    const filename=path.join(ROOT,id,'part-'+String(scene-1).padStart(2,'0')+'.mp4');
+    try{
+      const jpeg=await extractSceneFrame(filename,moment);
+      return reply.type('image/jpeg').header('Cache-Control','private, no-store')
+        .header('X-Content-Type-Options','nosniff').send(jpeg);
+    }catch{
+      return reply.code(422).send({error:'This scene cannot be decoded for visual review.'});
+    }
   });
   app.get('/video/jobs/:id/file',async(req,reply)=>{
     if(!auth(req,reply))return;

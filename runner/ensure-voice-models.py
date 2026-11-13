@@ -19,12 +19,19 @@ MODELS = {
     ],
     "piper": [
         ("de_DE-thorsten-medium.onnx",
-         "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx",
+         "https://huggingface.co/rhasspy/piper-voices/resolve/664c651454f055ed34bd83f09e024ffbc0da09ac/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx",
          "md5", "a129b00fb3078df43c96bab6c94535c0"),
         ("de_DE-thorsten-medium.onnx.json",
-         "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json",
-         "md5", "843a7bd7272724f750534dd5a26d1aad")
+         "https://huggingface.co/rhasspy/piper-voices/resolve/664c651454f055ed34bd83f09e024ffbc0da09ac/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json",
+         "md5", "0ba02428e952e6556157df235b740e93")
     ]
+}
+
+# Older installations may already have the known, authentic Piper config file.
+# Never discard a verified previous model solely because upstream metadata
+# changed. New downloads are pinned to the immutable revision above.
+LEGACY_DIGESTS = {
+    "de_DE-thorsten-medium.onnx.json": ("md5", "843a7bd7272724f750534dd5a26d1aad")
 }
 
 def matches(filename, algorithm, expected):
@@ -40,7 +47,10 @@ def ensure(provider, destination):
     destination.mkdir(parents=True, exist_ok=True, mode=0o750)
     for filename, url, algorithm, digest in MODELS[provider]:
         target = destination / filename
-        if matches(target, algorithm, digest):
+        if matches(target, algorithm, digest) or (
+            filename in LEGACY_DIGESTS
+            and matches(target, *LEGACY_DIGESTS[filename])
+        ):
             continue
         if target.exists():
             raise RuntimeError("Existing voice model failed integrity verification: " + filename)

@@ -230,6 +230,11 @@
   "POST /api/video-suite/chat": {
     "tools": ["video_assistant_request"]
   },
+  "POST /api/video-suite/visual-review": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Versand echter Szenenbilder an OpenAI kostet API-Gebühren und erfordert eine ausdrückliche, projektspezifische Zustimmung im Dashboard. Kein automatischer MCP-Aufruf."
+  },
   "POST /api/video-suite/thumbnails": {
     "tools": ["video_thumbnail_generate"]
   },
@@ -247,6 +252,11 @@
   },
   "GET /api/video-studio/jobs/:id": {
     "tools": ["video_studio_job_status"]
+  },
+  "GET /api/video-studio/jobs/:id/frame": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Authentisches JPEG-Binärmaterial aus geschützten Videojobs nur über die angemeldete Dashboard-Sitzung; keine unkontrollierten Frame-URLs per MCP."
   },
   "GET /api/video-studio/jobs/:id/downloads": {
     "tools": ["video_studio_downloads"]
@@ -271,6 +281,9 @@
   },
   "POST /api/video-studio/jobs/:id/metadata": {
     "tools": ["video_studio_update_metadata"]
+  },
+  "POST /api/video-studio/jobs/:id/repair": {
+    "tools": ["video_studio_repair_job"]
   },
   "POST /api/video-studio/jobs/:id/render": {
     "tools": ["video_studio_render_job"]

@@ -15,16 +15,12 @@ test('runner render HTTP 422 remains a readable validation error, never Bad Gate
       return [[]];
     }
   };
-  t.mock.method(
-    globalThis,
-    'fetch',
-    async () =>
-      new Response(
-        JSON.stringify({
-          error: 'Only explicitly allowed HTTPS demo URLs are supported.'
-        }),
-        { status: 422 }
-      )
+  t.mock.method(globalThis, 'fetch', async url =>
+    url.endsWith('/capabilities')
+      ? Response.json({ audiovisualQaVersion: 1 })
+      : new Response(JSON.stringify({ error: 'Only explicitly allowed HTTPS demo URLs are supported.' }), {
+          status: 422
+        })
   );
   const studio = createVideoStudio({ db, runnerUrl: () => 'https://runner.example.com', runnerToken: () => 'test' });
   await assert.rejects(studio.renderJob(id), error => {
@@ -80,7 +76,7 @@ test('render carries a validated policy snapshot only after protocol negotiation
     assert.equal(options.redirect, 'error');
     assert.equal(options.headers.Authorization, 'Bearer test-secret');
     seen.push(url);
-    if (url.endsWith('/capabilities')) return Response.json({ demoPolicyVersion: 1 });
+    if (url.endsWith('/capabilities')) return Response.json({ demoPolicyVersion: 1, audiovisualQaVersion: 1 });
     assert.deepEqual(JSON.parse(options.body).demoPolicy, policy);
     return Response.json({ id, status: 'queued' }, { status: 202 });
   });
@@ -90,7 +86,7 @@ test('render carries a validated policy snapshot only after protocol negotiation
     runnerToken: () => 'test-secret'
   });
   assert.equal((await studio.renderJob(id)).status, 'queued');
-  assert.equal(seen.length, 2);
+  assert.equal(seen.length, 3);
 });
 
 test('renderer distinguishes unauthorized, conflict, full queue, malformed response, timeout and connectivity errors', async t => {
@@ -104,8 +100,9 @@ test('renderer distinguishes unauthorized, conflict, full queue, malformed respo
   };
   let status = 401,
     networkError = null;
-  t.mock.method(globalThis, 'fetch', async () => {
+  t.mock.method(globalThis, 'fetch', async url => {
     if (networkError) throw networkError;
+    if (url.endsWith('/capabilities')) return Response.json({ audiovisualQaVersion: 1 });
     return new Response('not json', { status });
   });
   const studio = createVideoStudio({ db, runnerUrl: () => 'https://runner.example.com', runnerToken: () => 'test' });

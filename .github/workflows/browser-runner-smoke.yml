@@ -40,6 +40,8 @@ jobs:
       - name: Install Chromium
         working-directory: runner
         run: npx playwright install --with-deps chromium
+      - name: Browser capacity regression tests
+        run: node --test test/browser-capacity.test.mjs
       - name: Video policy and real Chromium security tests (local HTTPS fixtures)
         env:
           RUN_VIDEO_BROWSER_TESTS: '1'
@@ -154,7 +156,7 @@ jobs:
           # Record a real browser scene with a safe, allowlisted HTTPS site.
           curl -fsS -H 'Authorization: Bearer ci-runner-token' \
             -H 'Content-Type: application/json' \
-            --data '{"id":"33333333-3333-4333-8333-333333333333","title":"CI Browser Recording","voice":"am_michael","language":"en","format":"landscape","scenes":[{"headline":"Real browser recording","narration":"Watch a browser scroll on this public sample page.","demoUrl":"https://example.com/","test_data_only":true,"demoSteps":[{"action":"scroll","pixels":250},{"action":"wait","ms":300}]}]}' \
+            --data '{"id":"33333333-3333-4333-8333-333333333333","title":"CI Browser Recording","voice":"am_michael","language":"en","format":"landscape","scenes":[{"headline":"Real browser recording","narration":"Watch a browser scroll on this public sample page.","demoUrl":"https://example.com/","test_data_only":true,"demoSteps":[{"action":"scroll","pixels":250},{"action":"wait","ms":300}]},{"headline":"Immutable context slide","narration":"This original verified scene must be reused without any changes."}]}' \
             http://127.0.0.1:3299/video/jobs > /tmp/siteops-video-demo-created.json
           for i in {1..90}; do
             curl -fsS -H 'Authorization: Bearer ci-runner-token' \
@@ -171,6 +173,45 @@ jobs:
             -o /tmp/siteops-video-demo.mp4
           test "$(stat -c%s /tmp/siteops-video-demo.mp4)" -gt 10000
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 /tmp/siteops-video-demo.mp4
+
+          # True end-to-end selective repair: repeat the browser recording, reuse
+          # the unchanged second scene and verify cryptographic source receipts.
+          curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+            -H 'Content-Type: application/json' \
+            --data '{"id":"55555555-5555-4555-8555-555555555555","resumeFrom":"33333333-3333-4333-8333-333333333333","recaptureScenes":[1],"title":"CI Browser Recording","voice":"am_michael","language":"en","format":"landscape","scenes":[{"headline":"Real browser recording","narration":"Watch a browser scroll on this public sample page.","demoUrl":"https://example.com/","test_data_only":true,"demoSteps":[{"action":"scroll","pixels":250},{"action":"wait","ms":300}]},{"headline":"Immutable context slide","narration":"This original verified scene must be reused without any changes."}]}' \
+            http://127.0.0.1:3299/video/jobs > /tmp/siteops-retake-created.json
+          for i in {1..90}; do
+            curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+              http://127.0.0.1:3299/video/jobs/55555555-5555-4555-8555-555555555555 \
+              > /tmp/siteops-retake-status.json
+            result="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/siteops-retake-status.json','utf8')).status")"
+            if [[ "$result" == "done" ]]; then break; fi
+            if [[ "$result" == "failed" ]]; then cat /tmp/siteops-retake-status.json; exit 1; fi
+            sleep 2
+          done
+          test "$result" = "done"
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const source = JSON.parse(fs.readFileSync('/tmp/siteops-video-demo-status.json', 'utf8'));
+          const repaired = JSON.parse(fs.readFileSync('/tmp/siteops-retake-status.json', 'utf8'));
+          assert.equal(source.status, 'done');
+          assert.equal(repaired.status, 'done');
+          assert.equal(repaired.resume_from, source.id);
+          assert.equal(source.captures.length, 2);
+          assert.equal(repaired.captures.length, 2);
+          assert.equal(repaired.captures[0].attempt, 2);
+          assert.equal(repaired.captures[0].actions_executed, 2);
+          assert.equal(repaired.captures[1].reused_from, source.id);
+          assert.equal(repaired.captures[1].sha256, source.captures[1].sha256);
+          assert.equal(repaired.captures[1].attempt, 1);
+          assert.equal(repaired.av_scenes[1].reused_part, true);
+          assert.equal(repaired.av_scenes[1].part_sha256, source.av_scenes[1].part_sha256);
+          assert.equal(repaired.av_scenes[1].narration_sha256, source.av_scenes[1].narration_sha256);
+          assert.equal(repaired.quality.technical_status, 'passed');
+          assert.equal(repaired.quality.audio_visual_status, 'needs_review'); // Silent test narration
+          console.log('True scene-level retake verified: fresh browser recording + SHA-matched unchanged scene.');
+          NODE
 
 
 
@@ -197,7 +238,7 @@ jobs:
           SITE_PID=$!
           trap 'kill "$SITE_PID" 2>/dev/null || true; docker rm -f siteops-runner-smoke >/dev/null 2>&1 || true' EXIT
 
-          docker run -d --name siteops-runner-smoke --network host \
+          docker run -d --name siteops-runner-smoke --network host --pids-limit 256 \
             -e BROWSER_RUNNER_TOKEN=ci-runner-token -e HOST=127.0.0.1 -e PORT=3299 \
             siteops-browser-runner
 
@@ -209,6 +250,24 @@ jobs:
           curl -fsS             -H 'Authorization: Bearer ci-runner-token'             -H 'Content-Type: application/json'             --data '{"url":"http://127.0.0.1:8123/"}'             http://127.0.0.1:3299/render > /tmp/siteops-docker-render.json
 
           node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/siteops-docker-render.json','utf8')); if(!x.ok||!x.html||!x.html.includes('SiteOps Docker Smoke')) { console.error(x); process.exit(1); } console.log({ok:x.ok,statusCode:x.statusCode,finalUrl:x.finalUrl});"
+          # Confirm Chromium's short-lived children are reaped by PID 1.
+          docker exec siteops-runner-smoke sh -c 'test "$(cat /proc/1/comm)" = tini'
+          for i in {1..5}; do
+            curl -fsS -H 'Authorization: Bearer ci-runner-token' \
+              -H 'Content-Type: application/json' \
+              --data '{"url":"http://127.0.0.1:8123/"}' \
+              http://127.0.0.1:3299/render >/dev/null
+          done
+          sleep 2
+          docker exec siteops-runner-smoke node -e '
+            const fs=require("fs");
+            const zombies=fs.readdirSync("/proc").filter(x=>/^\d+$/.test(x)).filter(pid=>{
+              try { return /^State:\s+Z/m.test(fs.readFileSync("/proc/"+pid+"/status","utf8")); }
+              catch { return false; }
+            });
+            if(zombies.length){ console.error("Unreaped zombies:",zombies); process.exit(1); }
+            console.log("Chromium subprocesses reaped successfully.");
+          '
 
           # Verify actual downloaded voice models and real German/English speech.
           docker exec siteops-runner-smoke /opt/video-venv/bin/python3 /app/ensure-voice-models.py \
