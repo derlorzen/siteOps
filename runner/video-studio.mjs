@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
+import { launchGuarded, browserCapacityStatus } from './browser-capacity.mjs';
 import { captureMode, requireCapturePlan } from './video-capture.mjs';
 import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
@@ -205,7 +206,7 @@ async function render(job){
   const sessions=new Map();
   let current=0;
   try{
-    browser=await chromium.launch({headless:true,args:demoBrowserArgs});
+    browser=await launchGuarded(chromium.launch.bind(chromium), {headless:true,args:demoBrowserArgs});
     requireCapturePlan(job.scenes);
     job.captures=[];
     for(let i=0;i<job.scenes.length;i++){
@@ -311,7 +312,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
       offlineModels:{kokoro:kokoroFiles.every(Boolean),piper:piperFiles.every(Boolean)},
       modelAutoinstall:true, openaiConfigured:Boolean(process.env.OPENAI_API_KEY),
-      ffmpegRequired:true,queued:queue.length,running:active
+      ffmpegRequired:true,queued:queue.length,running:active,browserCapacity:browserCapacityStatus()
     };
   });
   app.post('/video/openai-audio-test',{config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async(req,reply)=>{
@@ -337,7 +338,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     }catch(error){return reply.code(422).send({error:error.message});}
     let browser,dir;
     try{
-      browser=await chromium.launch({headless:true,args:demoBrowserArgs});
+      browser=await launchGuarded(chromium.launch.bind(chromium), {headless:true,args:demoBrowserArgs});
       dir=await fs.mkdtemp(path.join(os.tmpdir(),'siteops-capture-test-'));
       const storageState=profile?await authenticateDemo(browser,profile,policy.hosts):undefined;
       const width=req.body.format==='portrait'?1080:1920,height=req.body.format==='portrait'?1920:1080;
@@ -358,7 +359,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     let policy,profile;
     try{policy=demoPolicy(req.body?.demoPolicy);profile=validateDemoLogin(req.body?.profile,policy.hosts);}catch{return reply.code(422).send({error:'Ungültiges Demo-Loginprofil oder nicht freigegebene Domain.'});}
     let browser;
-    try{browser=await chromium.launch({headless:true,args:demoBrowserArgs});await authenticateDemo(browser,profile,policy.hosts);return {ok:true};}
+    try{browser=await launchGuarded(chromium.launch.bind(chromium), {headless:true,args:demoBrowserArgs});await authenticateDemo(browser,profile,policy.hosts);return {ok:true};}
     catch(error){return reply.code(422).send({error:error.message});}
     finally{await browser?.close().catch(()=>{});}
   });
