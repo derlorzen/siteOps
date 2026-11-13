@@ -271,7 +271,7 @@
     thumbnail: 'Entwickle drei deutlich verschiedene Titelbild-Konzepte passend zu meinem Video und einen fertigen Bildprompt. Dunkelblau, Blau und Orange. Keine erfundenen Screenshots oder Funktionen.',
     social: 'Leite aus meinem Skript einen LinkedIn-Beitrag, einen kurzen WhatsApp-Kanalbeitrag und eine Idee für einen YouTube Short ab. Keine neuen unbelegten Behauptungen.'
   };
-  document.querySelectorAll('[data-agent-preset]').forEach(b => b.addEventListener('click', () => { $('suite-agent-mode').value = b.dataset.agentPreset; $('suite-prompt').value = presets[b.dataset.agentPreset]; $('suite-prompt').focus(); }));
+  document.querySelectorAll('[data-agent-preset]').forEach(b => b.addEventListener('click', () => { $('suite-agent-mode').value = b.dataset.agentPreset; $('suite-agent-mode').dispatchEvent(new Event('change')); $('suite-prompt').value = presets[b.dataset.agentPreset]; $('suite-prompt').focus(); }));
   function drawAttachments(){
     $('suite-chat-attachments').replaceChildren();
     for(const attachment of chatAttachments){
@@ -322,13 +322,42 @@
     $('suite-agent-status').textContent = 'Der Agent arbeitet an deiner Anfrage …';
     try {
       const data = snapshot();
-      const result = await api('chat', { project_id: projectId, conversation_id: conversationId, message: text, image_ids:chatAttachments.map(x=>x.id), mode: $('suite-agent-mode').value, context: { title: data.title, topic: data.topic, script: data.script, format: data.format, ...(data.scene_json ? { scenes: JSON.parse(data.scene_json) } : {}), ...(data.youtube_json ? { youtube: JSON.parse(data.youtube_json) } : {}) } });
+      const result = await api('chat', { project_id: projectId, conversation_id: conversationId, message: text, image_ids:chatAttachments.map(x=>x.id), mode: $('suite-agent-mode').value, skill: $('suite-agent-skill').value || undefined, context: { title: data.title, topic: data.topic, script: data.script, format: data.format, ...(data.scene_json ? { scenes: JSON.parse(data.scene_json) } : {}), ...(data.youtube_json ? { youtube: JSON.parse(data.youtube_json) } : {}) } });
       appendMessage('user', text, undefined, result.attachments || chatAttachments); chatAttachments=[];drawAttachments(); appendMessage('assistant', result.reply, result); conversationId = result.conversation_id; latest = result;
       $('suite-prompt').value = ''; if (result.social_posts.length) showPosts(result.social_posts);
       $('suite-agent-status').textContent = 'Antwort gespeichert' + (result.usage?.total_tokens ? ' · ' + result.usage.total_tokens + ' Tokens' : '');
       await loadConversations();
     } catch (e) { $('suite-agent-status').textContent = e.message; }
     finally { sending = false; $('suite-chat-images').disabled=false;drawAttachments(); $('suite-send').disabled = false; $('vs-project').disabled = false; $('suite-conversation').disabled = false; }
+  });
+  // Komplettpaket: mehrere Skills nacheinander, der Server arbeitet im Hintergrund und wird abgefragt.
+  const packageLabels = { pending: 'wartet', running: 'läuft …', done: 'fertig', failed: 'fehlgeschlagen' };
+  function drawPackage(run) {
+    const list = $('suite-package-steps'); list.hidden = false;
+    list.replaceChildren(...run.steps.map(step => { const item = document.createElement('li'); item.dataset.state = step.status; const name = document.createElement('b'); name.textContent = step.name; const state = document.createElement('span'); state.textContent = packageLabels[step.status] || step.status; item.append(name, state); return item; }));
+  }
+  function packageBusy(busy) { sending = busy; $('suite-package-start').disabled = busy; $('suite-send').disabled = busy; $('vs-project').disabled = busy; $('suite-conversation').disabled = busy; }
+  async function watchPackage(id, failures = 0) {
+    let run;
+    try { run = await api('packages/' + id + '?project_id=' + projectId); }
+    catch (e) { if (failures >= 3) { packageBusy(false); $('suite-package-status').textContent = e.message; return; } setTimeout(() => watchPackage(id, failures + 1), 3000); return; }
+    drawPackage(run);
+    if (run.status === 'running') { setTimeout(() => watchPackage(id), 2000); return; }
+    packageBusy(false);
+    $('suite-package-status').textContent = run.status === 'completed' ? 'Fertig' + (run.total_tokens ? ' · ' + run.total_tokens + ' Tokens' : '') + '. Prüfe die Ergebnisse im Chat und übernimm den Vorschlag.' : 'Abgebrochen: ' + (run.error || 'Schritt fehlgeschlagen.') + ' Bereits fertige Schritte stehen im Chat.';
+    if (run.conversation_id) { await loadConversations(); $('suite-conversation').value = run.conversation_id; $('suite-conversation').dispatchEvent(new Event('change')); if (run.status === 'completed') $('suite-prompt').value = ''; }
+  }
+  $('suite-package-start').addEventListener('click', async () => {
+    if (sending || uploadingImages) return;
+    if (!projectId) { $('suite-package-status').textContent = 'Bitte zuerst ein Projekt anlegen.'; return; }
+    const text = $('suite-prompt').value.trim();
+    if (text.length < 2) { $('suite-package-status').textContent = 'Beschreibe zuerst unter „Deine Anfrage“, worum es im Video geht.'; $('suite-prompt').focus(); return; }
+    packageBusy(true); $('suite-package-status').textContent = 'Komplettpaket läuft. Du kannst die Seite geöffnet lassen.';
+    try {
+      const data = snapshot();
+      const run = await api('packages', { project_id: projectId, message: text, context: { title: data.title, topic: data.topic, script: data.script, format: data.format, ...(data.scene_json ? { scenes: JSON.parse(data.scene_json) } : {}), ...(data.youtube_json ? { youtube: JSON.parse(data.youtube_json) } : {}) } });
+      drawPackage(run); setTimeout(() => watchPackage(run.id), 1500);
+    } catch (e) { packageBusy(false); $('suite-package-status').textContent = e.message; }
   });
   function loadSeo() {
     try {
@@ -645,17 +674,20 @@
   async function navigate(){
     const id=stage(),index=stages.findIndex(x=>x[0]===id),current=stages[index];
     document.querySelectorAll('[data-journey]').forEach(link=>{if(link.dataset.journey===id)link.setAttribute('aria-current','step');else link.removeAttribute('aria-current');});
-    $('suite-stage-kicker').textContent=index>=0?'Schritt '+(index+1)+' von '+stages.length:'Dein Studio';
+    const phases=[...document.querySelectorAll('.suite-phase')],phaseIndex=phases.findIndex(phase=>phase.querySelector('[data-journey="'+id+'"]'));
+    phases.forEach((phase,i)=>{phase.classList.toggle('is-current',i===phaseIndex);phase.classList.toggle('is-before',phaseIndex>=0&&i<phaseIndex);});
+    phases[phaseIndex]?.scrollIntoView({block:'nearest',inline:'nearest'});
+    $('suite-stage-kicker').textContent=phaseIndex>=0?'Phase '+(phaseIndex+1)+' von '+phases.length+' · '+phases[phaseIndex].querySelector('.suite-phase-name').lastChild.textContent:'Dein Studio';
     $('suite-stage-title').textContent=current?.[1] || 'Ein Video, ein durchgängiger Ablauf.';$('suite-stage-help').textContent=current?.[2] || 'Beginne mit einer Idee oder setze eine Produktion fort.';
     const next=stages[Math.min(index+1,stages.length-1)] || stages[0],link=$('suite-stage-next');link.href='#'+next[0];link.dataset.suiteGo=next[0];link.textContent='Weiter: '+next[1]+' →';link.hidden=['assets','review','publish','repurpose'].includes(id);
     $('suite-production-context').hidden=!['assets','review','publish','repurpose'].includes(id);
-    if(current?.[3]){$('suite-agent-mode').value=current[3];$('suite-agent-heading').textContent=current[1];}
+    if(current?.[3]){$('suite-agent-mode').value=current[3];$('suite-agent-mode').dispatchEvent(new Event('change'));$('suite-agent-heading').textContent=current[1];}
     try{
       if(['assets','review','publish','repurpose'].includes(id))await loadProductions();
       if(id==='review'){if(packageDirty)await savePackage();if(job){publication=await api(endpoint(job.id));drawReview();}}
       if(id==='assets' && publication && !packageDirty)fillMetadata(publication);
       if(id==='publish'){
-        if(!publication || reviewed!==signature(publication)){$('suite-upload-prepare').disabled=true;$('suite-upload-status').textContent='Bitte zuerst die Gesamtvorschau prüfen und dort fortfahren.';}
+        if(!publication || reviewed!==signature(publication)){$('suite-upload-prepare').disabled=true;const hint=$('suite-upload-status');hint.textContent='Bitte zuerst die Gesamtvorschau prüfen. ';const go=document.createElement('a');go.href='#review';go.dataset.suiteGo='review';go.textContent='Zur Gesamtvorschau →';hint.append(go);}
         else{$('suite-upload-prepare').disabled=false;$('suite-upload-status').textContent='Geprüftes Paket: '+publication.youtube.title;}
         await channels();await uploads();
       }
@@ -722,7 +754,7 @@
   document.addEventListener('suite-seo-proposal',event=>{if(!publication)return;fillMetadata({...publication,youtube:event.detail},true);packageDirty=true;packageVersion++;invalidate();location.hash='assets';status('SEO-Vorschlag übernommen. Prüfen und für diese Produktion speichern.');});
   document.addEventListener('suite-thumbnail-prompt',event=>{$('suite-thumbnail-prompt').value=event.detail;packageDirty=true;packageVersion++;invalidate();});
   document.querySelectorAll('[data-workflow-agent]').forEach(b=>b.addEventListener('click',()=>{
-    const mode=b.dataset.workflowAgent;$('suite-agent-mode').value=mode;
+    const mode=b.dataset.workflowAgent;$('suite-agent-mode').value=mode;$('suite-agent-mode').dispatchEvent(new Event('change'));
     const task={seo:'Optimiere Titel, Beschreibung, Keywords, Hashtags und Kapitel für dieses fertige Video. Bewahre Sprechertext und Szenen. Liefere einen vollständigen Vorschlag mit youtube-Metadaten.',thumbnail:'Entwickle drei passende Titelbild-Konzepte und einen Bildprompt zu diesem fertigen Video.',social:'Erstelle aus dieser Produktion einen eigenständigen Short mit starkem Hook sowie passende Social-Media-Beiträge.'}[mode];
     $('suite-prompt').value=task+' Verwende nur belegte Aussagen. Die folgende ausgewählte Produktion ist maßgeblich. Video: '+(job?.title || $('vs-title').value)+'\nSprechertext:\n'+(job?.script || $('vs-script').value)+'\nMetadaten:\n'+JSON.stringify(publication?.youtube || {});location.hash='agent';
   }));
@@ -761,4 +793,126 @@
   });
   window.addEventListener('beforeunload',event=>{if(uploading){event.preventDefault();event.returnValue='';}});
   if($('vs-project').value)load().catch(e=>$('suite-intro-status').textContent=e.message);
+})();
+// Without a project there is nothing to continue with: "Weiter" points at the project
+// selection instead of opening an empty step.
+(() => {
+  'use strict';
+  const select = document.getElementById('vs-project'), next = document.getElementById('suite-stage-next'), suite = document.querySelector('.suite');
+  if (!select || !next || !suite) return;
+  const sync = () => { suite.dataset.project = select.value ? 'selected' : 'missing'; };
+  select.addEventListener('change', sync);
+  new MutationObserver(sync).observe(select, { childList: true });
+  sync();
+  next.addEventListener('click', event => {
+    if (select.value) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    select.focus();
+    const note = document.getElementById('vs-message');
+    if (note) note.textContent = 'Wähle zuerst ein Projekt aus. Danach geht es mit dem nächsten Schritt weiter.';
+  }, true);
+})();
+
+
+// Skills: named working methods for the agent. The list comes from the server and is the same one MCP uses.
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const picker = $('suite-agent-skill');
+  if (!picker) return;
+  const call = async (path, data) => {
+    const response = await fetch('/api/video-suite/' + path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', headers: data === undefined ? {} : { 'content-type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw Error(result.message || result.error || 'Anfrage fehlgeschlagen.');
+    return result;
+  };
+  const el = (tag, props = {}, ...children) => { const node = Object.assign(document.createElement(tag), props); node.append(...children); return node; };
+  const sources = { builtin: 'Mitgeliefert', adjusted: 'Angepasst', custom: 'Eigener Skill' };
+  let skills = [], modes = {};
+  const find = id => skills.find(skill => skill.id === id);
+  const status = text => { $('suite-skill-status').textContent = text; };
+  function choose(id, fill) {
+    const skill = find(id);
+    picker.value = skill ? id : '';
+    $('suite-agent-mode').hidden = Boolean(skill);
+    document.querySelector('label[for=suite-agent-mode]').hidden = Boolean(skill);
+    $('suite-skill-hint').textContent = skill ? skill.summary : 'Ein Skill gibt dem Agenten eine feste Arbeitsmethode vor. Über MCP stehen dieselben Skills bereit.';
+    document.querySelectorAll('[data-skill]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.skill === picker.value)));
+    if (!skill) return;
+    $('suite-agent-mode').value = skill.mode;
+    if (fill && skill.starter) { $('suite-prompt').value = skill.starter; $('suite-prompt').focus(); }
+  }
+  function draw() {
+    const current = picker.value;
+    picker.replaceChildren(el('option', { value: '', textContent: 'Ohne Skill · freie Anfrage' }));
+    const list = $('suite-skill-list'), table = $('suite-skill-table');
+    list.replaceChildren(); table.replaceChildren();
+    for (const [mode, label] of Object.entries(modes)) {
+      const group = skills.filter(skill => skill.mode === mode);
+      if (!group.length) continue;
+      picker.append(el('optgroup', { label }, ...group.map(skill => el('option', { value: skill.id, textContent: skill.name }))));
+      list.append(el('h3', { textContent: label }), ...group.map(skill => {
+        const button = el('button', { type: 'button' }, el('b', { textContent: skill.name }), el('small', { textContent: skill.summary }));
+        button.dataset.skill = skill.id; button.setAttribute('aria-pressed', 'false');
+        button.addEventListener('click', () => choose(skill.id, true));
+        return button;
+      }));
+      table.append(el('h3', { textContent: label }), el('ul', {}, ...group.map(skill => {
+        const edit = el('button', { type: 'button', className: 'ghost', textContent: skill.source === 'builtin' ? 'Anpassen' : 'Bearbeiten' });
+        edit.setAttribute('aria-label', (skill.source === 'builtin' ? 'Anpassen: ' : 'Bearbeiten: ') + skill.name);
+        edit.addEventListener('click', () => open(skill));
+        const copy = el('button', { type: 'button', className: 'ghost', textContent: 'Als Vorlage' });
+        copy.setAttribute('aria-label', 'Als Vorlage verwenden: ' + skill.name);
+        copy.addEventListener('click', () => open({ ...skill, id: '', name: skill.name + ' (Kopie)' }));
+        const actions = el('div', { className: 'suite-skill-row-actions' }, edit, copy);
+        if (skill.source !== 'builtin') {
+          const remove = el('button', { type: 'button', className: 'ghost', textContent: skill.source === 'adjusted' ? 'Zurücksetzen' : 'Löschen' });
+          remove.setAttribute('aria-label', (skill.source === 'adjusted' ? 'Zurücksetzen: ' : 'Löschen: ') + skill.name);
+          remove.addEventListener('click', async () => {
+            if (remove.dataset.armed !== '1') { remove.dataset.armed = '1'; remove.textContent = 'Wirklich?'; setTimeout(() => { remove.dataset.armed = ''; remove.textContent = skill.source === 'adjusted' ? 'Zurücksetzen' : 'Löschen'; }, 4000); return; }
+            try { const result = await call('skills/remove', { id: skill.id }); await load(); status(result.restored ? 'Skill auf den Standard zurückgesetzt.' : 'Skill gelöscht.'); }
+            catch (error) { status(error.message); }
+          });
+          actions.append(remove);
+        }
+        return el('li', {}, el('div', {}, el('b', { textContent: skill.name }), el('span', { className: 'suite-badge', textContent: sources[skill.source] || '' }), el('p', { textContent: skill.summary }), el('code', { textContent: skill.id })), actions);
+      })));
+    }
+    choose(find(current) ? current : '', false);
+  }
+  async function load() {
+    try { const data = await call('skills'); skills = data.skills || []; modes = data.modes || {}; if (skills.length) draw(); else $('suite-skill-table').replaceChildren(el('p', { textContent: 'Keine Skills vorhanden.' })); }
+    catch (error) { status(error.message); }
+  }
+  const slug = text => text.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  function open(skill) {
+    $('suite-skill-form').hidden = false;
+    $('suite-skill-form-title').textContent = skill.id ? 'Skill bearbeiten: ' + skill.name : 'Eigener Skill';
+    $('suite-skill-id').value = skill.id || '';
+    $('suite-skill-name').value = skill.name || '';
+    $('suite-skill-mode').value = skill.mode || 'script';
+    $('suite-skill-summary').value = skill.summary || '';
+    $('suite-skill-starter').value = skill.starter || '';
+    $('suite-skill-instructions').value = skill.instructions || '';
+    status('');
+    $('suite-skill-name').focus();
+  }
+  $('suite-skill-new').addEventListener('click', () => open({}));
+  $('suite-skill-cancel').addEventListener('click', () => { $('suite-skill-form').hidden = true; $('suite-skill-new').focus(); });
+  $('suite-skill-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const name = $('suite-skill-name').value.trim();
+    let id = $('suite-skill-id').value;
+    if (!id) { id = slug(name); let n = 2; const base = id; while (find(id)) id = base.slice(0, 56) + '-' + n++; }
+    try {
+      await call('skills', { id, name, mode: $('suite-skill-mode').value, summary: $('suite-skill-summary').value.trim(), starter: $('suite-skill-starter').value.trim(), instructions: $('suite-skill-instructions').value.trim() });
+      $('suite-skill-form').hidden = true;
+      await load();
+      status('Skill gespeichert. Er steht im Agenten und über MCP bereit.');
+    } catch (error) { status(error.message); }
+  });
+  picker.addEventListener('change', () => choose(picker.value, !$('suite-prompt').value.trim()));
+  $('suite-agent-mode').addEventListener('change', () => { const skill = find(picker.value); if (skill && skill.mode !== $('suite-agent-mode').value) choose('', false); });
+  load();
 })();

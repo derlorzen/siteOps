@@ -20,8 +20,10 @@ test(
     let draft = null,
       conversations = [];
     let trashed = false,
-      knowledge = { plugins: [] };
+      knowledge = { plugins: [] },
+      savedSkills = [];
     let chatRequest,
+      packageRequest,
       captureRequest,
       introReady = false;
     const introBlocks = [];
@@ -163,7 +165,40 @@ test(
             'base64'
           )
         });
-      else if (url.pathname === '/api/video-suite/chat') {
+      else if (url.pathname.startsWith('/api/video-suite/packages')) {
+        if (req.method() === 'POST') packageRequest = req.postDataJSON();
+        const finished = req.method() === 'GET';
+        body = {
+          id: project,
+          status: finished ? 'completed' : 'running',
+          conversation_id: null,
+          total_tokens: 400,
+          error: null,
+          steps: ['Video komplett planen', 'Qualitätsprüfung', 'SEO-Paket', 'Titelbild-Konzepte'].map((name, i) => ({
+            name,
+            status: finished ? 'done' : i ? 'pending' : 'running'
+          }))
+        };
+      } else if (url.pathname === '/api/video-suite/skills' && req.method() === 'GET')
+        body = {
+          modes: { script: 'Skript & Storyboard', edit: 'Schnitt & Dramaturgie' },
+          skills: [
+            ...savedSkills,
+            {
+              id: 'skript-lektorat',
+              name: 'Skript-Lektorat',
+              summary: 'Strafft Einstieg und Tempo.',
+              mode: 'edit',
+              starter: 'Prüfe und straffe mein Skript.',
+              instructions: 'Edit the existing script like a spoken-word editor.',
+              source: 'builtin'
+            }
+          ]
+        };
+      else if (url.pathname === '/api/video-suite/skills') {
+        savedSkills = [{ ...req.postDataJSON(), source: 'custom' }];
+        body = { saved: true };
+      } else if (url.pathname === '/api/video-suite/chat') {
         chatRequest = req.postDataJSON();
         conversations = [{ id: project, title: 'Plan a video' }];
         body = { ...proposal, conversation_id: project };
@@ -185,6 +220,27 @@ test(
       )
     });
     await page.waitForFunction(() => document.querySelector('#suite-chat-attachments img'));
+    await page.getByRole('button', { name: 'Komplettpaket starten', exact: true }).click();
+    await page.getByText('Beschreibe zuerst unter', { exact: false }).waitFor();
+    await page.locator('#suite-prompt').fill('Plan a store tutorial');
+    await page.getByRole('button', { name: 'Komplettpaket starten', exact: true }).click();
+    await page.locator('#suite-package-steps li[data-state=running]').waitFor();
+    if (!(await page.locator('#suite-send').isDisabled())) throw Error('Chat must wait while the package runs.');
+    await page.waitForFunction(() =>
+      document.querySelector('#suite-package-status').textContent.startsWith('Fertig · 400 Tokens')
+    );
+    if ((await page.locator('#suite-package-steps li[data-state=done]').count()) !== 4)
+      throw Error('Package steps were not shown as finished.');
+    if (packageRequest?.message !== 'Plan a store tutorial' || packageRequest.context.format !== 'landscape')
+      throw Error('Package request lacks the request or the editorial context.');
+    await page
+      .locator('.suite-agent-guide')
+      .screenshot({ path: process.env.SHOT || '/dev/null' })
+      .catch(() => {});
+    await page.locator('[data-skill=skript-lektorat]').click();
+    if ((await page.locator('#suite-prompt').inputValue()) !== 'Prüfe und straffe mein Skript.')
+      throw Error('Skill did not suggest its request.');
+    if ((await page.locator('#suite-agent-mode').inputValue()) !== 'edit') throw Error('Skill did not set the mode.');
     await page.locator('#suite-prompt').fill('Plan a video');
     await page.locator('#suite-prompt').press('Enter');
     if (chatRequest) throw Error('Enter must not send the chat.');
@@ -193,6 +249,7 @@ test(
       document.querySelector('#suite-agent-status').textContent.startsWith('Antwort gespeichert')
     );
     if (chatRequest?.image_ids?.[0] !== project) throw Error('Screenshot was not sent with chat.');
+    if (chatRequest.skill !== 'skript-lektorat') throw Error('Skill was not sent with chat.');
     await page.waitForTimeout(500);
     await page.getByText('Vorschlag ansehen & übernehmen').click();
     await page.getByText('In aktuellen Entwurf übernehmen', { exact: true }).click();
@@ -281,6 +338,17 @@ test(
     );
     await page.getByRole('button', { name: 'Verfügbare Modelle laden', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('#suite-model-options option[value="gpt-6-luna"]'));
+    await page.getByRole('button', { name: '+ Eigener Skill', exact: true }).click();
+    await page.getByLabel('Skill-Name', { exact: true }).fill('Release-Video');
+    await page.getByLabel('Kurzbeschreibung', { exact: true }).fill('Kurzes Video zu einer neuen Version.');
+    await page
+      .getByLabel('Arbeitsanweisung für den Agenten', { exact: true })
+      .fill('Open with the most visible change, then show three improvements.');
+    await page.getByRole('button', { name: 'Skill speichern', exact: true }).click();
+    await page.locator('#suite-skill-table').getByText('Eigener Skill', { exact: true }).waitFor();
+    if (savedSkills[0]?.id !== 'release-video') throw Error('Own skill was not saved with a derived identifier.');
+    if (!(await page.locator('#suite-agent-skill option[value=release-video]').count()))
+      throw Error('Own skill is missing from the agent.');
     await page.getByText('Wissensbasis bearbeiten oder importieren', { exact: true }).click();
     await page.getByLabel('Plugin-Wissen (JSON)', { exact: true }).fill(
       JSON.stringify({

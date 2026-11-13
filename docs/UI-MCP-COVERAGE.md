@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 280 API-Funktionen, 246 MCP-Tools, 44 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 292 API-Funktionen, 254 MCP-Tools, 46 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -62,6 +62,10 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | billing | /billing/time | billing.stopTimer | POST /api/billing/timer/:id/stop | timer_stop | Ändern | Keine zusätzliche | Zugeordnet |  |
 | billing | /billing/time | billing.startTimer | POST /api/billing/timer/start | timer_start | Ändern | Keine zusätzliche | Zugeordnet |  |
 | billing | /billing | billing.projects | GET /api/tools/projects | projects_list | Lesen | Keine zusätzliche | Zugeordnet |  |
+| calendar-bridge | /mcp-info | Dashboard-Administration | POST /api/calendar-bridge/token | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Das Erzeugen einer neuen geheimen Abo-Adresse ist eine persönliche Sicherheitsentscheidung im Dashboard. |
+| calendar-bridge | /mcp-info | Dashboard-Administration | PUT /api/calendar-bridge | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Die geheime iCal-Adresse des Quellkalenders und die Anonymisierungsregeln werden unmittelbar im Dashboard hinterlegt. Ein KI-Agent darf die Datenschutzgrenze des Feeds nicht selbst verändern. |
+| calendar | /calendar-bridge | calendar.refresh | POST /api/calendar-bridge/refresh | calendar_bridge_refresh | Ändern | Keine zusätzliche | Zugeordnet |  |
+| calendar | /calendar-bridge | calendar.status | GET /api/calendar-bridge | calendar_bridge_status | Lesen | Keine zusätzliche | Zugeordnet | Das Dashboard zeigt zusätzlich die geheime Abo-Adresse und eine Terminvorschau. MCP erhält nur Regeln, Zeitpunkte und Zählwerte. |
 | cms | /lorzcms | cms_inspect | POST /api/lorzcms/installations/:id/inspect | cms_inspect | Lesen | Keine zusätzliche | Zugeordnet |  |
 | cms | /lorzcms | cms_attach | POST /api/lorzcms/installations/attach | cms_attach | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | cms | /lorzcms | cms_install | POST /api/lorzcms/installations | cms_install | Ändern | Gebundene Freigabe | Zugeordnet |  |
@@ -224,10 +228,16 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | video | /video-suite#settings | video.knowledge | GET /api/video-suite/knowledge | video_knowledge_get | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.saveKnowledge | POST /api/video-suite/knowledge | video_knowledge_save | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.models | GET /api/video-suite/models | video_models_list | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#ideas | video.packageStatus | GET /api/video-suite/packages/:id | video_package_status | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#ideas | video.packageStatus | GET /api/video-suite/packages | video_package_status | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#ideas | video.startPackage | POST /api/video-suite/packages | video_package_start | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | video | /video-suite | video_studio_downloads | GET /api/video-suite/preview/:id | video_studio_downloads | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.productionGuidelines | GET /api/video-suite/production-guidelines | video_production_guidelines_get | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.saveProductionGuidelines | POST /api/video-suite/production-guidelines | video_production_guidelines_save | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.status | GET /api/video-suite/settings | video_workspace_status | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#settings | video.removeSkill | POST /api/video-suite/skills/remove | video_skill_remove | Ändern | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#settings | video.skills | GET /api/video-suite/skills | video_skills_list | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#settings | video.saveSkill | POST /api/video-suite/skills | video_skill_save | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.testConnection | POST /api/video-suite/test-connection | video_connection_test | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | video | /video-suite#assets | video.thumbnail | POST /api/video-suite/thumbnails | video_thumbnail_generate | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | website | /mcp-info | website_create_status | GET /api/website-factory/:installationId | website_create_status | Lesen | Keine zusätzliche | Zugeordnet |  |
@@ -273,6 +283,7 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | workspace | /billing | workspace.projectOverview | GET /api/workspace/projects/:id/overview | project_overview | Lesen | Keine zusätzliche | Zugeordnet |  |
 | workspace | / | workspace.search | GET /api/workspace/search | workspace_search | Lesen | Keine zusätzliche | Zugeordnet |  |
 | workspace | /websites | workspace.portfolio | GET /api/workspace/websites | websites_search | Lesen | Keine zusätzliche | Zugeordnet |  |
+| youtube | /youtube | youtube_status, search_console_status | GET /api/google-connections | youtube_status, search_console_status | Lesen | Keine zusätzliche | Zugeordnet | Fasst für den Hinweis im Dashboard zusammen, ob eine Google-Freigabe abgelaufen ist. Dieselbe Angabe steht je Dienst als reconnect_required im Status. |
 | youtube | /youtube | youtube_analytics | POST /api/youtube/analytics | youtube_analytics | Lesen | Keine zusätzliche | Zugeordnet |  |
 | youtube | /youtube | youtube_studio_asset_preview | POST /api/youtube/asset-preview | youtube_studio_asset_preview | Ändern | Keine zusätzliche | Zugeordnet |  |
 | youtube | /youtube | youtube_api_catalog | GET /api/youtube/catalog | youtube_api_catalog | Lesen | Keine zusätzliche | Zugeordnet |  |

@@ -207,6 +207,8 @@
         : { ...options, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
     const result = await response.json();
+    // An expired Google access surfaces the reconnect notice at the top of the page.
+    if (response.status === 401) window.SiteOpsGoogleReconnect?.refresh();
     if (!response.ok) throw new Error(result.message || result.error || 'Anfrage fehlgeschlagen');
     return result;
   }

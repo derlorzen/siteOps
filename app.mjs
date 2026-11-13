@@ -22,6 +22,7 @@ import { safeEqual, encryptWithKey, decryptWithKey, joinRemote } from './lib/cry
 import { siteFilePath, normalizeChangeFiles } from './lib/site-paths.mjs';
 import { websiteToolResult } from './lib/website-tool-result.mjs';
 import { createSerialLock } from './lib/serial-lock.mjs';
+import { createFullBackup } from './lib/full-backup.mjs';
 import { createChangeApplyJobs } from './lib/change-apply-jobs.mjs';
 import { createCmsController, cmsInstallRequestSchema, cmsScheduleSchema } from './lib/lorzcms.mjs';
 import { renderCmsWorkspace } from './lib/lorzcms-workspace.mjs';
@@ -29,6 +30,8 @@ import { billingDashboardBody } from './lib/billing-ui.mjs';
 import { createBillingController, registerBillingRoutes } from './lib/billing.mjs';
 import { createSiteProjectService, registerSiteProjectRoutes } from './lib/site-projects.mjs';
 import { registerToolsRoutes, createToolsService, passivePhpCheck } from './lib/tools.mjs';
+import { createCalendarBridge, registerCalendarBridgeRoutes } from './lib/calendar-bridge.mjs';
+import { registerGoogleReconnectRoutes } from './lib/google-reconnect.mjs';
 import { createThemeService, registerThemeRoutes } from './lib/siteops-theme.mjs';
 import { createWorkspaceSearch, registerWorkspaceSearchRoutes } from './lib/workspace-search.mjs';
 import { createConnectionProfiles, registerConnectionProfileRoutes } from './lib/connection-profiles.mjs';
@@ -309,6 +312,7 @@ const billingWorkflows = createBillingWorkflows({
 
 const workspaceSearch = createWorkspaceSearch({ db });
 const toolsService = createToolsService(db);
+const calendarBridge = createCalendarBridge({ db, encrypt, decrypt, publicBaseUrl: () => cfg.publicBaseUrl });
 const aiUsage = createAiUsage({ db });
 const backupJobs = createBackupJobs({ db, getSite, backup: site => fullBackup(site, site.backup_max_files || 10000) });
 const workspaceActivity = createWorkspaceActivity(db);
@@ -1266,7 +1270,8 @@ async function readRemoteText(siteId, path) {
 
 // All writes to the shared backup repository are serialised. Each holder gets a bounded hold
 // time so one hung FTP/GitHub call can no longer block every later change_apply and backup
-// (see lib/serial-lock.mjs). Snapshots of a few files finish in seconds; full backups get more.
+// (see lib/serial-lock.mjs). Full backups read the website outside the lock and only hold it
+// for their commit; SITEOPS_FULL_BACKUP_LOCK_MS bounds that unlocked read instead.
 const BACKUP_LOCK_SNAPSHOT_MS = Number(process.env.SITEOPS_SNAPSHOT_LOCK_MS || 3 * 60 * 1000);
 const BACKUP_LOCK_FULL_MS = Number(process.env.SITEOPS_FULL_BACKUP_LOCK_MS || 20 * 60 * 1000);
 const withBackupLock = createSerialLock({
@@ -1493,6 +1498,8 @@ function applyTreeMapUpdates(treeMap, updates) {
 // window between that prior call and this one (see the comment on branchHeadMatches);
 // always safe to omit, or to pass a now-stale one - branchState() is fetched fresh instead.
 async function commitPaths(site, paths, message, knownState = null) {
+  // Scheduled backups of this website step aside while changes are being applied.
+  fullBackup.noteChange(site.id);
   return withBackupLock(
     async () => {
       const state =
@@ -1579,64 +1586,30 @@ async function changedFiles(site, before, after) {
     .map(p => p.slice(prefix.length))
     .sort();
 }
-async function fullBackup(site, maxFiles = 10000) {
-  return withBackupLock(
-    async () => {
-      const state = await branchState(),
-        remote = await connectSite(site),
-        prefix = 'sites/' + site.slug + '/',
-        publicPrefix = prefix + 'public/',
-        changes = [],
-        seen = new Set();
-      let count = 0;
-      const patterns = Array.isArray(site.exclude_patterns) ? site.exclude_patterns : [],
-        excluded = p => patterns.some(x => p.includes(x));
-      async function addFile(rel) {
-        if (++count > maxFiles) throw new Error('Backup stopped after ' + maxFiles + ' files');
-        const repoPath = publicPrefix + rel,
-          content = await remote.read(joinRemote(site.remote_root, rel)),
-          existing = state.treeMap.get(repoPath);
-        seen.add(repoPath);
-        if (existing?.sha !== gitBlobSha(content)) changes.push(await gitTreeChangeFor(repoPath, content));
-      }
-      async function walk(rel = '') {
-        for (const e of await remote.list(joinRemote(site.remote_root, rel))) {
-          const child = rel ? rel + '/' + e.name : e.name;
-          if (excluded(child) || !websitePathAllowed(child)) continue;
-          if (e.type === 'directory') await walk(child);
-          else if (e.type === 'file') await addFile(child);
-        }
-      }
-      try {
-        await walk();
-        const metaPath = prefix + '.siteops.json',
-          meta = Buffer.from(JSON.stringify({ domain: site.domain, fileCount: count }, null, 2) + '\n'),
-          metaExisting = state.treeMap.get(metaPath);
-        seen.add(metaPath);
-        if (metaExisting?.sha !== gitBlobSha(meta)) changes.push(await gitTreeChangeFor(metaPath, meta));
-        for (const p of state.treeMap.keys())
-          if (p.startsWith(prefix) && !seen.has(p)) changes.push({ path: p, mode: '100644', type: 'blob', sha: null });
-        const { sha: commit } = await commitTreeChanges(state, changes, '[' + site.domain + '] Full backup'),
-          changed = commit !== state.headSha;
-        const backupId = crypto.randomUUID();
-        await q('insert into backups(id,site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?,?)', [
-          backupId,
-          site.id,
-          commit,
-          'full',
-          count,
-          changed
-        ]);
-        return { commit, files: count, changed };
-      } finally {
-        try {
-          await remote.close();
-        } catch {}
-      }
-    },
-    { maxHoldMs: BACKUP_LOCK_FULL_MS, label: 'full backup ' + site.domain }
-  );
-}
+// Reads the website without the backup lock and only locks for the final commit, so a
+// change_apply never waits for a download (see lib/full-backup.mjs for the merge rules).
+const fullBackup = createFullBackup({
+  withLock: withBackupLock,
+  branchState,
+  branchHeadMatches,
+  connectSite: site => connectSite(site),
+  joinRemote,
+  pathAllowed: websitePathAllowed,
+  gitBlobSha,
+  treeChangeFor: gitTreeChangeFor,
+  commitTreeChanges,
+  recordBackup: ({ site, commit, files, changed }) =>
+    q('insert into backups(id,site_id,git_commit,backup_type,file_count,changed) values(?,?,?,?,?,?)', [
+      crypto.randomUUID(),
+      site.id,
+      commit,
+      'full',
+      files,
+      changed
+    ]),
+  readDeadlineMs: BACKUP_LOCK_FULL_MS,
+  commitLockMs: BACKUP_LOCK_SNAPSHOT_MS
+});
 async function listBackups(site, limit = 30) {
   return (
     await q(
@@ -2482,6 +2455,9 @@ function startBackupWorker() {
         )
       ).rows;
       for (const site of sites) {
+        // An interactive change is in progress or just finished: let it go first. The site
+        // stays due and is picked up on a later round.
+        if (fullBackup.changedRecently(site.id)) continue;
         const previous = (await q('select * from backup_state where site_id=?', [site.id])).rows[0];
         await q(
           `insert into backup_state(site_id,last_attempt_at,updated_at) values(?,now(),now()) on duplicate key update last_attempt_at=now(),updated_at=now()`,
@@ -4258,7 +4234,7 @@ async function clientReportPage(slug) {
     esc(site.slug) +
     '">← ' +
     esc(site.name) +
-    '</a><header><div><span class="eyebrow">QUALITY REPORT</span><h1>' +
+    '</a><header><div><h1>' +
     esc(site.name) +
     '</h1><p>' +
     esc(site.domain) +
@@ -5541,6 +5517,7 @@ function mcpServer(principal) {
     billing: billingController,
     workflows: billingWorkflows,
     tools: toolsService,
+    calendar: calendarBridge,
     phpCheck: passivePhpCheck,
     videoSuite: () => ready(videoSuiteService),
     studio: () => ready(videoStudioService),
@@ -6260,7 +6237,7 @@ function settingsPage() {
   return page(
     'Einstellungen',
     `
-    <header><div><span class="eyebrow">System</span><h1>Einstellungen</h1><p>Zentrale Konfiguration für Backups, Standardwerte neuer Websites und Benachrichtigungen.</p></div><span class="pill ok">MySQL verbunden</span></header>
+    <header><div><h1>Einstellungen</h1><p>Zentrale Konfiguration für Backups, Standardwerte neuer Websites und Benachrichtigungen.</p></div><span class="pill ok">MySQL verbunden</span></header>
     <section class="form-card siteops-appearance-section" aria-labelledby="siteopsAppearanceHeading">
       <div class="sectionhead"><div><span class="eyebrow">Darstellung</span><h2 id="siteopsAppearanceHeading">Design & Farben</h2></div></div>
       <p class="lead">Passe die Akzentfarbe des gesamten SiteOps-Workspaces an. Die Einstellung gilt auch für die Kundenverwaltung.</p>
@@ -6512,7 +6489,7 @@ async function syntheticTestsPage(slug) {
     esc(site.slug) +
     '">← ' +
     esc(site.name) +
-    '</a><header><div><span class="eyebrow">PLAYWRIGHT SYNTHETICS</span><h1>Browser Tests · ' +
+    '</a><header><div><h1>Browser Tests · ' +
     esc(site.name) +
     '</h1><p>Echte Chromium-Journeys, Fehler-Screenshots und visuelle Regressionen.</p></div><span class="pill ' +
     (runner ? 'ok' : 'bad') +
@@ -6551,7 +6528,7 @@ function setupPage() {
   return page(
     'Website hinzufügen',
     `
-    <header><div><span class="eyebrow">Neue Website</span><h1>Website hinzufügen</h1><p>Lege zuerst fest, was für eine Website es ist und wie sie deployed wird. SiteOps behandelt einen Hostinger-Git-Deploy anders als einen klassischen FTP-/SFTP-Webspace.</p></div></header>
+    <header><div><h1>Website hinzufügen</h1><p>Lege zuerst fest, was für eine Website es ist und wie sie deployed wird. SiteOps behandelt einen Hostinger-Git-Deploy anders als einen klassischen FTP-/SFTP-Webspace.</p></div></header>
     <form id="siteForm" class="config-form" data-unsaved-guard>
       <section class="form-card">
         <div class="sectionhead"><div><span class="eyebrow">1 · Zuordnung</span><h2>Website & Deployment</h2></div></div>
@@ -6989,9 +6966,9 @@ async function seoDashboardPage(slug) {
       '</td></tr>';
   }
   if (!rows) rows = '<tr><td colspan="10">Noch kein abgeschlossener Crawl.</td></tr>';
-  let html = '<a class="backlink" href="/sites/' + esc(site.slug) + '">← ' + esc(site.name) + '</a>';
+  let html = '';
   html +=
-    '<header><div><span class="eyebrow">WEBSITE QUALITY SUITE</span><h1>SEO · ' +
+    '<header><div><h1>SEO · ' +
     esc(site.name) +
     '</h1><p>Technischer SEO-Crawl, Duplicate-/Linkanalyse, Accessibility, Security-Header, Social Metadata, interne Seitenstärke, WDF×IDF und Lighthouse/PageSpeed.</p></div><div class="actions"><button class="ghost" onclick="siteOpsCopyPrompt({kind:\'seo_site\',site:\'' +
     site.slug +
@@ -7085,10 +7062,6 @@ async function seoDashboardPage(slug) {
     '/seo-runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(data)}),x=await r.json();seoState.textContent=r.ok?"✓ Crawl gestartet":"✗ "+(x.message||x.error||JSON.stringify(x));if(r.ok)setTimeout(()=>location.reload(),800);});window.addEventListener("DOMContentLoaded",()=>siteOpsTableView({tableId:"seoPagesTable",searchId:"seoPageSearch",pageSizeId:"seoPageSize",pagerId:"seoPagesPager",defaultSize:25,filters:[{id:"seoHttpFilter",data:"http"},{id:"seoIssueFilter",data:"issues"}]}));' +
     (run?.status === 'running' ? 'setTimeout(()=>location.reload(),4000);' : '') +
     '</script>';
-  html +=
-    '<section><h2>Google Search Console</h2><p>Suchleistung, Property-Verknüpfung und freigegebene Anmeldung für dieses Projekt.</p><a class="button" href="/sites/' +
-    encodeURIComponent(site.slug) +
-    '/search-console">Search Console öffnen</a></section>';
   if (latest.search_console?.available) {
     const gsc = latest.search_console;
     html +=
@@ -7213,7 +7186,7 @@ async function seoPageDetailPage(id) {
     esc(site.slug) +
     '/seo">← SEO · ' +
     esc(site.name) +
-    '</a><header><div><span class="eyebrow">SEO PAGE</span><h1>' +
+    '</a><header><div><h1>' +
     esc(p.title || p.path) +
     '</h1><p><a href="' +
     esc(p.url) +
@@ -7329,17 +7302,45 @@ async function siteOperationsPage(slug) {
   return page(
     site.name,
     `
-    <a class="backlink" href="/">← Übersicht</a>
-    <header><div><span class="eyebrow">${isGit ? 'HOSTINGER GIT' : esc(site.protocol.toUpperCase())} · ${site.enabled ? 'AKTIV' : 'PAUSIERT'}</span><h1>${esc(site.name)}</h1><p>${esc(site.domain)} · ${isGit ? esc(site.source_repository + ' @ ' + (site.source_branch || 'main')) : esc(site.remote_root)}</p></div><div class="actions"><button class="ghost" id="checkNow">Erreichbarkeit prüfen</button><button id="backupNow">Sicherung erstellen</button><details class="ui-more-actions"><summary>Weitere Aktionen</summary><button type="button" class="ghost" id="monitorNow">Monitoring protokollieren</button><a class="button ghost" href="/sites/${esc(site.slug)}/delete">Website löschen</a></details></div></header>
+    <header><div><h1>${esc(site.name)}</h1><p><a href="https://${esc(site.domain)}" target="_blank" rel="noopener noreferrer">${esc(site.domain)} ↗</a> · <span class="ui-status" data-tone="${viewStatus.code === 'online' ? 'positive' : viewStatus.code === 'attention' ? 'danger' : 'neutral'}">${esc(viewStatus.label)}</span>${site.enabled ? '' : ' · pausiert'}</p></div><div class="actions"><button class="ghost" id="checkNow">Erreichbarkeit prüfen</button><button id="backupNow">Sicherung erstellen</button><details class="ui-more-actions"><summary>Weitere Aktionen</summary><button type="button" class="ghost" id="monitorNow">Monitoring protokollieren</button><a class="button ghost" href="#settings">Einstellungen</a></details></div></header>
     ${latest && !latest.ok ? `<div class="notice bad"><strong>Monitoringfehler</strong><span>${esc(latest.error || latestDetails.error || 'HTTP ' + (latest.http_status ?? 'unbekannt'))}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'monitor',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
     ${openIncidents.length ? `<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span><a href="/incidents/${openIncidents[0].id}">${esc(openIncidents[0].title)}</a> · seit ${fmtDateTime(openIncidents[0].created_at)}</span></div>` : ''}
     ${backupState?.last_error ? `<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'backup',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
+    <div data-site-view="overview">
     <div class="metrics big ops-metrics"><span>${uptime}%<em>Uptime letzte ${checks.length} Checks</em></span><span>${latest?.response_ms ?? '–'} ms<em>Response</em></span><span>${latest?.ssl_days ?? '–'} d<em>SSL</em></span><span>${latest?.http_status ?? '–'}<em>HTTP</em></span><span>${backups[0]?.created_at ? fmtDateTime(backups[0].created_at) : '–'}<em>Letztes Backup</em></span></div>
 
     <div class="twocol ops-grid">
       <section>
-        <div class="sectionhead"><div><span class="eyebrow">Zugriff</span><h2>Verbindung & Deployment</h2></div><span class="pill ${isGit ? 'ok' : ''}">${isGit ? 'GIT SOURCE' : 'WEBSPACE'}</span></div>
-        <details class="ui-settings-disclosure"><summary>Verbindung bearbeiten</summary><p class="lead">Änderungen an Zugangsdaten werden vor dem Speichern getestet. Leere Secret-Felder behalten das bisher gespeicherte Secret.</p>
+        <div class="sectionhead"><div><h2>Diagnose</h2></div></div>
+        <dl class="facts compact-facts">
+          <div><dt>Finale URL</dt><dd>${esc(latestDetails.finalUrl || '–')}</dd></div>
+          <div><dt>Titel</dt><dd>${esc(latestDetails.title || '–')}</dd></div>
+          <div><dt>DNS</dt><dd>${Array.isArray(latestDetails.dns) ? esc(latestDetails.dns.join(', ')) : '–'}</dd></div>
+          <div><dt>Redirects</dt><dd>${Array.isArray(latestDetails.redirects) ? latestDetails.redirects.length : 0}</dd></div>
+          <div><dt>WordPress</dt><dd>${latestDetails.wordpress ? (latestDetails.wordpress.ok ? 'OK' : 'Fehler') : 'nicht geprüft'}</dd></div><div><dt>Domain-Ablauf</dt><dd>${latestDetails.domainExpiryDays ?? '–'} Tage</dd></div>
+          <div><dt>Fehler in Folge</dt><dd>${monitorState?.consecutive_failures || 0}</dd></div>
+          <div><dt>Alerts im Incident</dt><dd>${monitorState?.alert_count || 0}</dd></div>
+        </dl>
+      </section>
+      <section>
+        <div class="sectionhead"><div><h2>Sicherung</h2></div><a href="#history">Alle Sicherungen</a></div>
+        <dl class="facts compact-facts"><div><dt>Letzter Versuch</dt><dd>${backupState?.last_attempt_at ? fmtDateTime(backupState.last_attempt_at) : '–'}</dd></div><div><dt>Letzter Erfolg</dt><dd>${backupState?.last_success_at ? fmtDateTime(backupState.last_success_at) : '–'}</dd></div><div><dt>Backup-Pfad</dt><dd><code>sites/${esc(site.slug)}/public</code></dd></div></dl>
+      </section>
+    </div>
+      <section class="site-links" aria-labelledby="siteLinksTitle"><div class="sectionhead"><div><h2 id="siteLinksTitle">Weiterarbeiten</h2></div></div>
+        <ul class="ui-link-cards">
+          <li><a href="/sites/${esc(site.slug)}/files"><strong>Dateien</strong><span>Inhalte ansehen und mit Vorschau ändern</span></a></li>
+          <li><a href="/sites/${esc(site.slug)}/seo"><strong>Sichtbarkeit</strong><span>SEO-Prüfung und Google-Suchleistung</span></a></li>
+          <li><a href="/lorzcms"><strong>Inhalte im CMS</strong><span>LorzCMS-Installationen, Updates und Versionen</span></a></li>
+          <li><a href="/hosting"><strong>Domain & SSL</strong><span>DNS-Einträge und Zertifikate beim Hoster</span></a></li>
+        </ul>
+      </section>
+    </div>
+
+    <div data-site-view="settings" hidden>
+      <section>
+        <div class="sectionhead"><div><h2>Verbindung & Deployment</h2></div><span class="pill ${isGit ? 'ok' : ''}">${isGit ? 'GIT SOURCE' : 'WEBSPACE'}</span></div>
+        <details class="ui-settings-disclosure" open><summary>Verbindung bearbeiten</summary><p class="lead">Änderungen an Zugangsdaten werden vor dem Speichern getestet. Leere Secret-Felder behalten das bisher gespeicherte Secret.</p>
         <form id="connectionForm" class="inner-form" data-unsaved-guard>
           <label>Deployment-Methode<select name="deploymentMode"><option value="webspace" ${!isGit ? 'selected' : ''}>Direkter Webspace</option><option value="hostinger_git" ${isGit ? 'selected' : ''}>Hostinger Git Deploy</option></select></label>
           <div id="connWeb" ${isGit ? 'hidden' : ''}>
@@ -7364,10 +7365,9 @@ async function siteOperationsPage(slug) {
           <div class="buttonrow"><button type="button" class="ghost" id="testStoredConnection">Aktuelle Verbindung testen</button><button type="submit">Testen & speichern</button><span id="connectionState" class="inline-status"></span></div>
         </form></details>
       </section>
-
       <section>
-        <div class="sectionhead"><div><span class="eyebrow">Betrieb</span><h2>Monitoring & Alarmierung</h2></div><span class="pill ${viewStatus.code === 'online' ? 'ok' : viewStatus.code === 'attention' ? 'bad' : ''}">${esc(viewStatus.label)}</span></div>
-        <details class="ui-settings-disclosure"><summary>Prüfregeln und Alarmierung bearbeiten</summary><form id="monitorForm" class="inner-form" data-unsaved-guard>
+        <div class="sectionhead"><div><h2>Monitoring & Alarmierung</h2></div><span class="pill ${viewStatus.code === 'online' ? 'ok' : viewStatus.code === 'attention' ? 'bad' : ''}">${esc(viewStatus.label)}</span></div>
+        <details class="ui-settings-disclosure" open><summary>Prüfregeln und Alarmierung bearbeiten</summary><form id="monitorForm" class="inner-form" data-unsaved-guard>
           <label class="check"><input type="checkbox" name="enabled" ${site.enabled ? 'checked' : ''}> Website aktiv verwalten</label>
           <label class="check"><input type="checkbox" name="monitor_enabled" ${site.monitor_enabled ? 'checked' : ''}> Monitoring aktiv</label>
           <label>Monitor-URL<input name="monitor_url" value="${esc(site.monitor_url || 'https://' + site.domain)}"></label>
@@ -7387,41 +7387,31 @@ async function siteOperationsPage(slug) {
           <button>Monitoring speichern</button><span id="monitorState" class="inline-status"></span>
         </form></details>
       </section>
-    </div>
-
-    <div class="twocol ops-grid">
       <section>
-        <div class="sectionhead"><div><span class="eyebrow">Sicherung</span><h2>Backup</h2></div></div>
-        <details class="ui-settings-disclosure"><summary>Automatische Sicherung einstellen</summary><form id="backupForm" class="inner-form" data-unsaved-guard>
+        <div class="sectionhead"><div><h2>Automatische Sicherung</h2></div></div>
+        <details class="ui-settings-disclosure" open><summary>Automatische Sicherung einstellen</summary><form id="backupForm" class="inner-form" data-unsaved-guard>
           <label class="check"><input type="checkbox" name="backup_enabled" ${site.backup_enabled ? 'checked' : ''}> Automatische Backups</label>
           <label>Backup-Intervall (Sek.)<input name="backup_interval_seconds" type="number" min="900" value="${site.backup_interval_seconds}"></label>
           <label>Max. Dateien<input name="backup_max_files" type="number" min="100" value="${site.backup_max_files}"></label>
           <label>Ausschlüsse <small>Eine Zeile pro Muster. Standardmäßig u. a. Cache und Uploads.</small><textarea name="exclude_patterns" rows="6">${esc((Array.isArray(site.exclude_patterns) ? site.exclude_patterns : []).join('\n'))}</textarea></label>
           <button>Backup-Einstellungen speichern</button><span id="backupState" class="inline-status"></span>
         </form></details>
-        <dl class="facts compact-facts"><div><dt>Letzter Versuch</dt><dd>${backupState?.last_attempt_at ? fmtDateTime(backupState.last_attempt_at) : '–'}</dd></div><div><dt>Letzter Erfolg</dt><dd>${backupState?.last_success_at ? fmtDateTime(backupState.last_success_at) : '–'}</dd></div><div><dt>Backup-Pfad</dt><dd><code>sites/${esc(site.slug)}/public</code></dd></div></dl>
       </section>
-      <section>
-        <div class="sectionhead"><div><span class="eyebrow">Letzter Check</span><h2>Diagnose</h2></div></div>
-        <dl class="facts compact-facts">
-          <div><dt>Finale URL</dt><dd>${esc(latestDetails.finalUrl || '–')}</dd></div>
-          <div><dt>Titel</dt><dd>${esc(latestDetails.title || '–')}</dd></div>
-          <div><dt>DNS</dt><dd>${Array.isArray(latestDetails.dns) ? esc(latestDetails.dns.join(', ')) : '–'}</dd></div>
-          <div><dt>Redirects</dt><dd>${Array.isArray(latestDetails.redirects) ? latestDetails.redirects.length : 0}</dd></div>
-          <div><dt>WordPress</dt><dd>${latestDetails.wordpress ? (latestDetails.wordpress.ok ? 'OK' : 'Fehler') : 'nicht geprüft'}</dd></div><div><dt>Domain-Ablauf</dt><dd>${latestDetails.domainExpiryDays ?? '–'} Tage</dd></div>
-          <div><dt>Fehler in Folge</dt><dd>${monitorState?.consecutive_failures || 0}</dd></div>
-          <div><dt>Alerts im Incident</dt><dd>${monitorState?.alert_count || 0}</dd></div>
-        </dl>
-      </section>
+      <section class="site-danger"><div class="sectionhead"><div><h2>Website entfernen</h2></div></div><p class="lead">Entfernt die Website aus SiteOps. Die Dateien auf dem Server bleiben erhalten.</p><a class="button ghost" href="/sites/${esc(site.slug)}/delete">Website löschen</a></section>
     </div>
 
-    <section><div class="sectionhead"><div><span class="eyebrow">Verfügbarkeit</span><h2>Monitoring-Verlauf</h2></div><small>Bis zu ${checks.length} aktuelle Prüfungen · filterbar und paginiert.</small></div><div class="filterbar"><input id="monitorSearch" type="search" placeholder="URL oder HTTP-Status filtern"><select id="monitorStatus" aria-label="Prüfungen nach Status filtern"><option value="all">OK + Fehler</option><option value="ok">Nur OK</option><option value="error">Nur Fehler</option></select><select id="monitorPageSize" aria-label="Prüfungen pro Seite"><option value="10">10 / Seite</option><option value="20" selected>20 / Seite</option><option value="50">50 / Seite</option><option value="100">100 / Seite</option></select></div><div class="tablewrap"><table id="monitorTable"><thead><tr><th>Zeit</th><th>Status</th><th>HTTP</th><th>Response</th><th>SSL</th><th>Finale URL</th><th>Redirects</th></tr></thead><tbody>${checkRows}</tbody></table></div><div class="pagination-bar" id="monitorPager"></div></section>
-    <section><div class="sectionhead"><div><span class="eyebrow">Alarmierung</span><h2>Incidents</h2></div><small>Öffnen für vollständige Ereignis- und Alert-Timeline.</small></div><div class="tablewrap"><table><thead><tr><th>Incident</th><th>Status</th><th>Start</th><th>Ende</th><th>Dauer</th></tr></thead><tbody>${incidentRows}</tbody></table></div></section>
-    <section><div class="sectionhead"><div><span class="eyebrow">Versionen</span><h2>Backups</h2></div><small>Restore erstellt zuerst automatisch einen Safety-Snapshot.</small></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Commit</th><th>Dateien</th><th>Stand</th><th></th></tr></thead><tbody>${backupRows}</tbody></table></div></section>
-    <section><div class="sectionhead"><div><span class="eyebrow">Audit</span><h2>Änderungen</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Änderung</th><th>Quelle</th><th>Status</th><th></th></tr></thead><tbody>${historyRows}</tbody></table></div></section>
+    <div data-site-view="history" hidden>
+    <section><div class="sectionhead"><div><h2>Monitoring-Verlauf</h2></div><small>Bis zu ${checks.length} aktuelle Prüfungen · filterbar und paginiert.</small></div><div class="filterbar"><input id="monitorSearch" type="search" placeholder="URL oder HTTP-Status filtern"><select id="monitorStatus" aria-label="Prüfungen nach Status filtern"><option value="all">OK + Fehler</option><option value="ok">Nur OK</option><option value="error">Nur Fehler</option></select><select id="monitorPageSize" aria-label="Prüfungen pro Seite"><option value="10">10 / Seite</option><option value="20" selected>20 / Seite</option><option value="50">50 / Seite</option><option value="100">100 / Seite</option></select></div><div class="tablewrap"><table id="monitorTable"><thead><tr><th>Zeit</th><th>Status</th><th>HTTP</th><th>Response</th><th>SSL</th><th>Finale URL</th><th>Redirects</th></tr></thead><tbody>${checkRows}</tbody></table></div><div class="pagination-bar" id="monitorPager"></div></section>
+    <section><div class="sectionhead"><div><h2>Incidents</h2></div><small>Öffnen für vollständige Ereignis- und Alert-Timeline.</small></div><div class="tablewrap"><table><thead><tr><th>Incident</th><th>Status</th><th>Start</th><th>Ende</th><th>Dauer</th></tr></thead><tbody>${incidentRows}</tbody></table></div></section>
+    <section><div class="sectionhead"><div><h2>Backups</h2></div><small>Restore erstellt zuerst automatisch einen Safety-Snapshot.</small></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Commit</th><th>Dateien</th><th>Stand</th><th></th></tr></thead><tbody>${backupRows}</tbody></table></div></section>
+    <section><div class="sectionhead"><div><h2>Änderungen</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Änderung</th><th>Quelle</th><th>Status</th><th></th></tr></thead><tbody>${historyRows}</tbody></table></div></section>
+    </div>
 
     <script>
     const slug=${JSON.stringify(site.slug)};
+    // Übersicht, Einstellungen und Verlauf sind Ansichten derselben Seite (#settings, #history).
+    function showSiteView(){const view=['settings','history'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';for(const el of document.querySelectorAll('[data-site-view]'))el.hidden=el.dataset.siteView!==view;document.body.dataset.siteCurrent=view;document.dispatchEvent(new CustomEvent('siteops:site-view',{detail:view}));}
+    window.addEventListener('hashchange',showSiteView);showSiteView();
     window.addEventListener('DOMContentLoaded',()=>siteOpsTableView({tableId:'monitorTable',searchId:'monitorSearch',pageSizeId:'monitorPageSize',pagerId:'monitorPager',defaultSize:20,filters:[{id:'monitorStatus',data:'status'}]}));
     const byId=id=>document.getElementById(id);
     const connectionForm=byId('connectionForm'),monitorForm=byId('monitorForm'),backupForm=byId('backupForm');
@@ -7751,7 +7741,9 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
       path.startsWith('/assets/') ||
       oauthPublic ||
       path === '/login' ||
-      path.startsWith('/video-studio/download/')
+      path.startsWith('/video-studio/download/') ||
+      // Abo-Adresse der Kalender-Brücke: das geheime Token im Pfad ist die Berechtigung.
+      path.startsWith('/calendar/feed/')
     )
       return;
     if (path === '/mcp') {
@@ -7958,6 +7950,7 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
     const html = renderSearchConsoleOverview(sites, status, overview, buildInfo.build);
     return reply.type('text/html').send(page('Google Search Console', html));
   });
+  registerGoogleReconnectRoutes(app, { youtube: youtubeService, searchConsole: searchConsoleService });
   registerSearchConsoleRoutes(app, searchConsoleService, {
     page,
     render: site => renderSearchConsole(site, buildInfo.build),
@@ -7970,6 +7963,11 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   }
   registerCoolifyDeploymentRoutes(app, coolifyDeployer);
   registerToolsRoutes(app, { db, page, publicBaseUrl: () => cfg.publicBaseUrl, service: toolsService });
+  registerCalendarBridgeRoutes(app, { service: calendarBridge, page, publicBaseUrl: () => cfg.publicBaseUrl });
+  if (databaseReady) {
+    const stopCalendarBridge = calendarBridge.start();
+    app.addHook('onClose', async () => stopCalendarBridge());
+  }
   app.addHook('preHandler', async (req, reply) => {
     if (
       !['/api/hosting/allinkl/', '/api/website-factory/', '/api/coolify/'].some(prefix => req.url.startsWith(prefix)) ||

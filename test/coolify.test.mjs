@@ -370,7 +370,14 @@ test('saved Coolify connections are visible on the page and the submit script no
     [],
     x => String(x).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
   );
-  assert.match(html, /Gespeicherte Coolify-Verbindungen/);
+  assert.match(html, /Deine Coolify-Verbindungen/);
+  // The saved connections lead their tab; the form to add one follows.
+  assert.ok(html.indexOf('Deine Coolify-Verbindungen') < html.indexOf('id="coolifyConnectHeading"'));
+  assert.deepEqual(
+    [...html.matchAll(/data-ui-tab="([a-z]+)"/g)].map(match => match[1]),
+    ['connections', 'apps', 'projects', 'supabase']
+  );
+  assert.equal((html.match(/data-ui-panel="/g) || []).length, 4);
   assert.match(html, /data-coolify-edit/);
   assert.match(html, /Coolify Produktiv/);
   assert.match(html, /id="coolifySaveStatus"/);

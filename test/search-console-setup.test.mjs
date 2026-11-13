@@ -94,7 +94,36 @@ test('central overview removes setup instructions once connected and names the n
   assert.doesNotMatch(ready, /Google Cloud Console|Google-Verbindung einrichten|gsc-overview-onboarding/);
   assert.match(ready, /Google-Verbindung verwalten/);
   assert.match(ready, /Suchleistung öffnen/);
+  assert.match(ready, /noch nicht synchronisiert/, 'a connected website without a sync says what to do');
+  assert.match(ready, /Verbundene Websites<\/dt><dd><span>1 von 1/);
+  // With synced reports the overview becomes a dashboard: totals first, busiest website first.
+  const quiet = { id: 'quiet', slug: 'quiet', name: 'Quiet', domain: 'quiet.test' },
+    open = { id: 'open', slug: 'open', name: 'Open <b>', domain: 'open.test' };
+  const report = (clicks, previous) => ({
+    clicks,
+    impressions: clicks * 20,
+    ctr: 0.05,
+    position: 7.26,
+    previous_clicks: previous,
+    daily_clicks: [1, 4, 2, 8]
+  });
+  const dashboard = renderSearchConsoleOverview([open, quiet, site], connected, [
+    { site_id: quiet.id, setup: searchConsoleSetup(connected), performance: report(100, 200) },
+    { site_id: site.id, setup: searchConsoleSetup(connected), performance: report(1500, 1000) }
+  ]);
+  assert.match(dashboard, /Verbundene Websites<\/dt><dd><span>2 von 3<\/span><small>1 noch einzurichten/);
+  assert.match(dashboard, /Klicks<\/dt><dd><span>1\.600<\/span>/);
+  assert.match(dashboard, /Impressionen<\/dt><dd><span>32\.000<\/span>/);
+  assert.match(dashboard, /data-tone="up">\+50,0\s?% zum Vorzeitraum/);
+  assert.match(dashboard, /data-tone="down">-50,0\s?% zum Vorzeitraum/);
+  assert.match(dashboard, /Ø Position<\/dt><dd>7,3/);
+  assert.equal((dashboard.match(/class="gsc-spark"/g) || []).length, 2);
+  assert.ok(dashboard.indexOf('>Studio<') < dashboard.indexOf('>Quiet<'), 'most clicks first');
+  assert.ok(dashboard.indexOf('>Quiet<') < dashboard.indexOf('Open &lt;b&gt;'), 'websites to set up come last');
+  assert.doesNotMatch(dashboard, /Open <b>/);
+  assert.match(dashboard, /Nächster Schritt: Website zuordnen\./);
   const missing = renderSearchConsoleOverview([site], { configured: true, accounts: [] }, []);
+  assert.doesNotMatch(missing, /gsc-kpis/, 'no totals before Google is connected');
   assert.match(missing, /Google-Konto noch nicht verbunden/);
   assert.match(missing, /Client-ID allein verbindet noch kein Konto/);
   assert.match(missing, /\/sites\/demo\/search-console#settings/);
@@ -110,6 +139,7 @@ test('status exposes the same guidance through the shared service without secret
   const overview = await f.service.overview();
   assert.equal(overview[0].setup.next_step, status.setup.next_step);
   assert.equal(overview[0].property, status.linkage.property);
+  assert.equal(overview[0].performance, null, 'no figures before the first sync');
   assert.ok(!JSON.stringify(status.setup).includes('refresh-test'));
   await f.approve('live');
   const approved = await f.service.status('demo');

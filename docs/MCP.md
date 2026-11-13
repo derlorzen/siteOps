@@ -175,6 +175,23 @@ Use `video_studio_create_project`, `video_studio_update_project`,
 alongside the existing project/draft/render/status tools. English and German are
 supported. Rendering requires explicit human approval and `approved:true`.
 
+#### Video skills
+
+A skill is a named working method for the video assistant (for example
+`skript-lektorat`, `seo-paket` or `qualitaetspruefung`). The interface and MCP
+share one list: `video_skills_list` returns supplied and own skills,
+`video_skill_save` creates an own skill or adjusts a supplied one under the same
+identifier, and `video_skill_remove` deletes an own skill or resets an adjusted
+one. Pass the identifier as `skill` to `video_assistant_request`; the skill then
+also determines the mode. A skill refines the method only: the assistant's base
+rules and output format stay in force.
+
+`video_package_start` runs four skills in sequence on one conversation: script
+(new, or editing when a script exists), quality check, SEO package and thumbnail
+concepts. It costs four paid requests, needs approval and works in the
+background; read progress and the result with `video_package_status`. Run state
+is kept in memory until the next restart; the conversation itself is stored.
+
 ### Context and operations
 
 - `sites_list`
@@ -260,8 +277,15 @@ pre-change snapshot and skips files that already have the target content, so not
 written twice and no change is left without a post snapshot and history entry.
 
 Backup-repository writes are serialised with a bounded hold time
-(`SITEOPS_SNAPSHOT_LOCK_MS`, default 3 min; `SITEOPS_FULL_BACKUP_LOCK_MS`, default 20 min), so a
-single hung FTP or GitHub call can no longer block every later apply.
+(`SITEOPS_SNAPSHOT_LOCK_MS`, default 3 min), so a single hung FTP or GitHub call can no longer
+block every later apply.
+
+Full backups read the website **outside** that lock and only take it for their final commit, so
+a `change_apply` does not wait for a running backup of any website. The read is bounded by
+`SITEOPS_FULL_BACKUP_LOCK_MS` (default 20 min). If a change snapshot touches a file while a
+full backup of the same website is being read, the snapshot's version stays in the repository
+and the backup result reports it as `keptNewer`. Scheduled backups skip a website for a round
+when it had a change snapshot in the last two minutes.
 
 A domain preview is created first; only `change_apply` writes/commits it, after the additional server-bound personal approval described above.
 

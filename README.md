@@ -142,6 +142,14 @@ rollback semantics and validation.
 - AES-256-GCM encrypted stored credentials
 - Operational dashboard with a compact Focus view and a classic detail view
 
+### Calendar bridge
+
+- Republishes a private iCal feed (e.g. a Google business calendar) as an anonymized feed for a shared family calendar
+- Events whose title starts with a configurable prefix (default `..`) are left out; all other titles become a neutral label
+- All-day events can keep their original title; locations are reduced to an office label or the town name
+- Descriptions, attendees, links and attachments are never copied; the feed is served under a secret, rotatable URL
+- Configured under **Integrationen → Kalender-Brücke** (`/calendar-bridge`)
+
 ### Monitoring and incidents
 
 - HTTP status and response-time monitoring

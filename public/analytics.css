@@ -157,7 +157,7 @@ body.siteops-workspace .ops-main .analytics-workspace .analytics-nav button {
   flex: none;
 }
 body.siteops-workspace .ops-main .analytics-workspace .analytics-nav button[aria-selected='true'] {
-  border-bottom-color: var(--ink);
+  border-bottom-color: var(--siteops-accent);
   color: var(--ink);
   font-weight: 600;
 }

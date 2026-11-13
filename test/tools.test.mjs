@@ -6,9 +6,11 @@ import {
   normalizeScanTarget,
   normalizeToolUrl,
   PHP_FIXES,
+  registerToolsRoutes,
   renderToolsPage,
   withDeadline
 } from '../lib/tools.mjs';
+import Fastify from 'fastify';
 
 test('the documented PHP2Shell fixes are used for every supported branch', () => {
   assert.deepEqual(PHP_FIXES, {
@@ -84,4 +86,53 @@ test('PHP scanner resolves quickly or returns a controlled timeout for stalled D
     /DNS-Antwort dauert zu lange/
   );
   assert.ok(Date.now() - started < 2000);
+});
+
+test('tool link writes reach the service and are guarded by content type and origin', async t => {
+  const calls = [];
+  const app = Fastify();
+  t.after(() => app.close());
+  registerToolsRoutes(app, {
+    db: null,
+    page: (_title, body) => body,
+    publicBaseUrl: () => 'https://siteops.example.org',
+    service: {
+      create: async body => (calls.push(['create', body.title]), { id: 'new' }),
+      update: async id => (calls.push(['update', id]), { id }),
+      remove: async id => (calls.push(['remove', id]), { ok: true })
+    }
+  });
+  const json = { 'content-type': 'application/json' };
+  // A hanging hook would never answer; fail fast instead of stalling the suite.
+  const send = options =>
+    Promise.race([
+      app.inject(options),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('request hung: ' + options.url)), 2000).unref())
+    ]);
+  assert.equal(
+    (await send({ method: 'POST', url: '/api/tools', headers: json, payload: { title: 'A' } })).statusCode,
+    200
+  );
+  assert.equal((await send({ method: 'PUT', url: '/api/tools/7', headers: json, payload: {} })).statusCode, 200);
+  // The dashboard deletes without a body or content type.
+  assert.equal((await send({ method: 'DELETE', url: '/api/tools/7' })).statusCode, 200);
+  assert.deepEqual(calls, [
+    ['create', 'A'],
+    ['update', '7'],
+    ['remove', '7']
+  ]);
+  assert.equal((await send({ method: 'POST', url: '/api/tools', payload: 'x' })).statusCode, 415);
+  for (const method of ['POST', 'DELETE'])
+    assert.equal(
+      (
+        await send({
+          method,
+          url: '/api/tools' + (method === 'DELETE' ? '/7' : ''),
+          headers: { ...(method === 'POST' ? json : {}), origin: 'https://evil.example' },
+          payload: method === 'POST' ? {} : undefined
+        })
+      ).statusCode,
+      403
+    );
+  assert.equal(calls.length, 3);
 });

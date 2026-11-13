@@ -172,13 +172,51 @@
   function siteTabs(){
     const match=path.match(/^\/sites\/([^/]+)(?:\/(files|seo|search-console|tests|report))?$/);
     if(!match)return;
-    const slug=match[1], sub=match[2]||'overview';
-    const tabs=[['overview','Übersicht',''],['files','Dateien','/files'],['seo','SEO','/seo'],['search-console','Search Console','/search-console'],['tests','Browser-Tests','/tests'],['report','Bericht','/report']];
+    const slug=match[1], sub=match[2]||'overview', base='/sites/'+esc(slug);
+    // One website, one set of areas. SEO and Search Console are two views of "Sichtbarkeit".
+    const tabs=[['overview','Übersicht',''],['files','Dateien','/files'],['visibility','Sichtbarkeit','/seo'],['tests','Tests','/tests'],['report','Bericht','/report'],['history','Verlauf','#history'],['settings','Einstellungen','#settings']];
+    const current=()=>sub==='overview'?(['settings','history'].includes(location.hash.slice(1))?location.hash.slice(1):'overview'):(['seo','search-console'].includes(sub)?'visibility':sub);
+    const main=$('.ops-main');
+    for(const old of main.querySelectorAll(':scope > a.backlink'))old.remove();
+    const back=document.createElement('a');back.className='ops-site-back';back.href='/websites';back.textContent='← Alle Websites';
     const bar=document.createElement('nav');bar.className='ops-site-tabs';bar.setAttribute('aria-label','Website-Bereiche');
-    bar.innerHTML=tabs.map(([key,label,tail])=>'<a href="/sites/'+esc(slug)+tail+'"'+
-      (key===sub?' aria-current="page" class="is-active"':'')+'>'+label+'</a>').join('');
-    $('.ops-main').insertBefore(bar,$('.ops-main').firstChild);
+    const render=()=>{bar.innerHTML=tabs.map(([key,label,tail])=>'<a href="'+base+tail+'"'+
+      (key===current()?' aria-current="page" class="is-active"':'')+'>'+label+'</a>').join('');};
+    render();
+    main.insertBefore(bar,main.firstChild);main.insertBefore(back,bar);
+    window.addEventListener('hashchange',render);
+    if(['seo','search-console'].includes(sub)){
+      const views=document.createElement('nav');views.className='ops-site-subtabs';views.setAttribute('aria-label','Ansichten der Sichtbarkeit');
+      views.innerHTML=[['seo','SEO-Prüfung','/seo'],['search-console','Google-Suchleistung','/search-console']].map(([key,label,tail])=>
+        '<a href="'+base+tail+'"'+(key===sub?' aria-current="page"':'')+'>'+label+'</a>').join('');
+      bar.insertAdjacentElement('afterend',views);
+    }
   }
+  // Generic in-page tabs: [data-ui-tabs] holds [data-ui-tab] buttons, panels carry [data-ui-panel].
+  // The open tab is kept in the address (#key) so links and reloads land on the same view.
+  function uiTabs(){
+    const nav=$('[data-ui-tabs]');if(!nav)return;
+    const tabs=[...nav.querySelectorAll('[data-ui-tab]')],keys=tabs.map(tab=>tab.dataset.uiTab);
+    const select=(key,focus)=>{
+      if(!keys.includes(key))key=keys[0];
+      for(const tab of tabs){const on=tab.dataset.uiTab===key;tab.setAttribute('aria-selected',String(on));tab.tabIndex=on?0:-1;if(on&&focus)tab.focus();}
+      for(const panel of document.querySelectorAll('[data-ui-panel]'))panel.hidden=panel.dataset.uiPanel!==key;
+      return key;
+    };
+    for(const tab of tabs){
+      tab.addEventListener('click',()=>{history.replaceState(null,'','#'+select(tab.dataset.uiTab));});
+      tab.addEventListener('keydown',event=>{
+        const move={ArrowRight:1,ArrowLeft:-1}[event.key],index=tabs.indexOf(tab);
+        const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:move?(index+move+tabs.length)%tabs.length:null;
+        if(next===null)return;event.preventDefault();history.replaceState(null,'','#'+select(keys[next],true));
+      });
+    }
+    select(location.hash.slice(1));
+    window.addEventListener('hashchange',()=>select(location.hash.slice(1)));
+    // A link or script that targets something inside a hidden panel opens that panel first.
+    window.SiteOpsTabs={show:id=>{const panel=document.getElementById(id)?.closest('[data-ui-panel]');if(panel)select(panel.dataset.uiPanel);}};
+  }
+  uiTabs();
   siteTabs();
   if(/^\/sites\/[^/]+$/.test(path)){
     void Promise.all([fetchRelations(),fetchJSON('/api/sites/'+decodeURIComponent(path.split('/')[2]))])

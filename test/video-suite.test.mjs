@@ -458,3 +458,127 @@ test('agent gets verified language-matching demo references without login secret
   assert.doesNotMatch(request.input[0].content, /Do not send raw fields/);
   assert.match(request.instructions, /real screen recording is not configured/);
 });
+test('skills give the agent a fixed method, set the mode and are recorded with the conversation', async () => {
+  const { service, calls, conversations } = fixture(() => response(answer));
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  const listed = await service.skills();
+  assert.ok(listed.skills.length >= 8);
+  assert.ok(listed.skills.every(skill => skill.source === 'builtin' && listed.modes[skill.mode]));
+  const result = await service.chat({
+    project_id: project,
+    message: 'Check my script',
+    skill: 'qualitaetspruefung',
+    context
+  });
+  const payload = JSON.parse(calls[0][1].body);
+  assert.match(payload.instructions, /selected the skill "Qualitätsprüfung"/);
+  assert.match(payload.instructions, /Blocker, Wichtig and Hinweis/);
+  assert.equal(JSON.parse(payload.input[0].content).mode, 'edit');
+  assert.deepEqual(result.skill, { id: 'qualitaetspruefung', name: 'Qualitätsprüfung' });
+  assert.equal(conversations.get(result.conversation_id).messages[0].skill.id, 'qualitaetspruefung');
+  await service.chat({ project_id: project, message: 'Plain question', context });
+  assert.doesNotMatch(JSON.parse(calls[1][1].body).instructions, /selected the skill/);
+  await assert.rejects(
+    service.chat({ project_id: project, message: 'Unknown method', skill: 'gibt-es-nicht', context }),
+    error => error.statusCode === 404
+  );
+  assert.equal(calls.length, 2);
+});
+test('own skills are stored encrypted, can adjust a supplied skill and reset it again', async () => {
+  const { service, calls, settings } = fixture(() => response(answer));
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  const own = {
+    id: 'release-notes',
+    name: 'Release-Video',
+    summary: 'Kurzes Video zu einer neuen Version.',
+    mode: 'script',
+    starter: 'Plane ein Release-Video.',
+    instructions: 'Open with the most visible change, then show at most three improvements in order of impact.'
+  };
+  assert.equal((await service.saveSkill(own)).skill.source, 'custom');
+  assert.match(settings.get('video_suite_skills'), /^encrypted:/);
+  await service.saveSkill({ ...own, id: 'seo-paket', name: 'SEO kurz', mode: 'seo' });
+  const skills = (await service.skills()).skills;
+  assert.equal(skills.find(skill => skill.id === 'seo-paket').source, 'adjusted');
+  assert.equal(skills.filter(skill => skill.id === 'seo-paket').length, 1);
+  await service.chat({ project_id: project, message: 'New version video', skill: 'release-notes', context });
+  assert.match(JSON.parse(calls[0][1].body).instructions, /at most three improvements/);
+  assert.deepEqual(await service.removeSkill({ id: 'seo-paket' }), { removed: true, restored: true });
+  assert.equal((await service.skills()).skills.find(skill => skill.id === 'seo-paket').name, 'SEO-Paket');
+  assert.deepEqual(await service.removeSkill({ id: 'release-notes' }), { removed: true, restored: false });
+  await assert.rejects(service.removeSkill({ id: 'seo-paket' }), error => error.statusCode === 409);
+  await assert.rejects(service.saveSkill({ ...own, id: 'Not A Slug' }), error => error.statusCode === 422);
+  await assert.rejects(service.saveSkill({ ...own, extra: true }), error => error.statusCode === 422);
+});
+const fullDraft = {
+  title: 'Manage your store',
+  script: 'Start with a concrete store problem. Here is how to solve it.',
+  scenes: [{ headline: 'The problem', narration: 'Start with a concrete store problem. Here is how to solve it.' }],
+  youtube: {
+    title: 'Manage your store',
+    description: 'A verified tutorial.',
+    keywords: ['Bagisto'],
+    hashtags: ['#Bagisto'],
+    chapters: [{ start_seconds: 0, title: 'The problem' }],
+    thumbnail_concept: 'Original navy illustration',
+    sources: []
+  }
+};
+test('complete package runs four skills on one conversation and hands each step the latest draft', async () => {
+  const replies = [
+    { ...answer, reply: 'Draft ready.', draft: fullDraft, thumbnail_prompt: null },
+    { ...answer, reply: 'Hinweis: nothing blocks rendering.', thumbnail_prompt: null },
+    { ...answer, reply: 'Three titles.', draft: { ...fullDraft, title: 'Better title' }, thumbnail_prompt: null },
+    { ...answer, reply: 'Three concepts.', thumbnail_prompt: 'A navy illustration of a tidy shelf.' }
+  ];
+  const { service, calls, conversations } = fixture(() => response(replies.shift()));
+  await assert.rejects(service.startPackage({ project_id: project, message: 'Plan it', context }), { statusCode: 409 });
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  const started = await service.startPackage({ project_id: project, message: 'Plan a store tutorial', context });
+  assert.equal(started.status, 'running');
+  assert.deepEqual(
+    started.steps.map(step => step.skill),
+    ['video-komplett', 'qualitaetspruefung', 'seo-paket', 'titelbild-konzepte']
+  );
+  await assert.rejects(service.startPackage({ project_id: project, message: 'Again', context }), { statusCode: 409 });
+  let run;
+  for (let i = 0; i < 200 && (run = service.packageStatus(started.id)).status === 'running'; i++)
+    await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run.status, 'completed');
+  assert.ok(run.steps.every(step => step.status === 'done'));
+  assert.equal(run.draft.title, 'Better title');
+  assert.equal(run.thumbnail_prompt, 'A navy illustration of a tidy shelf.');
+  assert.equal(run.total_tokens, 492);
+  assert.equal(calls.length, 4);
+  assert.equal(conversations.get(run.conversation_id).messages.length, 8);
+  const second = JSON.parse(calls[1][1].body);
+  assert.match(second.instructions, /selected the skill "Qualitätsprüfung"/);
+  assert.equal(JSON.parse(second.input.at(-1).content).editorial_context.title, 'Manage your store');
+  assert.equal(JSON.parse(JSON.parse(calls[3][1].body).input.at(-1).content).editorial_context.title, 'Better title');
+  assert.equal(service.packages(project).length, 1);
+  assert.throws(() => service.packageStatus(started.id, other), { statusCode: 404 });
+});
+test('complete package edits an existing script and stops at the first failed step', async () => {
+  const replies = [{ ...answer, draft: fullDraft }];
+  const { service, calls } = fixture(() =>
+    replies.length ? response(replies.shift()) : new Response('upstream', { status: 500 })
+  );
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  const started = await service.startPackage({
+    project_id: project,
+    message: 'Tighten it',
+    context: { ...context, script: 'A long existing narration. '.repeat(20) }
+  });
+  assert.equal(started.steps[0].skill, 'skript-lektorat');
+  let run;
+  for (let i = 0; i < 200 && (run = service.packageStatus(started.id)).status === 'running'; i++)
+    await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run.status, 'failed');
+  assert.deepEqual(
+    run.steps.map(step => step.status),
+    ['done', 'failed', 'pending', 'pending']
+  );
+  assert.ok(run.error);
+  assert.equal(run.draft.title, 'Manage your store');
+  assert.equal(calls.length, 2);
+});

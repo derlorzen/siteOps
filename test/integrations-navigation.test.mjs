@@ -7,7 +7,7 @@ test('one integration group links to hosting, deployment, Google, YouTube and MC
   const group = workspaceNavigation.find(item => item.label === 'Integrationen');
   assert.deepEqual(
     group.children.map(item => item.href),
-    ['/mcp-info', '/hosting', '/coolify', '/search-console', '/youtube']
+    ['/mcp-info', '/hosting', '/coolify', '/search-console', '/youtube', '/calendar-bridge']
   );
   const html = renderWorkspaceShell('<h1>Test</h1>', 'Test');
   assert.equal((html.match(/class="siteops-sidebar/g) || []).length, 1);
