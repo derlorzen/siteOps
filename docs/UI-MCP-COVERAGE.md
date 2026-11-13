@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 282 API-Funktionen, 247 MCP-Tools, 44 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 285 API-Funktionen, 250 MCP-Tools, 44 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -229,6 +229,9 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | video | /video-suite#settings | video.productionGuidelines | GET /api/video-suite/production-guidelines | video_production_guidelines_get | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.saveProductionGuidelines | POST /api/video-suite/production-guidelines | video_production_guidelines_save | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.status | GET /api/video-suite/settings | video_workspace_status | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#settings | video.removeSkill | POST /api/video-suite/skills/remove | video_skill_remove | Ändern | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#settings | video.skills | GET /api/video-suite/skills | video_skills_list | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite#settings | video.saveSkill | POST /api/video-suite/skills | video_skill_save | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#settings | video.testConnection | POST /api/video-suite/test-connection | video_connection_test | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | video | /video-suite#assets | video.thumbnail | POST /api/video-suite/thumbnails | video_thumbnail_generate | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | website | /mcp-info | website_create_status | GET /api/website-factory/:installationId | website_create_status | Lesen | Keine zusätzliche | Zugeordnet |  |

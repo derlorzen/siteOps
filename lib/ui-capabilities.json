@@ -194,6 +194,15 @@
   "POST /api/video-suite/drafts/:id": {
     "tools": ["video_draft_save"]
   },
+  "GET /api/video-suite/skills": {
+    "tools": ["video_skills_list"]
+  },
+  "POST /api/video-suite/skills": {
+    "tools": ["video_skill_save"]
+  },
+  "POST /api/video-suite/skills/remove": {
+    "tools": ["video_skill_remove"]
+  },
   "GET /api/video-suite/knowledge": {
     "tools": ["video_knowledge_get"]
   },

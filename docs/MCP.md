@@ -175,6 +175,17 @@ Use `video_studio_create_project`, `video_studio_update_project`,
 alongside the existing project/draft/render/status tools. English and German are
 supported. Rendering requires explicit human approval and `approved:true`.
 
+#### Video skills
+
+A skill is a named working method for the video assistant (for example
+`skript-lektorat`, `seo-paket` or `qualitaetspruefung`). The interface and MCP
+share one list: `video_skills_list` returns supplied and own skills,
+`video_skill_save` creates an own skill or adjusts a supplied one under the same
+identifier, and `video_skill_remove` deletes an own skill or resets an adjusted
+one. Pass the identifier as `skill` to `video_assistant_request`; the skill then
+also determines the mode. A skill refines the method only: the assistant's base
+rules and output format stay in force.
+
 ### Context and operations
 
 - `sites_list`

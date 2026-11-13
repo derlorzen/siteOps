@@ -357,3 +357,55 @@ test('agent gets verified language-matching demo references without login secret
   assert.doesNotMatch(request.input[0].content, /Do not send raw fields/);
   assert.match(request.instructions, /real screen recording is not configured/);
 });
+test('skills give the agent a fixed method, set the mode and are recorded with the conversation', async () => {
+  const { service, calls, conversations } = fixture(() => response(answer));
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  const listed = await service.skills();
+  assert.ok(listed.skills.length >= 8);
+  assert.ok(listed.skills.every(skill => skill.source === 'builtin' && listed.modes[skill.mode]));
+  const result = await service.chat({
+    project_id: project,
+    message: 'Check my script',
+    skill: 'qualitaetspruefung',
+    context
+  });
+  const payload = JSON.parse(calls[0][1].body);
+  assert.match(payload.instructions, /selected the skill "Qualitätsprüfung"/);
+  assert.match(payload.instructions, /Blocker, Wichtig and Hinweis/);
+  assert.equal(JSON.parse(payload.input[0].content).mode, 'edit');
+  assert.deepEqual(result.skill, { id: 'qualitaetspruefung', name: 'Qualitätsprüfung' });
+  assert.equal(conversations.get(result.conversation_id).messages[0].skill.id, 'qualitaetspruefung');
+  await service.chat({ project_id: project, message: 'Plain question', context });
+  assert.doesNotMatch(JSON.parse(calls[1][1].body).instructions, /selected the skill/);
+  await assert.rejects(
+    service.chat({ project_id: project, message: 'Unknown method', skill: 'gibt-es-nicht', context }),
+    error => error.statusCode === 404
+  );
+  assert.equal(calls.length, 2);
+});
+test('own skills are stored encrypted, can adjust a supplied skill and reset it again', async () => {
+  const { service, calls, settings } = fixture(() => response(answer));
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  const own = {
+    id: 'release-notes',
+    name: 'Release-Video',
+    summary: 'Kurzes Video zu einer neuen Version.',
+    mode: 'script',
+    starter: 'Plane ein Release-Video.',
+    instructions: 'Open with the most visible change, then show at most three improvements in order of impact.'
+  };
+  assert.equal((await service.saveSkill(own)).skill.source, 'custom');
+  assert.match(settings.get('video_suite_skills'), /^encrypted:/);
+  await service.saveSkill({ ...own, id: 'seo-paket', name: 'SEO kurz', mode: 'seo' });
+  const skills = (await service.skills()).skills;
+  assert.equal(skills.find(skill => skill.id === 'seo-paket').source, 'adjusted');
+  assert.equal(skills.filter(skill => skill.id === 'seo-paket').length, 1);
+  await service.chat({ project_id: project, message: 'New version video', skill: 'release-notes', context });
+  assert.match(JSON.parse(calls[0][1].body).instructions, /at most three improvements/);
+  assert.deepEqual(await service.removeSkill({ id: 'seo-paket' }), { removed: true, restored: true });
+  assert.equal((await service.skills()).skills.find(skill => skill.id === 'seo-paket').name, 'SEO-Paket');
+  assert.deepEqual(await service.removeSkill({ id: 'release-notes' }), { removed: true, restored: false });
+  await assert.rejects(service.removeSkill({ id: 'seo-paket' }), error => error.statusCode === 409);
+  await assert.rejects(service.saveSkill({ ...own, id: 'Not A Slug' }), error => error.statusCode === 422);
+  await assert.rejects(service.saveSkill({ ...own, extra: true }), error => error.statusCode === 422);
+});
