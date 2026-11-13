@@ -37,7 +37,7 @@ RUN npm ci --omit=dev \
 # OpenAI can build a smaller image with --build-arg INSTALL_KOKORO=false.
 ARG INSTALL_KOKORO=true
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg python3-venv libespeak-ng1 \
+    && apt-get install -y --no-install-recommends ffmpeg python3-venv libespeak-ng1 tini \
     && python3 -m venv /opt/video-venv \
     && /opt/video-venv/bin/pip install --no-cache-dir piper-tts \
     && if [ "$INSTALL_KOKORO" = "true" ]; then \
@@ -45,7 +45,7 @@ RUN apt-get update \
        fi \
     && rm -rf /var/lib/apt/lists/*
 
-COPY server.mjs version.mjs video-studio.mjs video-demo.mjs video-capture.mjs video-outro.mjs video-intros.mjs video-login.mjs video-policy.mjs video-network.mjs video-file-range.mjs openai-audio.mjs kokoro-voice.py piper-voice.py ensure-voice-models.py ./
+COPY server.mjs browser-capacity.mjs version.mjs video-studio.mjs video-demo.mjs video-capture.mjs video-outro.mjs video-intros.mjs video-login.mjs video-policy.mjs video-network.mjs video-file-range.mjs openai-audio.mjs kokoro-voice.py piper-voice.py ensure-voice-models.py ./
 ENV VIDEO_PYTHON=/opt/video-venv/bin/python3
 ENV VIDEO_OUTPUT_DIR=/data/video-studio
 ENV VIDEO_MODEL_DIR=/data/video-studio/models
@@ -64,4 +64,7 @@ EXPOSE 3200
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3200)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+# PID 1 must reap Chromium/FFmpeg descendants orphaned during crashes or
+# abnormal shutdown. Node.js itself is not a general-purpose init/reaper.
+ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
 CMD ["node", "server.mjs"]
