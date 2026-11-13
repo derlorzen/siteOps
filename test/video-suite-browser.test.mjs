@@ -23,6 +23,7 @@ test(
       knowledge = { plugins: [] },
       savedSkills = [];
     let chatRequest,
+      packageRequest,
       captureRequest,
       introReady = false;
     const introBlocks = [];
@@ -164,7 +165,21 @@ test(
             'base64'
           )
         });
-      else if (url.pathname === '/api/video-suite/skills' && req.method() === 'GET')
+      else if (url.pathname.startsWith('/api/video-suite/packages')) {
+        if (req.method() === 'POST') packageRequest = req.postDataJSON();
+        const finished = req.method() === 'GET';
+        body = {
+          id: project,
+          status: finished ? 'completed' : 'running',
+          conversation_id: null,
+          total_tokens: 400,
+          error: null,
+          steps: ['Video komplett planen', 'Qualitätsprüfung', 'SEO-Paket', 'Titelbild-Konzepte'].map((name, i) => ({
+            name,
+            status: finished ? 'done' : i ? 'pending' : 'running'
+          }))
+        };
+      } else if (url.pathname === '/api/video-suite/skills' && req.method() === 'GET')
         body = {
           modes: { script: 'Skript & Storyboard', edit: 'Schnitt & Dramaturgie' },
           skills: [
@@ -205,6 +220,23 @@ test(
       )
     });
     await page.waitForFunction(() => document.querySelector('#suite-chat-attachments img'));
+    await page.getByRole('button', { name: 'Komplettpaket starten', exact: true }).click();
+    await page.getByText('Beschreibe zuerst unter', { exact: false }).waitFor();
+    await page.locator('#suite-prompt').fill('Plan a store tutorial');
+    await page.getByRole('button', { name: 'Komplettpaket starten', exact: true }).click();
+    await page.locator('#suite-package-steps li[data-state=running]').waitFor();
+    if (!(await page.locator('#suite-send').isDisabled())) throw Error('Chat must wait while the package runs.');
+    await page.waitForFunction(() =>
+      document.querySelector('#suite-package-status').textContent.startsWith('Fertig · 400 Tokens')
+    );
+    if ((await page.locator('#suite-package-steps li[data-state=done]').count()) !== 4)
+      throw Error('Package steps were not shown as finished.');
+    if (packageRequest?.message !== 'Plan a store tutorial' || packageRequest.context.format !== 'landscape')
+      throw Error('Package request lacks the request or the editorial context.');
+    await page
+      .locator('.suite-agent-guide')
+      .screenshot({ path: process.env.SHOT || '/dev/null' })
+      .catch(() => {});
     await page.locator('[data-skill=skript-lektorat]').click();
     if ((await page.locator('#suite-prompt').inputValue()) !== 'Prüfe und straffe mein Skript.')
       throw Error('Skill did not suggest its request.');

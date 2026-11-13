@@ -329,6 +329,35 @@
     } catch (e) { $('suite-agent-status').textContent = e.message; }
     finally { sending = false; $('suite-chat-images').disabled=false;drawAttachments(); $('suite-send').disabled = false; $('vs-project').disabled = false; $('suite-conversation').disabled = false; }
   });
+  // Komplettpaket: mehrere Skills nacheinander, der Server arbeitet im Hintergrund und wird abgefragt.
+  const packageLabels = { pending: 'wartet', running: 'läuft …', done: 'fertig', failed: 'fehlgeschlagen' };
+  function drawPackage(run) {
+    const list = $('suite-package-steps'); list.hidden = false;
+    list.replaceChildren(...run.steps.map(step => { const item = document.createElement('li'); item.dataset.state = step.status; const name = document.createElement('b'); name.textContent = step.name; const state = document.createElement('span'); state.textContent = packageLabels[step.status] || step.status; item.append(name, state); return item; }));
+  }
+  function packageBusy(busy) { sending = busy; $('suite-package-start').disabled = busy; $('suite-send').disabled = busy; $('vs-project').disabled = busy; $('suite-conversation').disabled = busy; }
+  async function watchPackage(id, failures = 0) {
+    let run;
+    try { run = await api('packages/' + id + '?project_id=' + projectId); }
+    catch (e) { if (failures >= 3) { packageBusy(false); $('suite-package-status').textContent = e.message; return; } setTimeout(() => watchPackage(id, failures + 1), 3000); return; }
+    drawPackage(run);
+    if (run.status === 'running') { setTimeout(() => watchPackage(id), 2000); return; }
+    packageBusy(false);
+    $('suite-package-status').textContent = run.status === 'completed' ? 'Fertig' + (run.total_tokens ? ' · ' + run.total_tokens + ' Tokens' : '') + '. Prüfe die Ergebnisse im Chat und übernimm den Vorschlag.' : 'Abgebrochen: ' + (run.error || 'Schritt fehlgeschlagen.') + ' Bereits fertige Schritte stehen im Chat.';
+    if (run.conversation_id) { await loadConversations(); $('suite-conversation').value = run.conversation_id; $('suite-conversation').dispatchEvent(new Event('change')); if (run.status === 'completed') $('suite-prompt').value = ''; }
+  }
+  $('suite-package-start').addEventListener('click', async () => {
+    if (sending || uploadingImages) return;
+    if (!projectId) { $('suite-package-status').textContent = 'Bitte zuerst ein Projekt anlegen.'; return; }
+    const text = $('suite-prompt').value.trim();
+    if (text.length < 2) { $('suite-package-status').textContent = 'Beschreibe zuerst unter „Deine Anfrage“, worum es im Video geht.'; $('suite-prompt').focus(); return; }
+    packageBusy(true); $('suite-package-status').textContent = 'Komplettpaket läuft. Du kannst die Seite geöffnet lassen.';
+    try {
+      const data = snapshot();
+      const run = await api('packages', { project_id: projectId, message: text, context: { title: data.title, topic: data.topic, script: data.script, format: data.format, ...(data.scene_json ? { scenes: JSON.parse(data.scene_json) } : {}), ...(data.youtube_json ? { youtube: JSON.parse(data.youtube_json) } : {}) } });
+      drawPackage(run); setTimeout(() => watchPackage(run.id), 1500);
+    } catch (e) { packageBusy(false); $('suite-package-status').textContent = e.message; }
+  });
   function loadSeo() {
     try {
       const meta = JSON.parse($('vs-youtube-json').value || '{}');

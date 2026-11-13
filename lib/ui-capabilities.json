@@ -203,6 +203,15 @@
   "POST /api/video-suite/skills/remove": {
     "tools": ["video_skill_remove"]
   },
+  "POST /api/video-suite/packages": {
+    "tools": ["video_package_start"]
+  },
+  "GET /api/video-suite/packages": {
+    "tools": ["video_package_status"]
+  },
+  "GET /api/video-suite/packages/:id": {
+    "tools": ["video_package_status"]
+  },
   "GET /api/video-suite/knowledge": {
     "tools": ["video_knowledge_get"]
   },

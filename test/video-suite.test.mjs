@@ -409,3 +409,75 @@ test('own skills are stored encrypted, can adjust a supplied skill and reset it 
   await assert.rejects(service.saveSkill({ ...own, id: 'Not A Slug' }), error => error.statusCode === 422);
   await assert.rejects(service.saveSkill({ ...own, extra: true }), error => error.statusCode === 422);
 });
+const fullDraft = {
+  title: 'Manage your store',
+  script: 'Start with a concrete store problem. Here is how to solve it.',
+  scenes: [{ headline: 'The problem', narration: 'Start with a concrete store problem. Here is how to solve it.' }],
+  youtube: {
+    title: 'Manage your store',
+    description: 'A verified tutorial.',
+    keywords: ['Bagisto'],
+    hashtags: ['#Bagisto'],
+    chapters: [{ start_seconds: 0, title: 'The problem' }],
+    thumbnail_concept: 'Original navy illustration',
+    sources: []
+  }
+};
+test('complete package runs four skills on one conversation and hands each step the latest draft', async () => {
+  const replies = [
+    { ...answer, reply: 'Draft ready.', draft: fullDraft, thumbnail_prompt: null },
+    { ...answer, reply: 'Hinweis: nothing blocks rendering.', thumbnail_prompt: null },
+    { ...answer, reply: 'Three titles.', draft: { ...fullDraft, title: 'Better title' }, thumbnail_prompt: null },
+    { ...answer, reply: 'Three concepts.', thumbnail_prompt: 'A navy illustration of a tidy shelf.' }
+  ];
+  const { service, calls, conversations } = fixture(() => response(replies.shift()));
+  await assert.rejects(service.startPackage({ project_id: project, message: 'Plan it', context }), { statusCode: 409 });
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  const started = await service.startPackage({ project_id: project, message: 'Plan a store tutorial', context });
+  assert.equal(started.status, 'running');
+  assert.deepEqual(
+    started.steps.map(step => step.skill),
+    ['video-komplett', 'qualitaetspruefung', 'seo-paket', 'titelbild-konzepte']
+  );
+  await assert.rejects(service.startPackage({ project_id: project, message: 'Again', context }), { statusCode: 409 });
+  let run;
+  for (let i = 0; i < 200 && (run = service.packageStatus(started.id)).status === 'running'; i++)
+    await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run.status, 'completed');
+  assert.ok(run.steps.every(step => step.status === 'done'));
+  assert.equal(run.draft.title, 'Better title');
+  assert.equal(run.thumbnail_prompt, 'A navy illustration of a tidy shelf.');
+  assert.equal(run.total_tokens, 492);
+  assert.equal(calls.length, 4);
+  assert.equal(conversations.get(run.conversation_id).messages.length, 8);
+  const second = JSON.parse(calls[1][1].body);
+  assert.match(second.instructions, /selected the skill "Qualitätsprüfung"/);
+  assert.equal(JSON.parse(second.input.at(-1).content).editorial_context.title, 'Manage your store');
+  assert.equal(JSON.parse(JSON.parse(calls[3][1].body).input.at(-1).content).editorial_context.title, 'Better title');
+  assert.equal(service.packages(project).length, 1);
+  assert.throws(() => service.packageStatus(started.id, other), { statusCode: 404 });
+});
+test('complete package edits an existing script and stops at the first failed step', async () => {
+  const replies = [{ ...answer, draft: fullDraft }];
+  const { service, calls } = fixture(() =>
+    replies.length ? response(replies.shift()) : new Response('upstream', { status: 500 })
+  );
+  await service.configure({ api_key: 'sk-test', model: 'gpt-4.1', image_model: 'gpt-image-1' });
+  const started = await service.startPackage({
+    project_id: project,
+    message: 'Tighten it',
+    context: { ...context, script: 'A long existing narration. '.repeat(20) }
+  });
+  assert.equal(started.steps[0].skill, 'skript-lektorat');
+  let run;
+  for (let i = 0; i < 200 && (run = service.packageStatus(started.id)).status === 'running'; i++)
+    await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run.status, 'failed');
+  assert.deepEqual(
+    run.steps.map(step => step.status),
+    ['done', 'failed', 'pending', 'pending']
+  );
+  assert.ok(run.error);
+  assert.equal(run.draft.title, 'Manage your store');
+  assert.equal(calls.length, 2);
+});

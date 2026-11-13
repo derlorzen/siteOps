@@ -186,6 +186,12 @@ one. Pass the identifier as `skill` to `video_assistant_request`; the skill then
 also determines the mode. A skill refines the method only: the assistant's base
 rules and output format stay in force.
 
+`video_package_start` runs four skills in sequence on one conversation: script
+(new, or editing when a script exists), quality check, SEO package and thumbnail
+concepts. It costs four paid requests, needs approval and works in the
+background; read progress and the result with `video_package_status`. Run state
+is kept in memory until the next restart; the conversation itself is stored.
+
 ### Context and operations
 
 - `sites_list`
