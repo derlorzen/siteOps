@@ -88,7 +88,7 @@ services:
       - "traefik.http.routers.hermes-native-pkce.service=hermes-admin"
       - "traefik.http.routers.hermes-native-pkce.middlewares=hermes-native-pkce-redirect"
       - "traefik.http.middlewares.hermes-native-pkce-redirect.redirectregex.regex=^https?://hermes-admin[.]lorzen[.]net(/auth/native/authorize.*)$"
-      - "traefik.http.middlewares.hermes-native-pkce-redirect.redirectregex.replacement=https://ki.lorzen.net${1}"
+      - "traefik.http.middlewares.hermes-native-pkce-redirect.redirectregex.replacement=https://ki.lorzen.net$${1}"
       - "traefik.http.middlewares.hermes-native-pkce-redirect.redirectregex.permanent=false"
   # The hermes-agent-src named volume was initialized from the Hermes image
   # during the first deployment and is retained while mounted by hermes-webui.
