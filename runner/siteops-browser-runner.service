@@ -15,6 +15,9 @@ Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20
 KillSignal=SIGINT
+KillMode=control-group
+TasksMax=256
+Environment=BROWSER_MAX_SESSIONS=2
 
 NoNewPrivileges=true
 PrivateTmp=true
