@@ -916,3 +916,88 @@
   $('suite-agent-mode').addEventListener('change', () => { const skill = find(picker.value); if (skill && skill.mode !== $('suite-agent-mode').value) choose('', false); });
   load();
 })();
+
+// Autopilot: one request, then the server plans, records and renders. This view only starts runs
+// and shows what the server reports.
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const form = $('ap-form');
+  if (!form) return;
+  const call = async (path, data) => {
+    const response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', headers: data === undefined ? {} : { 'content-type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw Error(result.message || result.error || 'Anfrage fehlgeschlagen.');
+    return result;
+  };
+  const el = (tag, props = {}, ...children) => { const node = Object.assign(document.createElement(tag), props); node.append(...children.filter(Boolean)); return node; };
+  const project = () => $('vs-project')?.value || '';
+  const phaseText = { done: 'fertig', running: 'läuft', failed: 'Fehler', waiting: 'wartet', pending: '' };
+  const captureText = { recording: 'Bildschirmaufnahme', screenshot: 'Standbild', text: 'Texttafel' };
+  const stateText = run => run.status === 'completed' ? 'Fertig gerendert. Sieh dir das Video an, bevor du es veröffentlichst.'
+    : run.status === 'failed' ? 'Angehalten: ' + (run.error || 'Schritt fehlgeschlagen.')
+    : run.status === 'cancelled' ? 'Abgebrochen.'
+    : run.status === 'needs_input' ? 'Storyboard und Aufnahmen sind geplant. Prüfe die Szenen und gib das Rendern frei.'
+    : ({ plan: 'Der Agent schreibt Skript und Storyboard …', explore: 'Die Demo wird gelesen, Aufnahmen werden geplant und geprüft …', render: 'Produktion wird angelegt …', rendering: 'Aufnahme, Vertonung und Schnitt laufen. Das dauert einige Minuten.' })[run.stage] || '';
+  let current = null, timer = null, shownVideo = '';
+  function draw(run) {
+    current = run;
+    form.hidden = Boolean(run); $('ap-run').hidden = !run;
+    if (!run) return;
+    $('ap-title').textContent = run.title || run.prompt.slice(0, 120);
+    $('ap-state').textContent = stateText(run) + (run.total_tokens ? ' · ' + run.total_tokens.toLocaleString('de-DE') + ' Tokens' : '');
+    $('ap-phases').replaceChildren(...run.phases.map(phase => { const item = el('li', {}, el('b', { textContent: phase.label }), el('span', { textContent: phaseText[phase.state] || '' })); item.dataset.state = phase.state; if (phase.state === 'running') item.setAttribute('aria-current', 'step'); return item; }));
+    $('ap-scenes').replaceChildren(...run.scenes.map(scene => {
+      const item = el('li', {}, el('span', { className: 'ap-scene-kind', textContent: 'Szene ' + scene.number + ' · ' + (captureText[scene.capture_mode] || scene.capture_mode) }), el('b', { textContent: scene.headline || 'Ohne Titel' }), el('p', { textContent: scene.narration }),
+        scene.url ? el('small', { textContent: new URL(scene.url).pathname + ' · ' + scene.actions + (scene.actions === 1 ? ' Aktion' : ' Aktionen') + ' geprüft' }) : scene.capture_mode !== 'text' ? el('small', { textContent: 'Aufnahme wird noch geplant' }) : null,
+        scene.note ? el('small', { textContent: scene.note }) : null);
+      item.dataset.state = scene.status; return item;
+    }));
+    $('ap-log').replaceChildren(...run.log.map(entry => { const item = el('li', { textContent: new Date(entry.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' · ' + entry.text }); item.dataset.level = entry.level; return item; }));
+    const active = ['running', 'needs_input'].includes(run.status);
+    $('ap-approve').hidden = run.awaiting !== 'approve'; $('ap-retry').hidden = run.status !== 'failed';
+    $('ap-cancel').hidden = !active && run.status !== 'failed'; $('ap-new').hidden = active; $('ap-open').hidden = !run.job_id;
+    const video = $('ap-video'); video.hidden = run.status !== 'completed';
+    if (run.status === 'completed' && shownVideo !== run.job_id) { shownVideo = run.job_id; video.src = '/api/video-suite/preview/' + encodeURIComponent(run.job_id); }
+    clearTimeout(timer);
+    if (run.status === 'running') timer = setTimeout(refresh, 4000);
+  }
+  async function refresh() {
+    if (!current) return;
+    try { draw(await call('/api/video-suite/autopilot/' + current.id)); }
+    catch { timer = setTimeout(refresh, 8000); }
+  }
+  async function load() {
+    const asked = project(); clearTimeout(timer); draw(null); $('ap-status').textContent = '';
+    if (!asked) return;
+    try {
+      const { runs } = await call('/api/video-suite/autopilot?project_id=' + encodeURIComponent(project()));
+      const open = runs.find(run => ['running', 'needs_input', 'failed'].includes(run.status)) || (runs[0]?.status === 'completed' && Date.now() - new Date(runs[0].updated_at) < 6 * 3600 * 1000 ? runs[0] : null);
+      if (open && !current && asked === project()) draw(open);
+    } catch { /* The start form stays usable without history. */ }
+  }
+  async function logins() {
+    try { const list = await call('/api/video-studio/demo-logins'); $('ap-login').append(...(Array.isArray(list) ? list : []).map(item => el('option', { value: item.id, textContent: item.name }))); }
+    catch { /* optional */ }
+  }
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!project()) { $('ap-status').textContent = 'Bitte zuerst oben ein Projekt wählen oder anlegen.'; return; }
+    $('ap-start').disabled = true; $('ap-status').textContent = 'Wird gestartet …';
+    try {
+      draw(await call('/api/video-suite/autopilot', { project_id: project(), prompt: $('ap-prompt').value.trim(), format: $('ap-format').value, minutes: Number($('ap-minutes').value), style: $('ap-style').value, audience: $('ap-audience').value.trim(), mode: form.querySelector('[name=ap-mode]:checked').value, ...($('ap-url').value.trim() ? { start_url: $('ap-url').value.trim() } : {}), ...($('ap-login').value ? { login_profile_id: $('ap-login').value } : {}) }));
+      $('ap-run').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    } catch (error) { $('ap-status').textContent = error.message; if (/Start-URL/.test(error.message)) { form.querySelector('.ap-options').open = true; $('ap-url').focus(); } }
+    finally { $('ap-start').disabled = false; }
+  });
+  for (const [id, action] of [['ap-approve', 'approve'], ['ap-retry', 'retry'], ['ap-cancel', 'cancel']])
+    $(id).addEventListener('click', async () => {
+      try { draw(await call('/api/video-suite/autopilot/' + current.id + '/action', { action })); }
+      catch (error) { $('ap-state').textContent = error.message; }
+    });
+  $('ap-new').addEventListener('click', () => { clearTimeout(timer); draw(null); $('ap-prompt').focus(); });
+  $('vs-project')?.addEventListener('change', load);
+  logins();
+  // The project list arrives asynchronously; look for an open run once a project is selected.
+  let waited = 0; const ready = setInterval(() => { if (current || ++waited > 40) return clearInterval(ready); if (project()) { clearInterval(ready); load(); } }, 250);
+})();

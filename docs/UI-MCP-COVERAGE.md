@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 291 API-Funktionen, 253 MCP-Tools, 46 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 295 API-Funktionen, 257 MCP-Tools, 46 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -219,6 +219,10 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | video | /video-suite | video_studio_create_project | POST /api/video-studio/projects | video_studio_create_project | Ändern | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#assets | video.asset | GET /api/video-suite/assets/:id | video_image_get | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#assets | video.assets | GET /api/video-suite/assets | video_assets | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite | video.autopilotAction | POST /api/video-suite/autopilot/:id/action | video_autopilot_action | Ändern | Gebundene Freigabe | Zugeordnet |  |
+| video | /video-suite | video.autopilotStatus | GET /api/video-suite/autopilot/:id | video_autopilot_status | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite | video.autopilotStatus | GET /api/video-suite/autopilot | video_autopilot_status | Lesen | Keine zusätzliche | Zugeordnet |  |
+| video | /video-suite | video.autopilotStart | POST /api/video-suite/autopilot | video_autopilot_start | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | video | /video-suite#assets | video.asset | GET /api/video-suite/chat-images/:id | video_image_get | Lesen | Keine zusätzliche | Zugeordnet |  |
 | video | /video-suite#ideas | video.chat | POST /api/video-suite/chat | video_assistant_request | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | video | /video-suite#ideas | video.conversation | GET /api/video-suite/conversations/:id | video_conversation_get | Lesen | Keine zusätzliche | Zugeordnet |  |
@@ -325,4 +329,5 @@ Diese Tools ergänzen zusammengesetzte Abläufe oder vorhandene Website-Services
 | cms_theme_apply | cms | /lorzcms | write | Ja | Apply a theme designed for a managed LorzCMS website. industrial = Containerdienst/Bau, protection = Unfallversicherung/Sport. Updates only the selected website appearance, preserving existing content and page URLs. |
 | cms_admin_recovery | cms | /lorzcms | read | Nein | Den persönlichen Einstieg zur Wiederherstellung eines CMS-Administrators abrufen. Setzt kein Passwort zurück. Neue Zugangsdaten werden ausschließlich im geschützten Dashboard angezeigt. |
 | action_prepare | mcp | /mcp-info | write | Nein | Kritische Aktion vorbereiten, ohne sie auszuführen. Das genaue Tool und seine Argumente angeben; der Benutzer muss die Vorschau anschließend persönlich im SiteOps-Dashboard freigeben. Zustimmung des Agenten genügt nicht. |
+| video_page_inspect | video | /video-suite#script | write | Ja | Freigegebene Demo-Seite lesen: sichtbare Bedienelemente mit geprüften Selektoren, Überschriften und Links, optional nach bereits geplanten Aktionen. Führt diese Aktionen auf der Testumgebung aus, nimmt nichts auf. |
 | operation_status | operations | /mcp-info | read | Nein | Tatsächlichen Zustand eines vorhandenen SEO-, CMS-, Coolify- oder Videoauftrags nachladen. Keine erfundenen Fortschrittswerte; unbekannte Providerzustände bleiben unbekannt. |

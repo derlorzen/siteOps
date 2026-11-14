@@ -157,3 +157,36 @@ technical QA pass.
 Run `node --test test/video-agent-workflow.test.mjs`, `npm test`, and the
 existing browser-runner CI workflow before deployment. Keep changes behind
 review until tests and actual demo recordings have passed.
+
+## Autopilot (prompt to rendered video)
+
+`lib/video-autopilot.mjs` connects the existing parts into one persistent run
+(`video_autopilot_runs`): the producer agent with the skill `video-komplett`
+writes script and storyboard; the **Recording Agent** then plans browser actions
+per recorded scene; the existing job, renderer and audiovisual QA produce the
+video. State lives in the database and a worker advances one stage per tick, so
+a run survives reloads and restarts.
+
+- **No invented selectors.** The planning model never sees or writes selectors
+  or URLs. Runner 1.6.0 adds `POST /video/inspect` (`pageInspectVersion: 1`),
+  a read-only inventory of visible controls whose selectors match exactly one
+  element. The Recording Agent refers to elements by index; the server maps the
+  index to the verified selector. Addresses or actions returned by the
+  storyboard model are discarded.
+- **Proof run.** Before a scene is accepted, all planned actions are executed
+  once on the demo. A failing action fails the run instead of being replaced.
+- **No data changes.** The Recording Agent may only click, hover, scroll, wait
+  and follow links. Submit buttons and controls whose name suggests saving,
+  deleting, installing, uploading, paying or logging out are skipped and
+  logged. Typing into fields and file uploads are not available yet, so a flow
+  such as "upload an extension" is shown up to that control only.
+- **Honest status.** `completed` is set only when the renderer reports `done`.
+  A failed render leaves the run `failed` with the renderer's error; `retry`
+  repeats the failed stage and reuses the same production.
+- **Older runner.** Without `pageInspectVersion` the run records the real start
+  page with scrolling only and says so in its log.
+- **Modes.** `auto` renders directly; `review` stops before rendering until
+  `approve`. Publishing is never part of a run.
+
+Same functions over MCP: `video_autopilot_start`, `video_autopilot_status`,
+`video_autopilot_action`, `video_page_inspect`.

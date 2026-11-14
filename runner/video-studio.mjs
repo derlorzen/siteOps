@@ -12,6 +12,7 @@ import { producerAgentPlan, recordingAgentEvidence, qualityAgentAudit, requireTe
 import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
 import { authenticateDemo, validateDemoLogin } from './video-login.mjs';
+import { inspectDemoPage } from './video-inspect.mjs';
 import { narrateWithOpenAI } from './openai-audio.mjs';
 import { videoFileRange } from './video-file-range.mjs';
 import { inspectRenderedScene, extractSceneFrame } from './video-av-qa.mjs';
@@ -447,7 +448,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
       introVersion:1,outroVersion:1,capturePreflightVersion:1,openaiKeyForwardingVersion:1,
-      audiovisualQaVersion:1,sceneFrameVersion:1,sceneReuseVersion:1,
+      audiovisualQaVersion:1,sceneFrameVersion:1,sceneReuseVersion:1,pageInspectVersion:1,
       demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
@@ -496,6 +497,24 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
       const detail=/^(Demo-|Only explicitly|Full-HD)/.test(error.message || '')?error.message:'Zielseite, Domainfreigabe, Demo-Login und Aktions-Selektoren prüfen.';
       return reply.code(422).send({error:('Aufnahme fehlgeschlagen: '+detail+' Es wird keine Texttafel als Ersatz erstellt.').slice(0,900)});
     }finally{await browser?.close().catch(()=>{});if(dir)await fs.rm(dir,{recursive:true,force:true});}
+  });
+  app.post('/video/inspect',{config:{rateLimit:{max:20,timeWindow:'1 minute'}}},async(req,reply)=>{
+    if(!auth(req,reply))return;
+    let policy,profile,url;
+    try{
+      policy=demoPolicy(req.body?.demoPolicy);url=validatedDemoUrl(req.body?.url,policy.hosts);
+      validatedDemoSteps(req.body?.steps||[],url,policy.hosts);
+      if(req.body?.profile){profile=validateDemoLogin(req.body.profile,policy.hosts);if(new URL(profile.login_url).origin!==new URL(url).origin)throw Error('Passendes Loginprofil fehlt.');}
+    }catch(error){return reply.code(422).send({error:error.message});}
+    let browser;
+    try{
+      browser=await launchGuarded(chromium.launch.bind(chromium), {headless:true,args:demoBrowserArgs});
+      const storageState=profile?await authenticateDemo(browser,profile,policy.hosts):undefined;
+      return {ok:true,...await inspectDemoPage(browser,{url,steps:req.body?.steps||[]},policy.hosts,storageState)};
+    }catch(error){
+      const detail=/^(Demo-|Only explicitly)/.test(error.message || '')?error.message:'Zielseite, Domainfreigabe und Demo-Login prüfen.';
+      return reply.code(422).send({error:('Seitenanalyse fehlgeschlagen: '+detail).slice(0,600)});
+    }finally{await browser?.close().catch(()=>{});}
   });
   app.post('/video/demo-login/test',{config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async(req,reply)=>{
     if(!auth(req,reply))return;

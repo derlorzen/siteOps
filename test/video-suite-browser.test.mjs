@@ -24,6 +24,7 @@ test(
       savedSkills = [];
     let chatRequest,
       packageRequest,
+      autopilotRequest,
       captureRequest,
       introReady = false;
     const introBlocks = [];
@@ -165,7 +166,49 @@ test(
             'base64'
           )
         });
-      else if (url.pathname.startsWith('/api/video-suite/packages')) {
+      else if (url.pathname.startsWith('/api/video-suite/autopilot')) {
+        if (req.method() === 'POST' && url.pathname.endsWith('/autopilot')) autopilotRequest = req.postDataJSON();
+        if (req.method() === 'GET' && url.pathname.endsWith('/autopilot')) body = { runs: [] };
+        else {
+          const done = req.method() === 'GET';
+          body = {
+            id: project,
+            status: done ? 'completed' : 'running',
+            stage: done ? 'done' : 'explore',
+            prompt: 'Show the package manager',
+            title: 'Package Manager tutorial',
+            job_id: done ? project : null,
+            awaiting: null,
+            error: null,
+            total_tokens: 4200,
+            phases: ['Storyboard', 'Aufnahmen planen', 'Produktion', 'Fertig'].map((label, i) => ({
+              label,
+              state: done ? 'done' : i === 0 ? 'done' : i === 1 ? 'running' : 'pending'
+            })),
+            scenes: [
+              {
+                number: 1,
+                headline: 'Intro',
+                narration: 'Welcome.',
+                capture_mode: 'text',
+                status: 'ready',
+                actions: 0
+              },
+              {
+                number: 2,
+                headline: 'Package list',
+                narration: 'Open the package list.',
+                capture_mode: 'recording',
+                url: done ? 'https://shop.test/admin/packages' : null,
+                actions: done ? 3 : 0,
+                status: done ? 'ready' : 'pending',
+                note: ''
+              }
+            ],
+            log: [{ at: '2026-11-14T10:00:00.000Z', level: 'info', text: 'Storyboard mit 2 Szenen erstellt.' }]
+          };
+        }
+      } else if (url.pathname.startsWith('/api/video-suite/packages')) {
         if (req.method() === 'POST') packageRequest = req.postDataJSON();
         const finished = req.method() === 'GET';
         body = {
@@ -208,6 +251,24 @@ test(
       return route.fulfill({ json: body });
     });
     await page.goto('https://suite.test/video-suite');
+    await page.waitForFunction(() => document.querySelector('#vs-project')?.value);
+    await page.getByLabel('Welches Video möchtest du erstellen?').fill('Show how the package manager works.');
+    await page.getByText('Optionen', { exact: true }).click();
+    await page.getByLabel('Länge').selectOption('2');
+    await page.getByLabel('Vor dem Rendern anhalten').check();
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-start.png' });
+    await page.getByRole('button', { name: 'Video erstellen', exact: true }).click();
+    await page.locator('#ap-phases li[aria-current=step]').getByText('Aufnahmen planen').waitFor();
+    if (autopilotRequest?.minutes !== 2 || autopilotRequest.mode !== 'review' || autopilotRequest.start_url)
+      throw Error('Autopilot request lacks the chosen options.');
+    await page.getByText('Aufnahme wird noch geplant').waitFor();
+    await page.locator('#ap-state:has-text("Fertig gerendert")').waitFor({ timeout: 9000 });
+    await page.getByText('/admin/packages · 3 Aktionen geprüft').waitFor();
+    if (!(await page.locator('#ap-video').getAttribute('src'))?.endsWith('/api/video-suite/preview/' + project))
+      throw Error('Finished video is not offered for playback.');
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-run.png', fullPage: true });
+    await page.getByRole('button', { name: 'Neues Video', exact: true }).click();
+    await page.getByLabel('Welches Video möchtest du erstellen?').waitFor();
     await page.waitForFunction(() => document.querySelector('#suite-draft-state').textContent === 'Neuer Entwurf');
 
     await page.locator('[data-journey=ideas]').click();

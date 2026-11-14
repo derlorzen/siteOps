@@ -32,6 +32,7 @@ install -m 0644 "${SOURCE_DIR}/browser-capacity.mjs" "${APP_DIR}/browser-capacit
 install -m 0644 "${SOURCE_DIR}/version.mjs" "${APP_DIR}/version.mjs"
 install -m 0644 "${SOURCE_DIR}/video-studio.mjs" "${APP_DIR}/video-studio.mjs"
 install -m 0644 "${SOURCE_DIR}/video-demo.mjs" "${APP_DIR}/video-demo.mjs"
+install -m 0644 "${SOURCE_DIR}/video-inspect.mjs" "${APP_DIR}/video-inspect.mjs"
 install -m 0644 "${SOURCE_DIR}/video-capture.mjs" "${APP_DIR}/video-capture.mjs"
 install -m 0644 "${SOURCE_DIR}/video-agent-workflow.mjs" "${APP_DIR}/video-agent-workflow.mjs"
 install -m 0644 "${SOURCE_DIR}/video-av-qa.mjs" "${APP_DIR}/video-av-qa.mjs"

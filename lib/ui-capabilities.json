@@ -212,6 +212,18 @@
   "GET /api/video-suite/packages/:id": {
     "tools": ["video_package_status"]
   },
+  "POST /api/video-suite/autopilot": {
+    "tools": ["video_autopilot_start"]
+  },
+  "GET /api/video-suite/autopilot": {
+    "tools": ["video_autopilot_status"]
+  },
+  "GET /api/video-suite/autopilot/:id": {
+    "tools": ["video_autopilot_status"]
+  },
+  "POST /api/video-suite/autopilot/:id/action": {
+    "tools": ["video_autopilot_action"]
+  },
   "GET /api/video-suite/knowledge": {
     "tools": ["video_knowledge_get"]
   },

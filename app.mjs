@@ -61,6 +61,7 @@ import { createYouTubeUploadWorker } from './lib/youtube-upload.mjs';
 import { registerYouTubeRoutes, registerYouTubeTools } from './lib/youtube-api.mjs';
 import { renderYouTube } from './lib/youtube-ui.mjs';
 import { createVideoSuiteAgent, registerVideoSuiteRoutes } from './lib/video-suite-agent.mjs';
+import { createVideoAutopilot, registerVideoAutopilotRoutes } from './lib/video-autopilot.mjs';
 import { renderVideoStudio } from './lib/video-studio-ui.mjs';
 import { createDashboardSessions } from './lib/dashboard-session.mjs';
 import { cmsProjectBeginSchema, cmsProjectFileSchema, cmsProjectIdSchema } from './lib/cms-projects.mjs';
@@ -4300,6 +4301,7 @@ async function clientReportPage(slug) {
 const toolText = toolResult;
 let videoStudioService = null;
 let videoSuiteService = null;
+let videoAutopilotService = null;
 const youtubeService = createYouTubeService({
   db,
   encrypt,
@@ -5520,6 +5522,7 @@ function mcpServer(principal) {
     calendar: calendarBridge,
     phpCheck: passivePhpCheck,
     videoSuite: () => ready(videoSuiteService),
+    videoAutopilot: () => ready(videoAutopilotService),
     studio: () => ready(videoStudioService),
     dnsRemove: (...args) => allInklService.removeRecord(...args),
     operationStatus: async ({ module, job_id }) => {
@@ -7934,6 +7937,12 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
     origin: () => new URL(cfg.publicBaseUrl).origin
   });
   registerVideoStudioRoutes(app, videoStudioService, page, renderVideoStudio, () => new URL(cfg.publicBaseUrl).origin);
+  videoAutopilotService = createVideoAutopilot({ db, studio: videoStudioService, suite: videoSuiteService });
+  registerVideoAutopilotRoutes(app, videoAutopilotService);
+  if (databaseReady) {
+    const stopVideoAutopilot = videoAutopilotService.startWorker();
+    app.addHook('onClose', async () => stopVideoAutopilot());
+  }
   registerYouTubeRoutes(app, youtubeService, {
     page,
     render: () => renderYouTube(buildInfo.build),

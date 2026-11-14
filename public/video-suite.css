@@ -185,3 +185,23 @@ body.siteops-workspace .ops-main .suite label:has(>input[type=checkbox]){display
 @media(max-width:760px){.suite-skill-table li{flex-direction:column}.suite-skill-row-actions{justify-content:flex-start}.suite-skill-fields{grid-template-columns:1fr}}
 .suite-agent-guide .suite-package{width:100%;display:grid;gap:8px;padding:12px;margin-bottom:6px;background:#fff;border:1px solid var(--suite-line);border-radius:10px}.suite-agent-guide .suite-package-note{display:block;margin:0;padding:0;font-size:var(--fs-meta,12px);line-height:1.45;color:var(--ink-muted,#5b6472)}.suite-agent-guide .suite-package-note:empty{display:none}
 #suite-package-start{min-height:44px;margin:0;width:100%}#suite-package-steps{margin:0;padding:0;list-style:none;display:grid;gap:4px;font-size:var(--fs-meta,12px)}#suite-package-steps li{display:flex;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:6px;background:#f5f7fa}#suite-package-steps li[data-state=running]{background:#eaf1ff}#suite-package-steps li[data-state=done] span{color:#17663a}#suite-package-steps li[data-state=failed] span{color:#a12622}
+
+/* Autopilot */
+.ap{margin-bottom:28px}.suite .ap .ap-start,.suite .ap .ap-run{max-width:none;width:100%;box-sizing:border-box;background:#fff;border:1px solid var(--suite-line);border-radius:14px;padding:24px;display:grid;gap:14px}
+.ap-start h1{margin:0;font-size:clamp(22px,3vw,30px);line-height:1.2}.ap-start h1 label{font:inherit;color:inherit;margin:0}
+.ap-start textarea{width:100%;min-height:120px;font-size:16px;line-height:1.5;padding:14px;border-radius:10px;resize:vertical}
+.ap-options summary,.ap-log summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--ink-muted,#5b6472)}
+.ap-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.ap-grid label{display:grid;gap:4px;font-size:var(--fs-meta,12px);color:var(--ink-muted,#5b6472)}.ap-grid :is(select,input){width:100%;min-height:44px}
+.ap-mode{border:0;padding:0;margin:14px 0 0;display:flex;gap:18px;flex-wrap:wrap}.ap-mode legend{font-size:var(--fs-meta,12px);color:var(--ink-muted,#5b6472);padding:0;margin-bottom:4px}.ap-mode label{display:flex;align-items:center;gap:8px;min-height:44px;margin:0}.ap-mode input{width:18px!important;height:18px!important;min-height:0!important;margin:0;flex:none}
+.ap-hint{margin:6px 0 0;font-size:var(--fs-meta,12px);color:var(--ink-muted,#5b6472)}
+.ap-actions{display:flex;gap:12px 18px;align-items:center;flex-wrap:wrap}.ap-actions button{min-height:48px;margin:0}.ap-actions a{min-height:44px;display:inline-flex;align-items:center}#ap-start{padding:0 28px;font-size:16px}
+#ap-status:empty,#ap-state:empty{display:none}#ap-status,#ap-state{margin:0}
+.ap-run h2{margin:0}.ap-phases{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.ap-phases li{display:grid;gap:2px;padding:10px 12px;border-radius:10px;background:#f5f7fa;border-top:3px solid #d5dbe5;font-size:var(--fs-control,14px)}.ap-phases li span{font-size:var(--fs-meta,12px);color:var(--ink-muted,#5b6472);min-height:1.2em}
+.ap-phases li[data-state=done]{border-color:#17663a}.ap-phases li[data-state=running]{border-color:var(--siteops-accent,#2457d6);background:#eaf1ff}.ap-phases li[data-state=failed]{border-color:#a12622;background:#fdf1f0}.ap-phases li[data-state=waiting]{border-color:#9a6700}
+#ap-video{width:100%;max-height:70vh;border-radius:10px;background:#000}
+.ap-scenes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}.ap-scenes:empty{display:none}
+.ap-scenes li{display:grid;gap:4px;align-content:start;padding:12px;border:1px solid var(--suite-line);border-radius:10px;border-left:4px solid #d5dbe5}.ap-scenes li[data-state=ready]{border-left-color:#17663a}
+.ap-scenes p{margin:0;font-size:var(--fs-control,14px);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.ap-scenes small,.ap-scene-kind{font-size:var(--fs-meta,12px);color:var(--ink-muted,#5b6472)}
+#ap-log{margin:0;padding-left:18px;font-size:var(--fs-meta,12px);display:grid;gap:4px}#ap-log li[data-level=warning]{color:#7a5200}#ap-log li[data-level=error]{color:#a12622}
+@media(max-width:760px){.ap-start,.ap-run{padding:16px}.ap-grid{grid-template-columns:1fr}.ap-phases{grid-template-columns:repeat(2,minmax(0,1fr))}.ap-actions button{width:100%}}
