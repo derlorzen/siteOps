@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createVideoAutopilot } from '../lib/video-autopilot.mjs';
+import { createVideoAutopilot, consentStep, requestedUrl } from '../lib/video-autopilot.mjs';
 
 const project = '11111111-1111-4111-8111-111111111111';
 const login = '22222222-2222-4222-8222-222222222222';
@@ -83,7 +83,7 @@ function fixture({ inspect, plans, jobStatus = ['running', 'done'] } = {}) {
     inspectPage: async input => {
       calls.inspect.push(input);
       if (inspect) return inspect(input, calls);
-      const last = input.steps.findLast?.(step => step.action === 'goto');
+      const last = (input.steps || []).findLast(step => step.action === 'goto');
       return last
         ? { url: last.url, title: 'Packages', headings: ['Packages'], text: '', elements: [] }
         : pages['https://shop.test/admin'];
@@ -150,6 +150,11 @@ test('autopilot turns a request into a rendered production with recordings plann
   assert.equal(state.stage, 'explore');
   assert.match(calls.chat[0].message, /capture_mode "recording"/);
   assert.equal(calls.chat[0].skill, 'video-komplett');
+  // The storyboard is written from the real start page, without production caveats.
+  assert.match(calls.chat[0].message, /Live page at the start address/);
+  assert.match(calls.chat[0].message, /"title":"Dashboard"/);
+  assert.match(calls.chat[0].message, /Never mention the production itself/);
+  assert.ok(state.log.some(entry => /Startseite gelesen/.test(entry.text)));
   // Addresses and selectors invented by the planning model are discarded.
   assert.equal(state.scenes[1].url, null);
   assert.equal(state.scenes[1].actions, 0);
@@ -160,10 +165,11 @@ test('autopilot turns a request into a rendered production with recordings plann
   assert.equal(first.url, 'https://shop.test/admin');
   assert.equal(first.actions, 2);
   // The destructive button and the unknown element were not turned into actions.
-  assert.deepEqual(calls.inspect[1].steps, [{ action: 'goto', url: 'https://shop.test/admin/packages' }]);
+  // Inspections: 0 research, 1 fresh page, 2 first round, 3 after the link, 4 proof run.
+  assert.deepEqual(calls.inspect[3].steps, [{ action: 'goto', url: 'https://shop.test/admin/packages' }]);
   assert.ok(state.log.some(entry => entry.level === 'warning' && /Delete all/.test(entry.text)));
   // The proof run executes exactly the accepted actions.
-  assert.deepEqual(calls.inspect[2].steps, [
+  assert.deepEqual(calls.inspect[4].steps, [
     { action: 'goto', url: 'https://shop.test/admin/packages' },
     { action: 'wait', ms: 1800 }
   ]);
@@ -308,4 +314,95 @@ test('a rejected storyboard is reworked with the owner feedback and a new start 
   await assert.rejects(autopilot.act({ id: started.id, action: 'revise', feedback: 'Too late now.' }), {
     statusCode: 409
   });
+});
+
+test('the address in the request wins, cookie banners are closed and search fields can be used', async () => {
+  assert.equal(
+    requestedUrl('Demo of the converter\nhttps://shop.test/tools/convert?locale=en.'),
+    'https://shop.test/tools/convert?locale=en'
+  );
+  assert.equal(requestedUrl('no address here'), null);
+  const banner = [
+    { role: 'button', name: 'Accept all', selector: '#all', in_view: true },
+    { role: 'button', name: 'Necessary only', selector: '#needed', in_view: true }
+  ];
+  assert.deepEqual(consentStep(banner), { action: 'click', selector: '#needed' });
+  assert.deepEqual(consentStep([banner[0]]), { action: 'click', selector: '#all' });
+  assert.equal(consentStep([{ role: 'button', name: 'Accept all', selector: '#x', in_view: false }]), null);
+
+  const page = {
+    url: 'https://shop.test/tools/convert',
+    title: 'Convert extensions',
+    headings: ['Cookie settings', 'Convert extensions'],
+    text: 'Turn an extension into a ZIP.',
+    elements: [
+      { selector: '#needed', role: 'button', name: 'Necessary only', in_view: true },
+      { selector: '#q', role: 'textbox', name: 'Search products', type: 'text', in_view: true },
+      { selector: '#note', role: 'textbox', name: 'Notes', type: 'text', in_view: true }
+    ]
+  };
+  const { autopilot, calls, run } = fixture({
+    inspect: () => page,
+    plans: [
+      {
+        actions: [
+          { type: 'type', element: 1, text: 'invoice', pixels: null, ms: null },
+          { type: 'press_enter', element: 1, text: null, pixels: null, ms: null },
+          { type: 'press_enter', element: 2, text: null, pixels: null, ms: null }
+        ],
+        done: true,
+        note: ''
+      }
+    ]
+  });
+  const started = await autopilot.start({
+    project_id: project,
+    prompt: 'Demo of the converter https://shop.test/tools/convert please',
+    start_url: 'https://shop.test/'
+  });
+  assert.equal(started.options.start_url, 'https://shop.test/tools/convert');
+  assert.equal(started.options.login_profile_id, undefined);
+  let state = await run(started.id, 1);
+  // Research closed the banner before reading the page; the cookie heading is not part of the facts.
+  assert.deepEqual(calls.inspect[1].steps, [{ action: 'click', selector: '#needed' }]);
+  assert.doesNotMatch(calls.chat[0].message, /Cookie settings/);
+  state = await run(started.id, 1);
+  const proof = calls.inspect.at(-1).steps;
+  assert.deepEqual(proof, [
+    { action: 'click', selector: '#needed' },
+    { action: 'wait', ms: 600 },
+    { action: 'fill', selector: '#q', value: 'invoice' },
+    { action: 'press', selector: '#q', key: 'Enter' }
+  ]);
+  assert.ok(state.log.some(entry => /nur in Suchfeldern/.test(entry.text)));
+});
+
+test('a cancelled storyboard is reworked at the address named in the request', async () => {
+  const { autopilot, calls, run, rows } = fixture();
+  const started = await autopilot.start({
+    project_id: project,
+    prompt: 'Explain the converter https://shop.test/tools/convert',
+    mode: 'review'
+  });
+  await run(started.id, 1);
+  // An older run started in the admin area although the request named the storefront page.
+  const stored = rows.get(started.id);
+  stored.options = JSON.stringify({
+    ...JSON.parse(stored.options),
+    start_url: 'https://shop.test/admin',
+    start_from_prompt: undefined
+  });
+  const before = await autopilot.act({ id: started.id, action: 'cancel' });
+  assert.equal(before.can_revise, true);
+  assert.equal(before.options.start_url, 'https://shop.test/admin');
+  const revised = await autopilot.act({
+    id: started.id,
+    action: 'revise',
+    feedback: 'Stay in the storefront converter page.'
+  });
+  assert.equal(revised.status, 'running');
+  assert.equal(revised.options.start_url, 'https://shop.test/tools/convert');
+  await run(started.id, 1);
+  assert.match(calls.chat.at(-1).message, /Stay in the storefront converter page/);
+  assert.equal(calls.inspect.at(-1).url, 'https://shop.test/tools/convert');
 });

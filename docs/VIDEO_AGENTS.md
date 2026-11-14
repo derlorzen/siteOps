@@ -167,6 +167,13 @@ per recorded scene; the existing job, renderer and audiovisual QA produce the
 video. State lives in the database and a worker advances one stage per tick, so
 a run survives reloads and restarts.
 
+- **Research first.** Before the storyboard is written, the start page is read
+  (title, headings, visible text, links, controls; cookie banners closed with
+  the most restrictive choice). The storyboard agent builds the story from these
+  facts, and narration must not mention the production itself (recording, test
+  data, verification). An https address in the request becomes the start
+  address and wins over the chosen area; a demo login is dropped when it belongs
+  to another site.
 - **No invented selectors.** The planning model never sees or writes selectors
   or URLs. Runner 1.6.0 adds `POST /video/inspect` (`pageInspectVersion: 1`),
   a read-only inventory of visible controls whose selectors match exactly one
@@ -178,8 +185,9 @@ a run survives reloads and restarts.
 - **No data changes.** The Recording Agent may only click, hover, scroll, wait
   and follow links. Submit buttons and controls whose name suggests saving,
   deleting, installing, uploading, paying or logging out are skipped and
-  logged. Typing into fields and file uploads are not available yet, so a flow
-  such as "upload an extension" is shown up to that control only.
+  logged. Typing an example value into a text field is allowed, Enter only in search
+  fields. File uploads are not available yet, so a flow such as "upload an
+  extension" is shown up to that control only.
 - **Honest status.** `completed` is set only when the renderer reports `done`.
   A failed render leaves the run `failed` with the renderer's error; `retry`
   repeats the failed stage and reuses the same production.
