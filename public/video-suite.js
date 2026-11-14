@@ -982,6 +982,7 @@
     const active = ['running', 'needs_input'].includes(run.status);
     $('ap-approve').hidden = run.awaiting !== 'approve'; $('ap-retry').hidden = run.status !== 'failed';
     $('ap-cancel').hidden = !active && run.status !== 'failed'; $('ap-new').hidden = active; $('ap-open').hidden = !run.job_id;
+    $('ap-revise').hidden = !run.can_revise;
     const video = $('ap-video'); video.hidden = run.status !== 'completed';
     if (run.status === 'completed' && shownVideo !== run.job_id) { shownVideo = run.job_id; video.src = '/api/video-suite/preview/' + encodeURIComponent(run.job_id); }
     clearTimeout(timer);
@@ -997,22 +998,36 @@
     if (!asked) return;
     try {
       const { runs } = await call('/api/video-suite/autopilot?project_id=' + encodeURIComponent(project()));
-      const open = runs.find(run => ['running', 'needs_input', 'failed'].includes(run.status)) || (runs[0]?.status === 'completed' && Date.now() - new Date(runs[0].updated_at) < 6 * 3600 * 1000 ? runs[0] : null);
+      const open = runs.find(run => ['running', 'needs_input', 'failed'].includes(run.status)) || (runs[0]?.can_revise ? runs[0] : null) || (runs[0]?.status === 'completed' && Date.now() - new Date(runs[0].updated_at) < 6 * 3600 * 1000 ? runs[0] : null);
       if (open && !current && asked === project()) draw(open);
     } catch { /* The start form stays usable without history. */ }
   }
+  // Where to record: the storefront and the signed-in area of every demo login, or any other address.
+  const whereOther = () => { const other = $('ap-where').value === 'other'; $('ap-url').hidden = !other; $('ap-url-label').hidden = !other; $('ap-url').required = other; };
+  const target = value => value.startsWith('login:') ? { login_profile_id: value.slice(6) } : value.startsWith('url:') ? { start_url: value.slice(4) } : {};
   async function logins() {
-    try { const list = await call('/api/video-studio/demo-logins'); $('ap-login').append(...(Array.isArray(list) ? list : []).map(item => el('option', { value: item.id, textContent: item.name }))); }
-    catch { /* optional */ }
+    try {
+      const list = await call('/api/video-studio/demo-logins'), options = [];
+      for (const item of Array.isArray(list) ? list : []) {
+        const origin = new URL(item.login_url).origin;
+        if (!options.some(option => option.value === 'url:' + origin + '/')) options.push({ value: 'url:' + origin + '/', textContent: 'Shop-Frontend · ' + new URL(origin).host });
+        options.push({ value: 'login:' + item.id, textContent: 'Adminbereich · ' + item.name + ' (angemeldet)' });
+      }
+      $('ap-where').prepend(...options.map(option => el('option', option)));
+      $('ap-revise-where').append(...options.map(option => el('option', option)));
+      if (options.length) $('ap-where').value = options[0].value;
+    } catch { /* The address field stays available. */ }
+    whereOther();
   }
+  $('ap-where').addEventListener('change', whereOther);
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (!project()) { $('ap-status').textContent = 'Bitte zuerst oben ein Projekt wählen oder anlegen.'; return; }
     $('ap-start').disabled = true; $('ap-status').textContent = 'Wird gestartet …';
     try {
-      draw(await call('/api/video-suite/autopilot', { project_id: project(), prompt: $('ap-prompt').value.trim(), format: $('ap-format').value, minutes: Number($('ap-minutes').value), style: $('ap-style').value, audience: $('ap-audience').value.trim(), mode: form.querySelector('[name=ap-mode]:checked').value, ...($('ap-url').value.trim() ? { start_url: $('ap-url').value.trim() } : {}), ...($('ap-login').value ? { login_profile_id: $('ap-login').value } : {}) }));
+      draw(await call('/api/video-suite/autopilot', { project_id: project(), prompt: $('ap-prompt').value.trim(), format: $('ap-format').value, minutes: Number($('ap-minutes').value), style: $('ap-style').value, audience: $('ap-audience').value.trim(), mode: form.querySelector('[name=ap-mode]:checked').value, ...($('ap-where').value === 'other' ? { start_url: $('ap-url').value.trim() } : target($('ap-where').value)) }));
       $('ap-run').scrollIntoView({ block: 'start', behavior: 'smooth' });
-    } catch (error) { $('ap-status').textContent = error.message; if (/Start-URL/.test(error.message)) { form.querySelector('.ap-options').open = true; $('ap-url').focus(); } }
+    } catch (error) { $('ap-status').textContent = error.message; }
     finally { $('ap-start').disabled = false; }
   });
   for (const [id, action] of [['ap-approve', 'approve'], ['ap-retry', 'retry'], ['ap-cancel', 'cancel']])
@@ -1020,7 +1035,17 @@
       try { draw(await call('/api/video-suite/autopilot/' + current.id + '/action', { action })); }
       catch (error) { $('ap-state').textContent = error.message; }
     });
-  $('ap-new').addEventListener('click', () => { clearTimeout(timer); draw(null); $('ap-prompt').focus(); });
+  $('ap-new').addEventListener('click', () => { const last = current?.prompt || ''; clearTimeout(timer); draw(null); if (!$('ap-prompt').value.trim()) $('ap-prompt').value = last; $('ap-prompt').focus(); });
+  $('ap-revise').addEventListener('submit', async event => {
+    event.preventDefault();
+    const where = $('ap-revise-where').value, place = target(where);
+    try {
+      // A demo login records from its start page; the server needs that as an address.
+      if (place.login_profile_id) { const list = await call('/api/video-studio/demo-logins'); const item = list.find(entry => entry.id === place.login_profile_id); place.start_url = item?.landing_url || item?.login_url; delete place.login_profile_id; }
+      draw(await call('/api/video-suite/autopilot/' + current.id + '/action', { action: 'revise', feedback: $('ap-feedback').value.trim(), ...place }));
+      $('ap-feedback').value = '';
+    } catch (error) { $('ap-state').textContent = error.message; }
+  });
   $('vs-project')?.addEventListener('change', load);
   logins();
   // The project list arrives asynchronously; look for an open run once a project is selected.

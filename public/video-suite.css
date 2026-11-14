@@ -218,3 +218,7 @@ body.siteops-workspace .ops-main .suite label:has(>input[type=checkbox]){display
 .suite-media-empty{color:var(--ink-muted,#5b6472);padding:14px!important;grid-column:1/-1}.suite-media-player{margin-bottom:12px}.suite-media-player video{width:100%;max-height:70vh;border-radius:10px;background:#000}.suite-media-player p{margin:6px 0 0;font-weight:600}
 @media(max-width:760px){.suite-main a{padding:0 14px}}
 .suite .suite-media header{display:block}
+
+.ap-where{display:grid;gap:6px}.ap-where label,.ap-revise label{font-size:var(--fs-control,14px);font-weight:600}.ap-where :is(select,input),.ap-revise select{width:100%;min-height:44px}
+.suite .ap-revise{display:grid;gap:8px;padding:14px;border:1px solid var(--suite-line);border-radius:10px;background:#f8fafc}.suite .ap-revise[hidden],.ap-where [hidden]{display:none!important}.ap-revise textarea{width:100%;font-size:16px;padding:10px;border-radius:8px}.ap-revise button{min-height:48px;margin:0;justify-self:start}
+@media(max-width:760px){.ap-revise button{width:100%}}

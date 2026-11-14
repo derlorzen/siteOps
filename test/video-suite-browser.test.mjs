@@ -166,6 +166,15 @@ test(
             'base64'
           )
         });
+      else if (url.pathname === '/api/video-studio/demo-logins')
+        body = [
+          {
+            id: project,
+            name: 'Demo',
+            login_url: 'https://shop.test/admin/login',
+            landing_url: 'https://shop.test/admin'
+          }
+        ];
       else if (url.pathname.startsWith('/api/video-suite/autopilot')) {
         if (req.method() === 'POST' && url.pathname.endsWith('/autopilot')) autopilotRequest = req.postDataJSON();
         if (req.method() === 'GET' && url.pathname.endsWith('/autopilot')) body = { runs: [] };
@@ -259,7 +268,12 @@ test(
     if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-start.png' });
     await page.getByRole('button', { name: 'Video erstellen', exact: true }).click();
     await page.locator('#ap-phases li[aria-current=step]').getByText('Aufnahmen planen').waitFor();
-    if (autopilotRequest?.minutes !== 2 || autopilotRequest.mode !== 'review' || autopilotRequest.start_url)
+    if (
+      autopilotRequest?.minutes !== 2 ||
+      autopilotRequest.mode !== 'review' ||
+      autopilotRequest.start_url !== 'https://shop.test/' ||
+      autopilotRequest.login_profile_id
+    )
       throw Error('Autopilot request lacks the chosen options.');
     await page.getByText('Aufnahme wird noch geplant').waitFor();
     await page.locator('#ap-state:has-text("Fertig gerendert")').waitFor({ timeout: 9000 });
@@ -269,6 +283,15 @@ test(
     if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-run.png', fullPage: true });
     await page.getByRole('button', { name: 'Neues Video', exact: true }).click();
     await page.getByLabel('Welches Video möchtest du erstellen?').waitFor();
+    if (
+      (await page.getByLabel('Welches Video möchtest du erstellen?').inputValue()) !==
+      'Show how the package manager works.'
+    )
+      throw Error('The previous request should be offered again.');
+    await page.getByLabel('Wo soll aufgenommen werden?').selectOption({ label: 'Adresse eingeben' });
+    await page.getByLabel('Start-Adresse der Demo').waitFor();
+    await page.getByLabel('Wo soll aufgenommen werden?').selectOption({ label: 'Adminbereich · Demo (angemeldet)' });
+    if (await page.locator('#ap-url').isVisible()) throw Error('Address field should hide for a known place.');
     await page.waitForFunction(() => document.querySelector('#suite-draft-state').textContent === 'Neuer Entwurf');
 
     await page.locator('[data-suite-area=studio]').click();

@@ -31,6 +31,16 @@ function fixture({ inspect, plans, jobStatus = ['running', 'done'] } = {}) {
         rows.set(id, { id, project_id, status, stage, prompt, options, state, job_id: null, error: null });
         return [{}];
       }
+      if (query.startsWith('UPDATE video_autopilot_runs SET options')) {
+        rows.get(params[1]).options = params[0];
+        return [{}];
+      }
+      if (query.includes('id<>?'))
+        return [
+          [...rows.values()].filter(
+            r => r.project_id === params[0] && r.id !== params[1] && ['running', 'needs_input'].includes(r.status)
+          )
+        ];
       if (query.startsWith('UPDATE video_autopilot_runs')) {
         const [status, stage, state, job_id, error, id] = params;
         Object.assign(rows.get(id), { status, stage, state, job_id, error });
@@ -249,5 +259,53 @@ test('autopilot never invents recordings: old runner records the start page only
   });
   await assert.rejects(bare.start({ project_id: project, prompt: 'Show how the package manager works.' }), {
     statusCode: 422
+  });
+});
+
+test('a rejected storyboard is reworked with the owner feedback and a new start address', async () => {
+  const { autopilot, calls, run } = fixture();
+  const started = await autopilot.start({
+    project_id: project,
+    prompt: 'Show how customers use the storefront.',
+    mode: 'review'
+  });
+  let state = await run(started.id, 5);
+  assert.equal(state.awaiting, 'approve');
+  assert.equal(state.can_revise, true);
+  await assert.rejects(autopilot.act({ id: started.id, action: 'revise' }), { statusCode: 422 });
+  state = await autopilot.act({
+    id: started.id,
+    action: 'revise',
+    feedback: 'Stay in the storefront, no admin scenes.',
+    start_url: 'https://frontend.test/'
+  });
+  assert.equal(state.status, 'running');
+  assert.equal(state.stage, 'plan');
+  assert.equal(state.options.start_url, 'https://frontend.test/');
+  assert.equal(state.options.login_profile_id, undefined);
+  state = await run(started.id, 1);
+  const second = calls.chat[1];
+  assert.match(second.message, /Stay in the storefront, no admin scenes\./);
+  assert.match(second.message, /All recordings start at https:\/\/frontend\.test\//);
+  assert.equal(second.conversation_id, '44444444-4444-4444-8444-444444444444');
+  assert.equal(second.context.scenes.length, 3);
+  assert.ok(!JSON.stringify(second.context.scenes).includes('demoSteps'));
+  // Recordings are planned again from the new address.
+  state = await run(started.id, 1);
+  assert.equal(calls.inspect.at(-1).url, 'https://frontend.test/');
+  assert.equal(calls.inspect.at(-1).login_profile_id, undefined);
+  state = await run(started.id, 3);
+  assert.equal(state.awaiting, 'approve');
+  assert.equal(calls.createJob.length, 0);
+
+  await autopilot.act({ id: started.id, action: 'cancel' });
+  state = await autopilot.act({ id: started.id, action: 'revise', feedback: 'Shorter, three scenes only.' });
+  assert.equal(state.status, 'running');
+  await run(started.id, 5);
+  await autopilot.act({ id: started.id, action: 'approve' });
+  state = await run(started.id, 1);
+  assert.equal(state.can_revise, false);
+  await assert.rejects(autopilot.act({ id: started.id, action: 'revise', feedback: 'Too late now.' }), {
+    statusCode: 409
   });
 });
