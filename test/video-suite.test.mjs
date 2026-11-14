@@ -158,7 +158,7 @@ test('team review runs Producer then independent Quality and saves one chat resu
   assert.equal(calls.length, 2);
   assert.equal(JSON.parse(calls[0][1].body).store, false);
   assert.equal(JSON.parse(calls[1][1].body).store, false);
-  assert.equal(JSON.parse(calls[1][1].body).input.includes('Producer requires footage.'), true);
+  assert.equal(JSON.stringify(JSON.parse(calls[1][1].body).input).includes('Producer requires footage.'), true);
   assert.match(result.reply, /Producer-Agent/);
   assert.match(result.reply, /Quality-Agent/);
   assert.match(result.reply, /Aufnahmesperren/);
