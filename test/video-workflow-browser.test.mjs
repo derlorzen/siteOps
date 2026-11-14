@@ -215,7 +215,7 @@ test(
           { ideas: 'strategy', storyboard: 'script', editing: 'edit' }[step]
         );
     }
-    await page.goto('https://workflow.test/video-suite#settings');
+    await page.goto('https://workflow.test/video-suite#templates');
     await page.locator('#suite-guidelines-text').waitFor({ state: 'visible' });
     await page.waitForFunction(() => document.querySelector('#suite-guidelines-text').value.includes('continuous'));
     await page.locator('#suite-guidelines-text').fill('Use English narration in this project only.');

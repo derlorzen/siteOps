@@ -271,7 +271,7 @@ test(
     await page.getByLabel('Welches Video möchtest du erstellen?').waitFor();
     await page.waitForFunction(() => document.querySelector('#suite-draft-state').textContent === 'Neuer Entwurf');
 
-    await page.locator('[data-journey=ideas]').click();
+    await page.locator('[data-suite-area=studio]').click();
     await page.getByLabel('Screenshots oder Bilder anhängen', { exact: true }).setInputFiles({
       name: 'screenshot.png',
       mimeType: 'image/png',
@@ -399,6 +399,9 @@ test(
     );
     await page.getByRole('button', { name: 'Verfügbare Modelle laden', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('#suite-model-options option[value="gpt-6-luna"]'));
+    await page.getByRole('link', { name: 'Vorlagen', exact: true }).click();
+    await page.locator('.suite-main [aria-current=page]:has-text("Vorlagen")').waitFor();
+    if (await page.locator('.suite-journey').isVisible()) throw Error('Project journey must only show in the studio.');
     await page.getByRole('button', { name: '+ Eigener Skill', exact: true }).click();
     await page.getByLabel('Skill-Name', { exact: true }).fill('Release-Video');
     await page.getByLabel('Kurzbeschreibung', { exact: true }).fill('Kurzes Video zu einer neuen Version.');
@@ -410,6 +413,14 @@ test(
     if (savedSkills[0]?.id !== 'release-video') throw Error('Own skill was not saved with a derived identifier.');
     if (!(await page.locator('#suite-agent-skill option[value=release-video]').count()))
       throw Error('Own skill is missing from the agent.');
+    await page.getByRole('link', { name: 'Medien', exact: true }).click();
+    await page.getByRole('heading', { name: 'Medien', exact: true }).waitFor();
+    await page.locator('#suite-media-videos li').first().waitFor();
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-media.png' });
+    await page.getByRole('link', { name: 'Studio', exact: true }).click();
+    await page.locator('.suite-phase[data-phase=storyboard]').waitFor();
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-studio.png' });
+    await page.getByRole('link', { name: 'Einstellungen', exact: true }).click();
     await page.getByText('Wissensbasis bearbeiten oder importieren', { exact: true }).click();
     await page.getByLabel('Plugin-Wissen (JSON)', { exact: true }).fill(
       JSON.stringify({

@@ -447,6 +447,7 @@ test(
     await page.goto('https://siteops.test/video-suite');
     assert.equal(await page.locator('.suite-journey').count(), 1);
     assert.equal(await page.locator('.siteops-sidebar [data-suite-nav]').count(), 0);
+    await page.locator('[data-suite-area=studio]').click();
     await page.locator('[data-journey=script]').click();
     await page.locator('[data-suite-pane=script]').waitFor({ state: 'visible' });
     assert.match(page.url(), /#script/);

@@ -199,6 +199,7 @@ test(
       document.querySelector('#vs-policy-status').textContent.includes('VIDEO_ALLOWED_HOSTS')
     );
     assert.equal(saved, null);
+    await ui.locator('[data-suite-area="studio"]').click();
     await ui.locator('[data-journey="production"]').click();
     await ui.locator('[data-render]').click();
     await ui.waitForFunction(() => document.querySelector('#vs-message').textContent.includes('Demo-Domains prüfen'));

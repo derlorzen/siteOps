@@ -8,13 +8,19 @@
     return result;
   };
   function view(id) {
-    if (!['overview', 'agent', 'ideas', 'storyboard', 'editing', 'script', 'production', 'assets', 'review', 'publish', 'repurpose', 'settings'].includes(id)) id = 'overview';
+    if (!['overview', 'agent', 'ideas', 'storyboard', 'editing', 'script', 'production', 'assets', 'review', 'publish', 'repurpose', 'media', 'templates', 'settings'].includes(id)) id = 'overview';
     const paneId=['ideas','storyboard','editing'].includes(id)?'agent':id;
     for (const pane of document.querySelectorAll('[data-suite-pane]')) pane.hidden = pane.dataset.suitePane !== paneId;
     for (const item of document.querySelectorAll('[data-suite-nav]')) {
       if (item.dataset.suiteNav === id) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current');
     }
     document.querySelector('.suite').dataset.suitePage = id;
+    // Main areas: the project journey belongs to the studio only.
+    const area = id === 'overview' ? 'dashboard' : ['media', 'templates', 'settings'].includes(id) ? id : 'studio';
+    document.querySelector('.suite').dataset.suiteArea = area;
+    for (const link of document.querySelectorAll('[data-suite-area]')) { if (link.dataset.suiteArea === area) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); }
+    for (const part of document.querySelectorAll('[data-suite-studio]')) part.hidden = area !== 'studio';
+    if (id === 'media') window.SiteOpsVideoMedia?.load();
     if (id === 'assets') loadSeo();
   }
   document.addEventListener('click', event => {
@@ -565,7 +571,7 @@
 (() => {
   'use strict';
   const $=id=>document.getElementById(id);
-  const stages=[['ideas','Strategie & Ideen','Finde Thema, Zielgruppe und Nutzen.','strategy'],['storyboard','Skript & Storyboard','Entwickle Sprechertext und passende Bilder für jede Szene.','script'],['editing','Schnitt & Dramaturgie','Prüfe Einstieg, Rhythmus, Übergänge und den roten Faden.','edit'],['script','Skript & Szenen','Lege fest, was aufgenommen wird, und teste deine Bildschirmaufnahmen.'],['production','Full-HD-Produktion','Speichere deinen Szenenplan und rendere das Video.'],['assets','SEO & Titelbild','Bereite die fertige Produktion für deinen Kanal vor.'],['review','Gesamtvorschau','Video, Titelbild und sämtliche Texte gemeinsam prüfen.'],['publish','YouTube-Upload','Übertrage dein geprüftes Video zuerst privat auf deinen Kanal.'],['repurpose','Shorts & Social Media','Entwickle aus deinem Video weitere Inhalte.']];
+  const stages=[['ideas','Strategie & Ideen','Finde Thema, Zielgruppe und Nutzen.','strategy'],['storyboard','Skript & Storyboard','Entwickle Sprechertext und passende Bilder für jede Szene.','script'],['editing','Schnitt & Dramaturgie','Prüfe Einstieg, Rhythmus, Übergänge und den roten Faden.','edit'],['script','Skript & Szenen','Lege fest, was aufgenommen wird, und teste deine Bildschirmaufnahmen.'],['production','Full-HD-Produktion','Speichere deinen Szenenplan und rendere das Video.'],['review','Vorschau','Sieh dir das gerenderte Video an und prüfe es vollständig.'],['assets','SEO & Titelbild','Bereite die fertige Produktion für deinen Kanal vor.'],['publish','YouTube-Upload','Übertrage dein geprüftes Video zuerst privat auf deinen Kanal.'],['repurpose','Shorts & Social Media','Entwickle aus deinem Video weitere Inhalte.']];
   let job=null, publication=null, thumbnail=null, packageDirty=false, pending=null, reviewed=null, requestNo=0, packageVersion=0, project='', saveChain=Promise.resolve();
   const endpoint=id=>'/api/video-studio/jobs/'+encodeURIComponent(id)+'/publication';
   const api=async(path,data)=>{
@@ -1019,4 +1025,37 @@
   logins();
   // The project list arrives asynchronously; look for an open run once a project is selected.
   let waited = 0; const ready = setInterval(() => { if (current || ++waited > 40) return clearInterval(ready); if (project()) { clearInterval(ready); load(); } }, 250);
+})();
+
+// Media library: finished videos and generated thumbnails of the selected project.
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  if (!$('suite-media-videos')) return;
+  const el = (tag, props = {}, ...children) => { const node = Object.assign(document.createElement(tag), props); node.append(...children.filter(Boolean)); return node; };
+  const get = async path => { const response = await fetch(path, { credentials: 'same-origin' }); const data = await response.json().catch(() => ({})); if (!response.ok) throw Error(data.message || data.error || 'Anfrage fehlgeschlagen.'); return data; };
+  const date = value => new Date(value).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  async function load() {
+    const project = $('vs-project')?.value || '';
+    $('suite-media-player').hidden = true; $('suite-media-video').removeAttribute('src');
+    $('suite-media-videos').replaceChildren(); $('suite-media-images').replaceChildren();
+    if (!project) { $('suite-media-status').textContent = 'Wähle oben ein Projekt.'; return; }
+    $('suite-media-status').textContent = 'Medien werden geladen …';
+    try {
+      const [jobs, images] = await Promise.all([get('/api/video-studio/jobs?project_id=' + encodeURIComponent(project)), get('/api/video-suite/assets?project_id=' + encodeURIComponent(project))]);
+      const done = (Array.isArray(jobs) ? jobs : []).filter(job => job.status === 'done');
+      $('suite-media-videos').replaceChildren(...(done.length ? done.map(job => {
+        const play = el('button', { type: 'button', textContent: 'Abspielen' });
+        play.setAttribute('aria-label', 'Abspielen: ' + job.title);
+        play.addEventListener('click', () => { $('suite-media-player').hidden = false; $('suite-media-video').src = '/api/video-suite/preview/' + encodeURIComponent(job.id); $('suite-media-playing').textContent = job.title; $('suite-media-video').play().catch(() => {}); $('suite-media-player').scrollIntoView({ block: 'nearest' }); });
+        return el('li', {}, el('div', {}, el('b', { textContent: job.title }), el('small', { textContent: 'Gerendert am ' + date(job.updated_at || job.created_at) })), play);
+      }) : [el('li', { className: 'suite-media-empty', textContent: 'Noch kein fertiges Video in diesem Projekt.' })]));
+      const list = Array.isArray(images) ? images : [];
+      $('suite-media-images').replaceChildren(...(list.length ? list.map(image => el('li', {}, el('a', { href: image.url, target: '_blank', rel: 'noopener' }, el('img', { src: image.url, alt: 'Titelbild vom ' + date(image.created_at), loading: 'lazy' })))) : [el('li', { className: 'suite-media-empty', textContent: 'Noch kein Titelbild erzeugt.' })]));
+      $('suite-media-status').textContent = '';
+    } catch (error) { $('suite-media-status').textContent = error.message; }
+  }
+  window.SiteOpsVideoMedia = { load };
+  $('vs-project')?.addEventListener('change', () => { if (location.hash === '#media') load(); });
+  if (location.hash === '#media') setTimeout(load, 800);
 })();
