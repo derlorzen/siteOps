@@ -420,10 +420,29 @@
   loadDemoLogins().catch(e=>{$('suite-demo-login-status').textContent=e.message;});
   $('suite-settings-form').addEventListener('submit', async event => {
     event.preventDefault(); const b = event.submitter; b.disabled = true;
-    try { const result = await api('settings', { api_key: $('suite-api-key').value, model: $('suite-model').value, image_model: $('suite-image-model').value }); $('suite-api-key').value = ''; $('suite-settings-status').textContent = 'Verschlüsselt gespeichert. Die nächste Anfrage verwendet diese Verbindung.'; setAiState(result); }
+    try { const result = await api('settings', { provider: $('suite-provider').value, openai_api_key: $('suite-api-key').value, nvidia_api_key: $('suite-nvidia-api-key').value, model: $('suite-model').value, image_model: $('suite-image-model').value }); $('suite-api-key').value = ''; $('suite-nvidia-api-key').value = ''; $('suite-settings-status').textContent = 'Verschlüsselt gespeichert. Die nächste Anfrage verwendet den gewählten Anbieter.'; setAiState(result); }
     catch (e) { $('suite-settings-status').textContent = e.message; } finally { b.disabled = false; }
   });
-  function setAiState(data) { $('suite-ai-state').textContent = data.configured ? 'OpenAI eingerichtet · ' + data.model : 'OpenAI noch nicht verbunden'; $('suite-model').value = data.model; $('suite-image-model').value = data.image_model; }
+  function setProviderLabels() {
+    const provider = $('suite-provider').value;
+    const model = $('suite-model').value;
+    if (provider === 'nvidia' && !model.includes('/')) $('suite-model').value = 'nvidia/nemotron-3.5-super-vl-120b-a12b';
+    if (provider === 'openai' && model.includes('/')) $('suite-model').value = 'gpt-4.1';
+    $('suite-api-key').previousElementSibling.textContent = provider === 'nvidia' ? 'OpenAI API-Schlüssel · Titelbilder und Sichtprüfung' : 'OpenAI API-Schlüssel · Agent, Titelbilder und Sichtprüfung';
+    $('suite-test-connection').textContent = provider === 'nvidia' ? 'NVIDIA-Verbindung testen' : 'OpenAI-Verbindung testen';
+    $('suite-settings-form').querySelector('button[type="submit"]').textContent = provider === 'nvidia' ? 'NVIDIA-Einstellungen speichern' : 'OpenAI-Einstellungen speichern';
+    $('suite-load-models').textContent = provider === 'nvidia' ? 'NVIDIA-Modelle laden' : 'OpenAI-Modelle laden';
+  }
+  $('suite-provider').addEventListener('change', setProviderLabels);
+  function setAiState(data) {
+    $('suite-provider').value = data.provider || 'openai';
+    $('suite-model').value = data.model;
+    $('suite-image-model').value = data.image_model;
+    setProviderLabels();
+    const name = data.provider === 'nvidia' ? 'NVIDIA Playground' : 'OpenAI';
+    $('suite-ai-state').textContent = data.configured ? name + ' eingerichtet · ' + data.model : name + ' noch nicht verbunden';
+    if (data.provider === 'nvidia' && !data.openai_image_configured) $('suite-ai-state').textContent += ' · OpenAI-Schlüssel für Titelbilder und Sichtprüfung fehlt';
+  }
   api('settings').then(setAiState).catch(e => { $('suite-ai-state').textContent = e.message; });
   $('suite-test-connection').addEventListener('click', async event => {
     const button = event.currentTarget; button.disabled = true;
@@ -433,7 +452,7 @@
       $('suite-settings-status').textContent = result.message;
       $('suite-diagnostics').hidden = !result.diagnostic;
       $('suite-diagnostics').textContent = result.diagnostic ? JSON.stringify(result.diagnostic, null, 2) : '';
-      $('suite-ai-state').textContent = result.ok ? 'Verbindung geprüft · ' + result.model : 'OpenAI-Test fehlgeschlagen · ' + result.model;
+      $('suite-ai-state').textContent = result.ok ? 'Verbindung geprüft · ' + result.model : ($('suite-provider').value === 'nvidia' ? 'NVIDIA-Test fehlgeschlagen · ' : 'OpenAI-Test fehlgeschlagen · ') + result.model;
     } catch(e) { $('suite-settings-status').textContent = e.message; } finally { button.disabled = false; }
   });
   $('suite-test-audio').addEventListener('click',async event=>{
@@ -446,7 +465,7 @@
     try {
       const result = await api('models'); $('suite-model-options').replaceChildren();
       for (const model of result.models) { const option = document.createElement('option'); option.value = model; $('suite-model-options').append(option); }
-      $('suite-settings-status').textContent = result.models.length + ' Modelle geladen. Die Auswahl bleibt unverändert. Der Verbindungstest prüft die konkrete Responses-Anfrage.';
+      $('suite-settings-status').textContent = result.models.length + ' Modelle geladen. Die Auswahl bleibt unverändert. Mit dem Verbindungstest prüfst du die Anfrage mit dem gewählten Modell.';
     } catch(e) { $('suite-settings-status').textContent = e.message; } finally { button.disabled = false; }
   });
   let guidelineState=null,guidelinesDirty=false,guidelineRequest=0;
