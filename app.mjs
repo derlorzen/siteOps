@@ -62,6 +62,7 @@ import { registerYouTubeRoutes, registerYouTubeTools } from './lib/youtube-api.m
 import { renderYouTube } from './lib/youtube-ui.mjs';
 import { createVideoSuiteAgent, registerVideoSuiteRoutes } from './lib/video-suite-agent.mjs';
 import { createVideoAutopilot, registerVideoAutopilotRoutes } from './lib/video-autopilot.mjs';
+import { registerVideoTestFileRoutes } from './lib/video-test-files.mjs';
 import { renderVideoStudio } from './lib/video-studio-ui.mjs';
 import { createDashboardSessions } from './lib/dashboard-session.mjs';
 import { cmsProjectBeginSchema, cmsProjectFileSchema, cmsProjectIdSchema } from './lib/cms-projects.mjs';
@@ -7939,6 +7940,7 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   registerVideoStudioRoutes(app, videoStudioService, page, renderVideoStudio, () => new URL(cfg.publicBaseUrl).origin);
   videoAutopilotService = createVideoAutopilot({ db, studio: videoStudioService, suite: videoSuiteService });
   registerVideoAutopilotRoutes(app, videoAutopilotService);
+  registerVideoTestFileRoutes(app, videoStudioService.testFiles);
   if (databaseReady) {
     const stopVideoAutopilot = videoAutopilotService.startWorker();
     app.addHook('onClose', async () => stopVideoAutopilot());

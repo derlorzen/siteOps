@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { demoHostMatches, normalizeDemoHosts } from './video-policy.mjs';
 import { createDemoProxy } from './video-network.mjs';
+import { demoFilePath, safeDemoFileName } from './video-files.mjs';
 
 // HTTP/2 connection coalescing could reuse one allowed CONNECT tunnel for a
 // different certificate-covered hostname after a redirect (routes omit hops).
@@ -13,7 +14,7 @@ export const demoBrowserArgs = [
   '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'
 ];
 
-const ACTIONS = new Set(['click', 'hover', 'fill', 'press', 'scroll', 'wait', 'goto']);
+const ACTIONS = new Set(['click', 'hover', 'fill', 'press', 'scroll', 'wait', 'goto', 'upload']);
 const KEYS = new Set(['Enter', 'Tab', 'Escape', 'ArrowDown', 'ArrowUp']);
 const limitText = (value, maximum) => typeof value === 'string' && value.length > 0 && value.length <= maximum;
 
@@ -81,7 +82,7 @@ export function validatedDemoSteps(steps, baseUrl, hosts) {
     if (!step || typeof step !== 'object' || !ACTIONS.has(step.action))
       throw new Error('Unsupported demo action at step ' + (i + 1));
     const action = step.action;
-    if (['click', 'hover', 'fill', 'press'].includes(action) && !limitText(step.selector, 240))
+    if (['click', 'hover', 'fill', 'press', 'upload'].includes(action) && !limitText(step.selector, 240))
       throw new Error('A bounded selector is required for ' + action);
     if (action === 'fill' && typeof step.value !== 'string') throw new Error('fill requires a text value');
     if (action === 'fill' && step.value.length > 160) throw new Error('fill value too long');
@@ -99,6 +100,10 @@ export function validatedDemoSteps(steps, baseUrl, hosts) {
         throw new Error('Wait must be between 100 and 4000 milliseconds.');
       return { action, ms };
     }
+    if (action === 'upload') {
+      if (!/^[a-f0-9]{64}$/.test(step.sha256 || '')) throw new Error('upload requires a test file');
+      return { action, selector: step.selector, sha256: step.sha256, name: safeDemoFileName(step.name) };
+    }
     if (action === 'fill') return { action, selector: step.selector, value: step.value };
     if (action === 'press') return { action, selector: step.selector, key: step.key };
     return { action, selector: step.selector };
@@ -107,10 +112,9 @@ export function validatedDemoSteps(steps, baseUrl, hosts) {
 
 export async function executeDemoStep(page, step) {
   if (step.action === 'goto') {
-    const response=await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
-    if(!response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
-  }
-  else if (step.action === 'click') await page.locator(step.selector).first().click({ timeout: 12000 });
+    const response = await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    if (!response?.ok()) throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
+  } else if (step.action === 'click') await page.locator(step.selector).first().click({ timeout: 12000 });
   else if (step.action === 'hover') await page.locator(step.selector).first().hover({ timeout: 12000 });
   else if (step.action === 'fill') {
     const input = page.locator(step.selector).first();
@@ -118,6 +122,11 @@ export async function executeDemoStep(page, step) {
       throw new Error('Password inputs cannot be recorded.');
     await input.fill(step.value, { timeout: 12000 });
   } else if (step.action === 'press') await page.locator(step.selector).first().press(step.key, { timeout: 12000 });
+  else if (step.action === 'upload')
+    await page
+      .locator(step.selector)
+      .first()
+      .setInputFiles(await demoFilePath(step.sha256, step.name), { timeout: 12000 });
   else if (step.action === 'scroll') await page.mouse.wheel(0, step.pixels);
   else if (step.action === 'wait') await page.waitForTimeout(step.ms);
 }
@@ -142,7 +151,7 @@ export async function recordDemoScene(
       browser,
       {
         viewport: { width, height },
-        ...(storageState ? {storageState} : {}),
+        ...(storageState ? { storageState } : {}),
         recordVideo: { dir: tmpDir, size: { width, height } },
         ignoreHTTPSErrors: false,
         reducedMotion: 'reduce',
@@ -154,15 +163,23 @@ export async function recordDemoScene(
     const { context } = guarded;
     const page = await context.newPage();
     page.setDefaultTimeout(12000);
-    const response=await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
-    if(!response?.ok())throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
-    if(await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    if (!response?.ok()) throw Error('Demo-Zielseite hat einen HTTP-Fehler geliefert.');
+    if (await page.locator('input[type="password"]').first().isVisible())
+      throw Error('Demo-Sitzung nicht gültig: Login-Seite statt Aufnahmeziel.');
     await page.waitForTimeout(700);
     let actionsExecuted = 0;
-    for (const [index,step] of steps.entries()) {
-      try { await executeDemoStep(page, step); } catch { throw Error('Demo-Aktion '+(index+1)+' ('+step.action+') fehlgeschlagen. Selektor oder Zielzustand prüfen.'); }
+    for (const [index, step] of steps.entries()) {
+      try {
+        await executeDemoStep(page, step);
+      } catch {
+        throw Error(
+          'Demo-Aktion ' + (index + 1) + ' (' + step.action + ') fehlgeschlagen. Selektor oder Zielzustand prüfen.'
+        );
+      }
       validatedDemoUrl(page.url(), hosts);
-      if(await page.locator('input[type="password"]').first().isVisible()) throw Error('Demo-Sitzung abgelaufen. Keine gültige Aufnahme.');
+      if (await page.locator('input[type="password"]').first().isVisible())
+        throw Error('Demo-Sitzung abgelaufen. Keine gültige Aufnahme.');
       actionsExecuted += 1;
       await page.waitForTimeout(500);
     }

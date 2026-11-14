@@ -222,3 +222,8 @@ body.siteops-workspace .ops-main .suite label:has(>input[type=checkbox]){display
 .ap-where{display:grid;gap:6px}.ap-where label,.ap-revise label{font-size:var(--fs-control,14px);font-weight:600}.ap-where :is(select,input),.ap-revise select{width:100%;min-height:44px}
 .suite .ap-revise{display:grid;gap:8px;padding:14px;border:1px solid var(--suite-line);border-radius:10px;background:#f8fafc}.suite .ap-revise[hidden],.ap-where [hidden]{display:none!important}.ap-revise textarea{width:100%;font-size:16px;padding:10px;border-radius:8px}.ap-revise button{min-height:48px;margin:0;justify-self:start}
 @media(max-width:760px){.ap-revise button{width:100%}}
+
+.ap-check{display:flex;gap:10px;align-items:flex-start;margin:12px 0 0;font-size:var(--fs-control,14px);line-height:1.4}.ap-check input{width:18px!important;height:18px!important;min-height:0!important;margin:2px 0 0;flex:none}
+.suite-test-file-list{list-style:none;margin:12px 0;padding:0;border:1px solid var(--suite-line);border-radius:10px}.suite-test-file-list li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--suite-line)}.suite-test-file-list li:first-child{border-top:0}
+.suite-test-file-list li div{display:grid;gap:2px;min-width:0}.suite-test-file-list small{color:var(--ink-muted,#5b6472);font-size:var(--fs-meta,12px)}.suite-test-file-list button{min-height:44px;margin:0}
+.suite-test-file-pick{display:inline-grid;gap:6px;font-weight:600}.suite-test-file-pick input{min-height:44px}#suite-test-file-status:empty{display:none}

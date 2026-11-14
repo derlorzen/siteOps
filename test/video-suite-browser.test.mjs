@@ -21,7 +21,8 @@ test(
       conversations = [];
     let trashed = false,
       knowledge = { plugins: [] },
-      savedSkills = [];
+      savedSkills = [],
+      testFiles = [];
     let chatRequest,
       packageRequest,
       autopilotRequest,
@@ -175,7 +176,14 @@ test(
             landing_url: 'https://shop.test/admin'
           }
         ];
-      else if (url.pathname.startsWith('/api/video-suite/autopilot')) {
+      else if (url.pathname === '/api/video-suite/test-files' && req.method() === 'GET') body = { files: testFiles };
+      else if (url.pathname === '/api/video-suite/test-files') {
+        const sent = req.postDataJSON();
+        testFiles = [
+          { id: project, name: sent.name, size: Buffer.from(sent.data, 'base64').length, sha256: 'c'.repeat(64) }
+        ];
+        body = { saved: true };
+      } else if (url.pathname.startsWith('/api/video-suite/autopilot')) {
         if (req.method() === 'POST' && url.pathname.endsWith('/autopilot')) autopilotRequest = req.postDataJSON();
         if (req.method() === 'GET' && url.pathname.endsWith('/autopilot')) body = { runs: [] };
         else {
@@ -265,11 +273,13 @@ test(
     await page.getByText('Optionen', { exact: true }).click();
     await page.getByLabel('Länge').selectOption('2');
     await page.getByLabel('Vor dem Rendern anhalten').check();
+    await page.getByLabel('Änderungen in der Testumgebung erlauben', { exact: false }).check();
     if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-start.png' });
     await page.getByRole('button', { name: 'Video erstellen', exact: true }).click();
     await page.locator('#ap-phases li[aria-current=step]').getByText('Aufnahmen planen').waitFor();
     if (
       autopilotRequest?.minutes !== 2 ||
+      autopilotRequest.allow_changes !== true ||
       autopilotRequest.mode !== 'review' ||
       autopilotRequest.start_url !== 'https://shop.test/' ||
       autopilotRequest.login_profile_id
@@ -425,6 +435,12 @@ test(
     await page.getByRole('link', { name: 'Vorlagen', exact: true }).click();
     await page.locator('.suite-main [aria-current=page]:has-text("Vorlagen")').waitFor();
     if (await page.locator('.suite-journey').isVisible()) throw Error('Project journey must only show in the studio.');
+    await page.locator('#suite-test-file-input').setInputFiles({
+      name: 'example.zip',
+      mimeType: 'application/zip',
+      buffer: Buffer.from('PK example')
+    });
+    await page.locator('#suite-test-file-list').getByText('example.zip', { exact: true }).waitFor();
     await page.getByRole('button', { name: '+ Eigener Skill', exact: true }).click();
     await page.getByLabel('Skill-Name', { exact: true }).fill('Release-Video');
     await page.getByLabel('Kurzbeschreibung', { exact: true }).fill('Kurzes Video zu einer neuen Version.');

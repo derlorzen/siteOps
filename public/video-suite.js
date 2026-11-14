@@ -1025,7 +1025,7 @@
     if (!project()) { $('ap-status').textContent = 'Bitte zuerst oben ein Projekt wählen oder anlegen.'; return; }
     $('ap-start').disabled = true; $('ap-status').textContent = 'Wird gestartet …';
     try {
-      draw(await call('/api/video-suite/autopilot', { project_id: project(), prompt: $('ap-prompt').value.trim(), format: $('ap-format').value, minutes: Number($('ap-minutes').value), style: $('ap-style').value, audience: $('ap-audience').value.trim(), mode: form.querySelector('[name=ap-mode]:checked').value, ...($('ap-where').value === 'other' ? { start_url: $('ap-url').value.trim() } : target($('ap-where').value)) }));
+      draw(await call('/api/video-suite/autopilot', { project_id: project(), prompt: $('ap-prompt').value.trim(), format: $('ap-format').value, minutes: Number($('ap-minutes').value), style: $('ap-style').value, audience: $('ap-audience').value.trim(), mode: form.querySelector('[name=ap-mode]:checked').value, allow_changes: $('ap-changes').checked, ...($('ap-where').value === 'other' ? { start_url: $('ap-url').value.trim() } : target($('ap-where').value)) }));
       $('ap-run').scrollIntoView({ block: 'start', behavior: 'smooth' });
     } catch (error) { $('ap-status').textContent = error.message; }
     finally { $('ap-start').disabled = false; }
@@ -1083,4 +1083,52 @@
   window.SiteOpsVideoMedia = { load };
   $('vs-project')?.addEventListener('change', () => { if (location.hash === '#media') load(); });
   if (location.hash === '#media') setTimeout(load, 800);
+})();
+
+// Test files that recordings may upload.
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const list = $('suite-test-file-list');
+  if (!list) return;
+  const status = text => { $('suite-test-file-status').textContent = text; };
+  const call = async (path, data) => {
+    const response = await fetch('/api/video-suite/' + path, { method: data ? 'POST' : 'GET', credentials: 'same-origin', headers: data ? { 'content-type': 'application/json' } : {}, body: data ? JSON.stringify(data) : undefined });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw Error(result.message || result.error || 'Anfrage fehlgeschlagen.');
+    return result;
+  };
+  const size = bytes => bytes < 1024 * 1024 ? Math.max(1, Math.round(bytes / 1024)) + ' KB' : (bytes / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB';
+  async function load() {
+    try {
+      const { files } = await call('test-files');
+      list.replaceChildren(...(files.length ? files.map(file => {
+        const item = document.createElement('li');
+        const label = document.createElement('div');
+        const name = document.createElement('b'); name.textContent = file.name;
+        const meta = document.createElement('small'); meta.textContent = size(file.size) + ' · ' + file.sha256.slice(0, 12);
+        label.append(name, meta);
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'ghost'; remove.textContent = 'Löschen';
+        remove.setAttribute('aria-label', 'Testdatei löschen: ' + file.name);
+        remove.addEventListener('click', async () => {
+          if (remove.dataset.armed !== '1') { remove.dataset.armed = '1'; remove.textContent = 'Wirklich?'; setTimeout(() => { remove.dataset.armed = ''; remove.textContent = 'Löschen'; }, 4000); return; }
+          try { await call('test-files/remove', { id: file.id }); status('Testdatei gelöscht.'); load(); } catch (error) { status(error.message); }
+        });
+        item.append(label, remove); return item;
+      }) : [Object.assign(document.createElement('li'), { className: 'suite-media-empty', textContent: 'Noch keine Testdatei.' })]));
+    } catch (error) { status(error.message); }
+  }
+  $('suite-test-file-input').addEventListener('change', async event => {
+    const file = event.target.files[0]; event.target.value = '';
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { status('Die Datei ist größer als 8 MiB.'); return; }
+    status('Wird hochgeladen …');
+    try {
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      let binary = ''; for (let i = 0; i < buffer.length; i += 0x8000) binary += String.fromCharCode(...buffer.subarray(i, i + 0x8000));
+      await call('test-files', { name: file.name, mime: file.type || 'application/octet-stream', data: btoa(binary) });
+      status('Testdatei gespeichert. Der Autopilot kann sie in Aufnahmen hochladen.'); load();
+    } catch (error) { status(error.message); }
+  });
+  load();
 })();

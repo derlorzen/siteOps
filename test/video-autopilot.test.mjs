@@ -21,7 +21,7 @@ const draft = () => ({
   ],
   youtube: { title: 'Package Manager tutorial' }
 });
-function fixture({ inspect, plans, jobStatus = ['running', 'done'] } = {}) {
+function fixture({ inspect, plans, jobStatus = ['running', 'done'], testFiles = [] } = {}) {
   const rows = new Map();
   const calls = { inspect: [], chat: [], structured: [], createJob: [], render: [] };
   const db = {
@@ -76,6 +76,7 @@ function fixture({ inspect, plans, jobStatus = ['running', 'done'] } = {}) {
   const studio = {
     getProject: async id =>
       id === project ? { id, language: 'en' } : Promise.reject(Object.assign(Error('x'), { statusCode: 404 })),
+    testFiles: { list: async () => testFiles },
     demoLogins: {
       list: async () => [{ id: login, landing_url: 'https://shop.test/admin' }],
       get: async id => ({ id, landing_url: 'https://shop.test/admin' })
@@ -405,4 +406,59 @@ test('a cancelled storyboard is reworked at the address named in the request', a
   await run(started.id, 1);
   assert.match(calls.chat.at(-1).message, /Stay in the storefront converter page/);
   assert.equal(calls.inspect.at(-1).url, 'https://shop.test/tools/convert');
+});
+
+test('uploads use stored test files; data changes need explicit permission and never include deleting', async () => {
+  const sha = 'a'.repeat(64);
+  const page = {
+    url: 'https://shop.test/tools/convert',
+    title: 'Convert',
+    headings: [],
+    text: '',
+    elements: [
+      { selector: 'input[type="file"]', role: 'file', name: 'Select original ZIP (.zip)', in_view: false },
+      { selector: '#convert', role: 'button', name: 'Convert', submits: true, in_view: true },
+      { selector: '#delete', role: 'button', name: 'Delete package', in_view: true },
+      { selector: '#q', role: 'textbox', name: 'Notes', in_view: true }
+    ]
+  };
+  const actions = [
+    { type: 'upload', element: 0, file: 0, text: null, pixels: null, ms: null },
+    { type: 'upload', element: 3, file: 0, text: null, pixels: null, ms: null },
+    { type: 'click', element: 1, file: null, text: null, pixels: null, ms: null },
+    { type: 'click', element: 2, file: null, text: null, pixels: null, ms: null }
+  ];
+  const cautious = fixture({
+    inspect: () => page,
+    testFiles: [{ name: 'example.zip', size: 1200, sha256: sha }],
+    plans: [{ actions, done: true, note: '' }]
+  });
+  let started = await cautious.autopilot.start({
+    project_id: project,
+    prompt: 'Convert https://shop.test/tools/convert'
+  });
+  await cautious.run(started.id, 2);
+  assert.deepEqual(cautious.calls.inspect.at(-1).steps, [
+    { action: 'upload', selector: 'input[type="file"]', sha256: sha, name: 'example.zip' }
+  ]);
+  assert.deepEqual(cautious.calls.structured[0].input.test_files, [{ index: 0, name: 'example.zip', size: 1200 }]);
+  assert.equal(cautious.calls.structured[0].input.changes_allowed, false);
+
+  const allowed = fixture({
+    inspect: () => page,
+    testFiles: [{ name: 'example.zip', size: 1200, sha256: sha }],
+    plans: [{ actions, done: true, note: '' }]
+  });
+  started = await allowed.autopilot.start({
+    project_id: project,
+    prompt: 'Convert https://shop.test/tools/convert',
+    allow_changes: true
+  });
+  const state = await allowed.run(started.id, 2);
+  assert.deepEqual(allowed.calls.inspect.at(-1).steps, [
+    { action: 'upload', selector: 'input[type="file"]', sha256: sha, name: 'example.zip' },
+    { action: 'click', selector: '#convert' }
+  ]);
+  assert.ok(state.log.some(entry => /Delete package/.test(entry.text)));
+  assert.ok(state.log.some(entry => /Upload ausgelassen/.test(entry.text)));
 });

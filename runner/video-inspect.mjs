@@ -1,4 +1,4 @@
-/* global document, getComputedStyle, innerHeight */
+/* global document, getComputedStyle, innerHeight, CSS */
 import { createDemoContext, executeDemoStep, validatedDemoSteps, validatedDemoUrl } from './video-demo.mjs';
 
 // Read-only page inventory for planning screen recordings. It lists what is really on the page
@@ -51,18 +51,35 @@ function collect(limit) {
     );
   const stable = value => /^[A-Za-z][\w-]{1,60}$/.test(value) && !/\d{4,}/.test(value);
   const nodes = document.querySelectorAll(
-    'a[href],button,summary,select,textarea,input:not([type=hidden]):not([type=password]):not([type=file]),[role=button],[role=link],[role=tab],[role=menuitem]'
+    'a[href],button,summary,select,textarea,input:not([type=hidden]):not([type=password]),[role=button],[role=link],[role=tab],[role=menuitem]'
   );
   const elements = [];
   for (const node of nodes) {
     if (elements.length >= limit) break;
-    if (!visible(node) || node.disabled || node.getAttribute('aria-disabled') === 'true') continue;
-    const role = roleOf(node),
-      name = nameOf(node),
+    const file = node.tagName === 'INPUT' && (node.getAttribute('type') || '').toLowerCase() === 'file';
+    // File inputs are often hidden behind a styled label; they still accept files.
+    if ((!file && !visible(node)) || node.disabled || node.getAttribute('aria-disabled') === 'true') continue;
+    const role = file ? 'file' : roleOf(node),
+      name = file
+        ? clean(
+            (node.id && document.querySelector('label[for="' + CSS.escape(node.id) + '"]')?.innerText) ||
+              node.closest('label')?.innerText ||
+              node.getAttribute('aria-label') ||
+              node.getAttribute('name') ||
+              'Datei auswählen',
+            80
+          ) + (node.accept ? ' (' + clean(node.accept, 40) + ')' : '')
+        : nameOf(node),
       tag = node.tagName.toLowerCase();
     if (!name && !node.id) continue;
     const candidates = [];
     if (node.id && stable(node.id)) candidates.push('#' + node.id);
+    if (file)
+      candidates.push(
+        node.getAttribute('name')
+          ? 'input[type="file"][name=' + quote(node.getAttribute('name')) + ']'
+          : 'input[type="file"]'
+      );
     for (const attribute of ['data-testid', 'data-test', 'name', 'aria-label'])
       if (node.getAttribute(attribute) && node.getAttribute(attribute).length <= 80)
         candidates.push(tag + '[' + attribute + '=' + quote(node.getAttribute(attribute)) + ']');

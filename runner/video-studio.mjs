@@ -13,6 +13,7 @@ import { recordDemoScene, createDemoContext, demoBrowserArgs, validatedDemoSteps
 import { DEMO_POLICY_VERSION, demoPolicy, environmentDemoPolicy } from './video-policy.mjs';
 import { authenticateDemo, validateDemoLogin } from './video-login.mjs';
 import { inspectDemoPage } from './video-inspect.mjs';
+import { storeDemoFiles } from './video-files.mjs';
 import { narrateWithOpenAI } from './openai-audio.mjs';
 import { videoFileRange } from './video-file-range.mjs';
 import { inspectRenderedScene, extractSceneFrame } from './video-av-qa.mjs';
@@ -448,7 +449,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     try {demoEnvironmentPolicy=environmentDemoPolicy();}catch{demoEnvironmentError='VIDEO_ALLOWED_HOSTS enthält ungültige Regeln. Demos bleiben gesperrt, bis die Konfiguration korrigiert oder in SiteOps überschrieben wird.';}
     return {
       introVersion:1,outroVersion:1,capturePreflightVersion:1,openaiKeyForwardingVersion:1,
-      audiovisualQaVersion:1,sceneFrameVersion:1,sceneReuseVersion:1,pageInspectVersion:1,
+      audiovisualQaVersion:1,sceneFrameVersion:1,sceneReuseVersion:1,pageInspectVersion:1,fileUploadVersion:1,
       demoLoginVersion:1,outputResolution:{landscape:{width:1920,height:1080},portrait:{width:1080,height:1920}},
       demoPolicyVersion:DEMO_POLICY_VERSION,demoEnvironmentPolicy,demoEnvironmentError,artifactRanges:true,
       languages:['en','de'], providers:{en:['kokoro','openai'],de:['piper','openai']},
@@ -471,6 +472,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!auth(req,reply))return;
     let scene,policy,profile;
     try{
+      await storeDemoFiles(req.body?.demoFiles||[]);
       policy=demoPolicy(req.body?.demoPolicy);scene=req.body?.scene;
       requireCapturePlan([scene || {}]);
       if(captureMode(scene)==='text')throw Error('Keine Browser-Aufnahme geplant.');
@@ -502,6 +504,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
     if(!auth(req,reply))return;
     let policy,profile,url;
     try{
+      await storeDemoFiles(req.body?.demoFiles||[]);
       policy=demoPolicy(req.body?.demoPolicy);url=validatedDemoUrl(req.body?.url,policy.hosts);
       validatedDemoSteps(req.body?.steps||[],url,policy.hosts);
       if(req.body?.profile){profile=validateDemoLogin(req.body.profile,policy.hosts);if(new URL(profile.login_url).origin!==new URL(url).origin)throw Error('Passendes Loginprofil fehlt.');}
@@ -528,7 +531,7 @@ export function registerVideoRunner(app,auth,{narrate=narrateWithOpenAI,dispatch
   app.post('/video/jobs',async(req,reply)=>{
     if(!auth(req,reply))return;
     let parsed;
-    try{parsed=validate(req.body);}
+    try{await storeDemoFiles(req.body?.demoFiles||[]);parsed=validate(req.body);}
     catch(error){return reply.code(422).send({error:String(error.message||error)});}
     if(parsed.introId){try{await introAsset(parsed.introId);}catch(error){return reply.code(422).send({error:error.message});}}
     const old=await load(parsed.id);

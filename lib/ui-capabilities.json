@@ -224,6 +224,15 @@
   "POST /api/video-suite/autopilot/:id/action": {
     "tools": ["video_autopilot_action"]
   },
+  "GET /api/video-suite/test-files": {
+    "tools": ["video_test_files_list"]
+  },
+  "POST /api/video-suite/test-files": {
+    "tools": ["video_test_file_save"]
+  },
+  "POST /api/video-suite/test-files/remove": {
+    "tools": ["video_test_file_remove"]
+  },
   "GET /api/video-suite/knowledge": {
     "tools": ["video_knowledge_get"]
   },

@@ -186,8 +186,15 @@ a run survives reloads and restarts.
   and follow links. Submit buttons and controls whose name suggests saving,
   deleting, installing, uploading, paying or logging out are skipped and
   logged. Typing an example value into a text field is allowed, Enter only in search
-  fields. File uploads are not available yet, so a flow such as "upload an
-  extension" is shown up to that control only.
+  fields.
+- **Uploads and changes (test environment only).** Test files are stored in
+  SiteOps (`video_test_files`, at most 8 MiB each, Vorlagen → Testdateien) and
+  sent with each runner request that uses them; the runner (1.7.0,
+  `fileUploadVersion: 1`) checks the SHA-256 before handing the file to the
+  page. The page inventory lists file inputs even when they are hidden. With the
+  start option `allow_changes` the recording agent may also save, submit, upload
+  and install; deleting, uninstalling, resetting, paying, ordering and logging
+  out stay blocked.
 - **Honest status.** `completed` is set only when the renderer reports `done`.
   A failed render leaves the run `failed` with the renderer's error; `retry`
   repeats the failed stage and reuses the same production.
