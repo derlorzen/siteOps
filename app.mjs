@@ -72,6 +72,8 @@ import { renderWorkHome, renderWebsiteList } from './lib/product-ui.mjs';
 import { createCapabilityRegistry, toolResult, publicError } from './lib/capability-registry.mjs';
 import { createActionApprovals } from './lib/action-approvals.mjs';
 import { registerWorkspaceTools } from './lib/workspace-mcp.mjs';
+import { registerJarvisApi } from './lib/jarvis.mjs';
+import { renderJarvis } from './lib/jarvis-ui.mjs';
 import { renderWorkspaceShell } from './lib/workspace-shell.mjs';
 import { renderMcpAdmin } from './lib/mcp-ui.mjs';
 import { runMcpDiagnostics } from './lib/mcp-diagnostics.mjs';
@@ -6181,7 +6183,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="theme-color" content="#f4f6f9"><script defer src="/assets/action-approval.js"></script><script defer src="/assets/interaction-states.js"></script><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css"><link rel="stylesheet" href="/assets/ops-workspace.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css"><link rel="stylesheet" href="/assets/workspace-shell.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode siteops-workspace' : 'ops-mode siteops-workspace'}">${renderWorkspaceShell(body, title)}<script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="theme-color" content="#f4f6f9"><script defer src="/assets/action-approval.js"></script><script defer src="/assets/interaction-states.js"></script><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css"><link rel="stylesheet" href="/assets/ops-workspace.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css"><link rel="stylesheet" href="/assets/workspace-shell.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''}${title === 'Jarvis' ? '<link rel="stylesheet" href="/assets/jarvis.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode siteops-workspace' : 'ops-mode siteops-workspace'}">${renderWorkspaceShell(body, title)}<script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -7710,7 +7712,7 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
       .header('Cache-Control', 'no-store')
       .send(await readFile(new URL('./public/lorzcms.js', import.meta.url), 'utf8'))
   );
-  for (const asset of ['video-suite.css', 'video-suite.js', 'workspace-shell.css'])
+  for (const asset of ['video-suite.css', 'video-suite.js', 'workspace-shell.css', 'jarvis.css', 'jarvis.js'])
     app.get('/assets/' + asset, async (_req, reply) =>
       reply
         .type(asset.endsWith('.css') ? 'text/css' : 'text/javascript')
@@ -7793,6 +7795,8 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   app.get('/', async (_r, reply) =>
     reply.type('text/html').send(page('Arbeitszentrale', renderWorkHome(await workspaceOverview.overview())))
   );
+  app.get('/jarvis', async (_req, reply) => reply.type('text/html').send(page('Jarvis', renderJarvis())));
+  registerJarvisApi(app);
   app.get('/websites', async (req, reply) =>
     reply.type('text/html').send(page('Websites', renderWebsiteList(await workspaceOverview.portfolio(req.query))))
   );

@@ -204,6 +204,23 @@ rollback semantics and validation.
 
 ### MCP and AI integration
 
+Open **Jarvis** in the SiteOps sidebar to chat with an existing Hermes Agent. The chat
+streams replies and keeps the conversation in the current page. Reloading the page
+starts a fresh chat.
+
+Configure `JARVIS_HERMES_URL` (the HTTPS API base before `/v1`),
+`JARVIS_HERMES_KEY` (the corresponding Hermes `API_SERVER_KEY`) and optionally
+`JARVIS_HERMES_MODEL` (defaults to `hermes-agent`) in the SiteOps runtime.
+Use the authenticated [Hermes API server](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server/).
+The SiteOps server needs network access to the API. The URL and key stay on
+the server. If the deployments run on separate hosts, use a restricted HTTPS
+connection between them, such as a private network with a TLS reverse proxy.
+The Hermes dashboard and Selene WebUI addresses do not replace the API base.
+
+Jarvis uses the tools configured for the selected Hermes API profile. If you
+connect SiteOps MCP to that profile, grant the scope appropriate for the work
+you want to do in Jarvis.
+
 SiteOps exposes a Streamable HTTP MCP endpoint and includes its own OAuth 2.1 authorization server.
 
 Supported authentication features:

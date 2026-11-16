@@ -1,4 +1,14 @@
 {
+  "GET /api/jarvis/status": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Zeigt den Verbindungszustand des persönlichen Hermes-Chats im SiteOps-Dashboard."
+  },
+  "POST /api/jarvis/chat": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönlicher Chat im angemeldeten Dashboard. Die Hermes-Verbindung und ihr Schlüssel sind für MCP-Clients gesperrt."
+  },
   "GET /api/workspace/overview": {
     "tools": ["workspace_overview"]
   },
