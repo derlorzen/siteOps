@@ -205,8 +205,10 @@ rollback semantics and validation.
 ### MCP and AI integration
 
 Open **Jarvis** in the SiteOps sidebar to chat with an existing Hermes Agent. The chat
-streams replies and keeps the conversation in the current page. Reloading the page
-starts a fresh chat.
+lists existing SiteOps websites as projects and lets dashboard users create their own
+projects. SiteOps saves conversations server-side and keeps processing a reply while
+the browser is closed. On a supported mobile browser, Jarvis can be installed from the
+browser menu or **App installieren** in the Jarvis sidebar.
 
 Configure `JARVIS_HERMES_URL` (the HTTPS API base before `/v1`),
 `JARVIS_HERMES_KEY` (the corresponding Hermes `API_SERVER_KEY`) and optionally
@@ -220,6 +222,27 @@ The Hermes dashboard and Selene WebUI addresses do not replace the API base.
 Jarvis uses the tools configured for the selected Hermes API profile. If you
 connect SiteOps MCP to that profile, grant the scope appropriate for the work
 you want to do in Jarvis.
+
+Set `JARVIS_MODELS_JSON` to a JSON array of the provider/model pairs actually enabled
+in Hermes. Each entry takes `id` (a short local identifier), `label`, `provider`
+(Hermes provider slug), `model` (exact upstream model ID), `description`, and
+`strengths` (one or more of `web`, `code`, `analysis`, `writing`, `visual`, `general`).
+With two additional distinct routes and the Hermes default, Jarvis can offer three
+choices before starting each new chat. The selected route stays active for that chat.
+Named models use Hermes' per-request `model` and `provider` fields, so the gateway
+version must support per-request model selection.
+
+Set `JARVIS_OPENROUTER_KEY` on SiteOps to use OpenRouter's free router for ranking.
+Only local task tags, a length category and candidate descriptions are sent there.
+Actual messages, project names, URLs and history go through Hermes. On quota
+exhaustion or unavailability the ranking falls back to the local catalog. The
+ranking call is free. The selected Hermes model uses its configured provider's tariff.
+
+For push notifications over HTTPS, generate a VAPID key pair using
+`npx web-push generate-vapid-keys`. Set `JARVIS_VAPID_PUBLIC_KEY`,
+`JARVIS_VAPID_PRIVATE_KEY`, and `JARVIS_VAPID_SUBJECT` (a `mailto:` contact) in SiteOps.
+Enable notifications on each device in the Jarvis sidebar. A finished response sends
+a generic notification that opens that chat.
 
 SiteOps exposes a Streamable HTTP MCP endpoint and includes its own OAuth 2.1 authorization server.
 

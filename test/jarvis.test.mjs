@@ -61,5 +61,74 @@ test('Jarvis routes require a SiteOps dashboard session', async t => {
   });
   assert.equal((await app.inject('/jarvis')).statusCode, 303);
   assert.equal((await app.inject('/api/jarvis/status')).statusCode, 401);
+  assert.equal((await app.inject('/api/jarvis/workspace')).statusCode, 401);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/jarvis/projects' })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/jarvis/push' })).statusCode, 401);
+  const manifest = await app.inject('/assets/jarvis.webmanifest');
+  assert.equal(manifest.json().start_url, '/jarvis');
+  const serviceWorker = await app.inject('/assets/jarvis-sw.js');
+  assert.equal(serviceWorker.headers['service-worker-allowed'], '/jarvis');
   assert.equal((await app.inject({ method: 'POST', url: '/api/jarvis/chat' })).statusCode, 401);
+});
+
+test('first-message ranking sends only task signals to the free model and validates recommendations', async () => {
+  const { jarvisModelRouter } = await import('../lib/jarvis-models.mjs');
+  const catalog = [
+    {
+      id: 'coding',
+      label: 'Coding',
+      model: 'example/code',
+      provider: 'openrouter',
+      strengths: ['code'],
+      description: 'Änderungen am Projektcode.'
+    },
+    {
+      id: 'analysis',
+      label: 'Analyse',
+      model: 'example/analysis',
+      provider: 'openrouter',
+      strengths: ['analysis'],
+      description: 'Mehrstufige Analysen.'
+    }
+  ];
+  let suggestUnknown = false;
+  const router = jarvisModelRouter(
+    {
+      JARVIS_OPENROUTER_KEY: 'free-key',
+      JARVIS_MODELS_JSON: JSON.stringify(catalog)
+    },
+    async (url, options) => {
+      assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
+      const request = JSON.parse(options.body);
+      assert.equal(request.model, 'openrouter/free');
+      assert.equal(options.headers.Authorization, 'Bearer free-key');
+      const metadata = JSON.parse(request.messages[1].content);
+      assert.deepEqual(metadata.task, { tasks: ['code', 'analysis'], detailed: false });
+      assert.equal(request.messages[1].content.includes('mein-geheimes-projekt'), false);
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify([
+                { id: suggestUnknown ? 'unknown' : 'analysis', reason: 'Für die Diagnose.' },
+                { id: 'coding', reason: 'Für die Prüfung des Codes.' },
+                { id: 'default', reason: 'Für allgemeine Aufgaben.' }
+              ])
+            }
+          }
+        ]
+      });
+    },
+    'hermes-agent'
+  );
+  const prompt = 'Analysiere Code von mein-geheimes-projekt';
+  const recommendations = await router.recommend(prompt, false);
+  assert.equal(recommendations.source, 'openrouter');
+  assert.deepEqual(
+    recommendations.options.map(item => item.id),
+    ['analysis', 'coding', 'default']
+  );
+  assert.equal(router.get('analysis').provider, 'openrouter');
+  suggestUnknown = true;
+  assert.equal((await router.recommend(prompt, false)).source, 'local');
 });
