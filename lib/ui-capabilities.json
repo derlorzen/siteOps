@@ -9,6 +9,56 @@
     "status": "ui_only",
     "reason": "Persönlicher Chat im angemeldeten Dashboard. Die Hermes-Verbindung und ihr Schlüssel sind für MCP-Clients gesperrt."
   },
+  "GET /api/jarvis/workspace": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
+  "POST /api/jarvis/projects": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
+  "POST /api/jarvis/chats": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
+  "GET /api/jarvis/chats/:id": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
+  "POST /api/jarvis/chats/:id/messages": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
+  "POST /api/jarvis/chats/:id/model": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
+  "POST /api/jarvis/chats/:id/retry": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
+  "POST /api/jarvis/chats/:id/stop": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
+  "POST /api/jarvis/push": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
+  "POST /api/jarvis/push/remove": {
+    "tools": [],
+    "status": "ui_only",
+    "reason": "Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard."
+  },
   "GET /api/workspace/overview": {
     "tools": ["workspace_overview"]
   },

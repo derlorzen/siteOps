@@ -1,0 +1,1 @@
+ALTER TABLE jarvis_chats MODIFY COLUMN model_id VARCHAR(191) NULL;

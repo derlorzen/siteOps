@@ -61,5 +61,75 @@ test('Jarvis routes require a SiteOps dashboard session', async t => {
   });
   assert.equal((await app.inject('/jarvis')).statusCode, 303);
   assert.equal((await app.inject('/api/jarvis/status')).statusCode, 401);
+  assert.equal((await app.inject('/api/jarvis/workspace')).statusCode, 401);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/jarvis/projects' })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/jarvis/push' })).statusCode, 401);
+  const manifest = await app.inject('/assets/jarvis.webmanifest');
+  assert.equal(manifest.json().start_url, '/jarvis');
+  const serviceWorker = await app.inject('/assets/jarvis-sw.js');
+  assert.equal(serviceWorker.headers['service-worker-allowed'], '/jarvis');
   assert.equal((await app.inject({ method: 'POST', url: '/api/jarvis/chat' })).statusCode, 401);
+});
+
+test('Jarvis sends the actual first message to the free OpenRouter ranker with a current model catalog', async () => {
+  const { jarvisModelRouter } = await import('../lib/jarvis-models.mjs');
+  const model = (id, options = {}) => ({
+    id,
+    name: id,
+    description: 'Model for text and tool calls',
+    architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+    supported_parameters: ['tools'],
+    pricing: { prompt: '0.000001', completion: '0.000002' },
+    ...options
+  });
+  const catalog = [
+    model('alpha/code-model-with-an-id-that-exceeds-forty-characters'),
+    model('beta/analysis:free', { pricing: { prompt: '0', completion: '0' } }),
+    model('gamma/creative'),
+    model('gamma/creative:free'),
+    model('other/no-tools', { supported_parameters: [] }),
+    model('openrouter/auto')
+  ];
+  const prompt = 'Analysiere den Warenkorb von meinem Projekt und finde die Ursache für verlorene Bestellungen.';
+  const validIds = ['beta/analysis:free', catalog[0].id, 'gamma/creative'];
+  let catalogRequests = 0;
+  let rankedIds = validIds;
+  const router = jarvisModelRouter({ JARVIS_OPENROUTER_KEY: 'free-key' }, async (url, options) => {
+    assert.equal(options.headers.Authorization, 'Bearer free-key');
+    if (url === 'https://openrouter.ai/api/v1/models') {
+      catalogRequests++;
+      return Response.json({ data: catalog });
+    }
+    assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
+    const request = JSON.parse(options.body);
+    assert.equal(request.model, 'openrouter/free');
+    const payload = JSON.parse(request.messages[1].content);
+    assert.equal(payload.firstMessage, prompt);
+    assert.deepEqual(
+      payload.models.map(entry => entry[0]),
+      catalog.slice(0, 4).map(entry => entry.id)
+    );
+    return Response.json({
+      choices: [
+        { message: { content: JSON.stringify(rankedIds.map(id => ({ id, reason: 'Für die Diagnose geeignet.' }))) } }
+      ]
+    });
+  });
+  const recommendations = await router.recommend(prompt);
+  assert.equal(recommendations.source, 'openrouter');
+  assert.deepEqual(
+    recommendations.options.map(item => item.id),
+    validIds
+  );
+  assert.deepEqual(recommendations.options[0].prices, { input: 0, output: 0 });
+  assert.deepEqual(recommendations.options[1].prices, { input: 1, output: 2 });
+  rankedIds = [validIds[0], 'unknown/model', validIds[2]];
+  assert.deepEqual(await router.recommend(prompt), { source: 'unavailable', options: [] });
+  rankedIds = [validIds[0], 'gamma/creative:free', validIds[2]];
+  assert.deepEqual(await router.recommend(prompt), { source: 'unavailable', options: [] });
+  assert.equal(catalogRequests, 1);
+  assert.deepEqual(await jarvisModelRouter({}, () => assert.fail('Unexpected request')).recommend(prompt), {
+    source: 'unconfigured',
+    options: []
+  });
 });

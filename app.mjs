@@ -6183,7 +6183,7 @@ async function mcpAuth(req, reply) {
   return false;
 }
 function page(title, body) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="theme-color" content="#f4f6f9"><script defer src="/assets/action-approval.js"></script><script defer src="/assets/interaction-states.js"></script><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css"><link rel="stylesheet" href="/assets/ops-workspace.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css"><link rel="stylesheet" href="/assets/workspace-shell.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''}${title === 'Jarvis' ? '<link rel="stylesheet" href="/assets/jarvis.css">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode siteops-workspace' : 'ops-mode siteops-workspace'}">${renderWorkspaceShell(body, title)}<script>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · SiteOps</title><meta name="theme-color" content="#f4f6f9"><script defer src="/assets/action-approval.js"></script><script defer src="/assets/interaction-states.js"></script><meta name="siteops-build" content="${esc(buildInfo.build)}"><link rel="stylesheet" href="/assets/app.css?v=1.1.0">${title === 'Kunden & Abrechnung' ? '<link rel="stylesheet" href="/assets/crm-app.css"><link rel="stylesheet" href="/assets/ops-workspace.css">' : '<link rel="stylesheet" href="/assets/ops-workspace.css">'}<link rel="stylesheet" href="/assets/siteops-theme.css"><link rel="stylesheet" href="/assets/workspace-search.css"><link rel="stylesheet" href="/assets/build-footer.css"><link rel="stylesheet" href="/assets/workspace-shell.css">${title === 'LorzCMS' ? '<link rel="stylesheet" href="/assets/lorzcms-workspace.css">' : ''}${title === 'Jarvis' ? '<link rel="stylesheet" href="/assets/jarvis.css"><link rel="manifest" href="/assets/jarvis.webmanifest"><link rel="apple-touch-icon" href="/assets/jarvis-icon-192.png">' : ''} </head><body class="${title === 'Kunden & Abrechnung' ? 'crm-mode siteops-workspace' : 'ops-mode siteops-workspace'}">${renderWorkspaceShell(body, title)}<script>
 async function siteOpsCopyPrompt(payload,button){
   const old=button?.textContent||'Prompt';
   try{
@@ -7719,6 +7719,22 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
         .header('Cache-Control', 'no-store')
         .send(await readFile(new URL('./public/' + asset, import.meta.url), 'utf8'))
     );
+  app.get('/assets/jarvis.webmanifest', async (_req, reply) =>
+    reply
+      .type('application/manifest+json')
+      .send(await readFile(new URL('./public/jarvis.webmanifest', import.meta.url)))
+  );
+  app.get('/assets/jarvis-sw.js', async (_req, reply) =>
+    reply
+      .type('text/javascript')
+      .header('Service-Worker-Allowed', '/jarvis')
+      .header('Cache-Control', 'no-cache')
+      .send(await readFile(new URL('./public/jarvis-sw.js', import.meta.url), 'utf8'))
+  );
+  for (const size of [192, 512])
+    app.get('/assets/jarvis-icon-' + size + '.png', async (_req, reply) =>
+      reply.type('image/png').send(await readFile(new URL('./public/jarvis-icon-' + size + '.png', import.meta.url)))
+    );
   app.get('/assets/youtube.js', async (_req, reply) =>
     reply.type('text/javascript').send(await readFile(new URL('./public/youtube.js', import.meta.url), 'utf8'))
   );
@@ -7796,7 +7812,7 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
     reply.type('text/html').send(page('Arbeitszentrale', renderWorkHome(await workspaceOverview.overview())))
   );
   app.get('/jarvis', async (_req, reply) => reply.type('text/html').send(page('Jarvis', renderJarvis())));
-  registerJarvisApi(app);
+  registerJarvisApi(app, { q });
   app.get('/websites', async (req, reply) =>
     reply.type('text/html').send(page('Websites', renderWebsiteList(await workspaceOverview.portfolio(req.query))))
   );

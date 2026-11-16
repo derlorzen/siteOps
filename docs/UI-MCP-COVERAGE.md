@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 300 API-Funktionen, 260 MCP-Tools, 48 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 310 API-Funktionen, 260 MCP-Tools, 58 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -127,7 +127,17 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | hosting | /hosting | allinkl_ssl_enable | POST /api/hosting/allinkl/ssl | allinkl_ssl_enable | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | hosting | /hosting | server_profiles_list | GET /api/server-profiles | server_profiles_list | Lesen | Keine zusätzliche | Zugeordnet |  |
 | jarvis | /mcp-info | Dashboard-Administration | POST /api/jarvis/chat | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönlicher Chat im angemeldeten Dashboard. Die Hermes-Verbindung und ihr Schlüssel sind für MCP-Clients gesperrt. |
+| jarvis | /mcp-info | Dashboard-Administration | POST /api/jarvis/chats/:id/messages | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
+| jarvis | /mcp-info | Dashboard-Administration | POST /api/jarvis/chats/:id/model | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
+| jarvis | /mcp-info | Dashboard-Administration | POST /api/jarvis/chats/:id/retry | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
+| jarvis | /mcp-info | Dashboard-Administration | POST /api/jarvis/chats/:id/stop | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
+| jarvis | /mcp-info | Dashboard-Administration | GET /api/jarvis/chats/:id | – | Lesen | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
+| jarvis | /mcp-info | Dashboard-Administration | POST /api/jarvis/chats | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
+| jarvis | /mcp-info | Dashboard-Administration | POST /api/jarvis/projects | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
+| jarvis | /mcp-info | Dashboard-Administration | POST /api/jarvis/push/remove | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
+| jarvis | /mcp-info | Dashboard-Administration | POST /api/jarvis/push | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
 | jarvis | /mcp-info | Dashboard-Administration | GET /api/jarvis/status | – | Lesen | Dashboard-Entscheidung | Begründete Ausnahme | Zeigt den Verbindungszustand des persönlichen Hermes-Chats im SiteOps-Dashboard. |
+| jarvis | /mcp-info | Dashboard-Administration | GET /api/jarvis/workspace | – | Lesen | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Projekte, Chats und Geräteabonnements im angemeldeten Jarvis-Dashboard. |
 | lorzcms | /mcp-info | Dashboard-Administration | POST /api/lorzcms/installations/:id/admin-recovery | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Persönliche Wiederherstellung: Das neue temporäre Passwort wird ausschließlich im geschützten Dashboard angezeigt. cms_admin_recovery liefert den Einstieg, setzt aber kein Passwort zurück und gibt keine Zugangsdaten an Agenten aus. |
 | lorzcms | /mcp-info | Dashboard-Administration | POST /api/lorzcms/installations/:id/resume | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Erneute Hinterlegung von Installations-Zugangsdaten erfolgt nur im Dashboard. MCP verwendet cms_job_retry für vorhandene wiederaufnehmbare Aufträge. |
 | lorzcms | /mcp-info | Dashboard-Administration | POST /api/lorzcms/releases | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Neue ausführbare Releasearchive werden nur nach manueller Artefaktprüfung im Dashboard registriert. MCP installiert und aktualisiert bereits bekannte Releases. |
