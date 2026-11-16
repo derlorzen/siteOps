@@ -36,6 +36,10 @@ services:
       HERMES_TIMEZONE: Europe/Berlin
       HERMES_DASHBOARD_HOST: "0.0.0.0"
       HERMES_DASHBOARD_PORT: "9119"
+      API_SERVER_ENABLED: ${API_SERVER_ENABLED:-false}
+      API_SERVER_HOST: "0.0.0.0"
+      API_SERVER_PORT: "8642"
+      API_SERVER_KEY: ${API_SERVER_KEY:-}
       HERMES_DASHBOARD_PUBLIC_URL: "https://ki.lorzen.net"
       HERMES_DASHBOARD_OAUTH_CLIENT_ID: "agent:cmw9u54gn005alh0hkcwuqd4r"
       HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:?Missing dashboard username}
@@ -46,6 +50,7 @@ services:
     expose:
       - "9119"
       - "9120"
+      - "8642"
     healthcheck:
       test:
         - CMD
@@ -76,6 +81,15 @@ services:
       - "traefik.http.routers.hermes-admin.tls.certresolver=letsencrypt"
       - "traefik.http.routers.hermes-admin.service=hermes-admin"
       - "traefik.http.services.hermes-admin.loadbalancer.server.port=9119"
+      - "traefik.http.routers.hermes-jarvis.rule=Host(`hermes-admin.lorzen.net`) && (Path(`/jarvis-api/v1/models`) || Path(`/jarvis-api/v1/chat/completions`))"
+      - "traefik.http.routers.hermes-jarvis.entrypoints=https"
+      - "traefik.http.routers.hermes-jarvis.tls=true"
+      - "traefik.http.routers.hermes-jarvis.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.hermes-jarvis.priority=200"
+      - "traefik.http.routers.hermes-jarvis.service=hermes-jarvis"
+      - "traefik.http.routers.hermes-jarvis.middlewares=hermes-jarvis-strip"
+      - "traefik.http.middlewares.hermes-jarvis-strip.stripprefix.prefixes=/jarvis-api"
+      - "traefik.http.services.hermes-jarvis.loadbalancer.server.port=8642"
   # The hermes-agent-src named volume was initialized from the Hermes image
   # during the first deployment and is retained while mounted by hermes-webui.
   # Parallel ChatGPT-like UI. Existing Hermes dashboard and OAuth remain intact.
