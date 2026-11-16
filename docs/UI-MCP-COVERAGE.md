@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 276 API-Funktionen, 244 MCP-Tools, 42 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 277 API-Funktionen, 245 MCP-Tools, 42 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -235,6 +235,7 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | websites | /websites | rollback_preview | POST /api/changes/:id/rollback-preview | rollback_preview | Ändern | Keine zusätzliche | Zugeordnet |  |
 | websites | /websites | incident_get | GET /api/incidents/:id | incident_get | Lesen | Keine zusätzliche | Zugeordnet |  |
 | websites | /websites | change_apply | POST /api/previews/:id/apply | change_apply | Ändern | Gebundene Freigabe | Zugeordnet |  |
+| websites | /websites | change_status | GET /api/previews/:id/status | change_status | Lesen | Keine zusätzliche | Zugeordnet |  |
 | websites | /websites | site_delete_confirm | POST /api/site-deletions/confirm | site_delete_confirm | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | websites | /websites | backups.start | POST /api/sites/:site/backup-jobs | backup_start | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | websites | /websites | backup_status | GET /api/sites/:site/backup-status | backup_status | Lesen | Keine zusätzliche | Zugeordnet |  |
