@@ -71,64 +71,65 @@ test('Jarvis routes require a SiteOps dashboard session', async t => {
   assert.equal((await app.inject({ method: 'POST', url: '/api/jarvis/chat' })).statusCode, 401);
 });
 
-test('first-message ranking sends only task signals to the free model and validates recommendations', async () => {
+test('Jarvis sends the actual first message to the free OpenRouter ranker with a current model catalog', async () => {
   const { jarvisModelRouter } = await import('../lib/jarvis-models.mjs');
+  const model = (id, options = {}) => ({
+    id,
+    name: id,
+    description: 'Model for text and tool calls',
+    architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+    supported_parameters: ['tools'],
+    pricing: { prompt: '0.000001', completion: '0.000002' },
+    ...options
+  });
   const catalog = [
-    {
-      id: 'coding',
-      label: 'Coding',
-      model: 'example/code',
-      provider: 'openrouter',
-      strengths: ['code'],
-      description: 'Änderungen am Projektcode.'
-    },
-    {
-      id: 'analysis',
-      label: 'Analyse',
-      model: 'example/analysis',
-      provider: 'openrouter',
-      strengths: ['analysis'],
-      description: 'Mehrstufige Analysen.'
-    }
+    model('alpha/code-model-with-an-id-that-exceeds-forty-characters'),
+    model('beta/analysis:free', { pricing: { prompt: '0', completion: '0' } }),
+    model('gamma/creative'),
+    model('gamma/creative:free'),
+    model('other/no-tools', { supported_parameters: [] }),
+    model('openrouter/auto')
   ];
-  let suggestUnknown = false;
-  const router = jarvisModelRouter(
-    {
-      JARVIS_OPENROUTER_KEY: 'free-key',
-      JARVIS_MODELS_JSON: JSON.stringify(catalog)
-    },
-    async (url, options) => {
-      assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
-      const request = JSON.parse(options.body);
-      assert.equal(request.model, 'openrouter/free');
-      assert.equal(options.headers.Authorization, 'Bearer free-key');
-      const metadata = JSON.parse(request.messages[1].content);
-      assert.deepEqual(metadata.task, { tasks: ['code', 'analysis'], detailed: false });
-      assert.equal(request.messages[1].content.includes('mein-geheimes-projekt'), false);
-      return Response.json({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify([
-                { id: suggestUnknown ? 'unknown' : 'analysis', reason: 'Für die Diagnose.' },
-                { id: 'coding', reason: 'Für die Prüfung des Codes.' },
-                { id: 'default', reason: 'Für allgemeine Aufgaben.' }
-              ])
-            }
-          }
-        ]
-      });
-    },
-    'hermes-agent'
-  );
-  const prompt = 'Analysiere Code von mein-geheimes-projekt';
-  const recommendations = await router.recommend(prompt, false);
+  const prompt = 'Analysiere den Warenkorb von meinem Projekt und finde die Ursache für verlorene Bestellungen.';
+  const validIds = ['beta/analysis:free', catalog[0].id, 'gamma/creative'];
+  let catalogRequests = 0;
+  let rankedIds = validIds;
+  const router = jarvisModelRouter({ JARVIS_OPENROUTER_KEY: 'free-key' }, async (url, options) => {
+    assert.equal(options.headers.Authorization, 'Bearer free-key');
+    if (url === 'https://openrouter.ai/api/v1/models') {
+      catalogRequests++;
+      return Response.json({ data: catalog });
+    }
+    assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
+    const request = JSON.parse(options.body);
+    assert.equal(request.model, 'openrouter/free');
+    const payload = JSON.parse(request.messages[1].content);
+    assert.equal(payload.firstMessage, prompt);
+    assert.deepEqual(
+      payload.models.map(entry => entry[0]),
+      catalog.slice(0, 4).map(entry => entry.id)
+    );
+    return Response.json({
+      choices: [
+        { message: { content: JSON.stringify(rankedIds.map(id => ({ id, reason: 'Für die Diagnose geeignet.' }))) } }
+      ]
+    });
+  });
+  const recommendations = await router.recommend(prompt);
   assert.equal(recommendations.source, 'openrouter');
   assert.deepEqual(
     recommendations.options.map(item => item.id),
-    ['analysis', 'coding', 'default']
+    validIds
   );
-  assert.equal(router.get('analysis').provider, 'openrouter');
-  suggestUnknown = true;
-  assert.equal((await router.recommend(prompt, false)).source, 'local');
+  assert.deepEqual(recommendations.options[0].prices, { input: 0, output: 0 });
+  assert.deepEqual(recommendations.options[1].prices, { input: 1, output: 2 });
+  rankedIds = [validIds[0], 'unknown/model', validIds[2]];
+  assert.deepEqual(await router.recommend(prompt), { source: 'unavailable', options: [] });
+  rankedIds = [validIds[0], 'gamma/creative:free', validIds[2]];
+  assert.deepEqual(await router.recommend(prompt), { source: 'unavailable', options: [] });
+  assert.equal(catalogRequests, 1);
+  assert.deepEqual(await jarvisModelRouter({}, () => assert.fail('Unexpected request')).recommend(prompt), {
+    source: 'unconfigured',
+    options: []
+  });
 });

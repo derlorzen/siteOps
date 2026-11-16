@@ -223,20 +223,19 @@ Jarvis uses the tools configured for the selected Hermes API profile. If you
 connect SiteOps MCP to that profile, grant the scope appropriate for the work
 you want to do in Jarvis.
 
-Set `JARVIS_MODELS_JSON` to a JSON array of the provider/model pairs actually enabled
-in Hermes. Each entry takes `id` (a short local identifier), `label`, `provider`
-(Hermes provider slug), `model` (exact upstream model ID), `description`, and
-`strengths` (one or more of `web`, `code`, `analysis`, `writing`, `visual`, `general`).
-With two additional distinct routes and the Hermes default, Jarvis can offer three
-choices before starting each new chat. The selected route stays active for that chat.
-Named models use Hermes' per-request `model` and `provider` fields, so the gateway
-version must support per-request model selection.
+Set `JARVIS_OPENROUTER_KEY` in SiteOps and configure the OpenRouter provider
+in Hermes with `OPENROUTER_API_KEY` or Hermes' OpenRouter OAuth. The first
+message of a new chat is sent to `openrouter/free` with a compact snapshot of the
+current OpenRouter catalog. Candidates are text chat models with tool support.
+The advisor returns three distinct models with a short reason for each. Jarvis
+also displays listed input/output token prices when available. If the advisor
+is unavailable, you can retry or continue with the Hermes default.
 
-Set `JARVIS_OPENROUTER_KEY` on SiteOps to use OpenRouter's free router for ranking.
-Only local task tags, a length category and candidate descriptions are sent there.
-Actual messages, project names, URLs and history go through Hermes. On quota
-exhaustion or unavailability the ranking falls back to the local catalog. The
-ranking call is free. The selected Hermes model uses its configured provider's tariff.
+Selecting a suggestion starts the pending message with that exact OpenRouter
+model ID. Jarvis keeps the selected ID for follow-ups in that chat and sends
+it to Hermes with `provider: openrouter`. This requires a Hermes gateway that
+supports per-request model selection. The advisor call is free and rate-limited.
+The chosen model runs under the OpenRouter rates applicable to the Hermes account.
 
 For push notifications over HTTPS, generate a VAPID key pair using
 `npx web-push generate-vapid-keys`. Set `JARVIS_VAPID_PUBLIC_KEY`,

@@ -18,6 +18,7 @@
   let busy = false;
   let loadedRequest = 0;
   let draftId = crypto.randomUUID();
+  const priceNumber = new Intl.NumberFormat('de-DE', { maximumSignificantDigits: 4 });
 
   async function api(path, payload) {
     const response = await fetch(
@@ -101,7 +102,10 @@
     const transcript = chat?.messages || [];
     const active = projects().find(item => item.id === project);
     find('title').textContent = project === 'general' ? 'Jarvis' : active?.name || 'Archiviertes Projekt';
-    find('model').textContent = chat?.recommendations?.options?.find(item => item.id === chat.model)?.label || '';
+    find('model').textContent =
+      chat?.model === 'default'
+        ? 'Hermes-Standard'
+        : chat?.recommendations?.options?.find(item => item.id === chat.model)?.label || chat?.model || '';
     find('empty').hidden = transcript.length > 0;
     messages.replaceChildren();
     for (const { role, content } of transcript) renderMessage(role, content);
@@ -110,31 +114,48 @@
     options.replaceChildren();
     if (phase === 'choosing') {
       const heading = document.createElement('h2');
-      heading.textContent = 'Mit welchem Modell soll Hermes antworten?';
+      const recommendations = chat.recommendations;
+      heading.textContent = recommendations.options.length
+        ? 'Mit welchem Modell soll Hermes antworten?'
+        : 'Modellberatung momentan nicht verfügbar';
       const list = document.createElement('div');
       list.className = 'jarvis-options-list';
-      for (const item of chat.recommendations.options) {
+      for (const item of recommendations.options) {
         const choice = button('', 'jarvis-option', () => void act('model', { model: item.id }));
         const name = document.createElement('strong');
         name.textContent = item.label;
         const reason = document.createElement('small');
         reason.textContent = item.reason;
         choice.append(name, reason);
+        if (item.prices) {
+          const price = document.createElement('small');
+          const { input, output } = item.prices;
+          price.textContent =
+            input === 0 && output === 0
+              ? '0 USD für Text-Tokens'
+              : priceNumber.format(input) + ' / ' + priceNumber.format(output) + ' USD pro Mio. Tokens (Ein-/Ausgabe)';
+          choice.append(price);
+        }
         list.append(choice);
+      }
+      if (!recommendations.options.length) {
+        if (recommendations.source !== 'unconfigured') {
+          list.append(button('Erneut Vorschläge holen', 'jarvis-option', () => void act('retry', {})));
+        }
+        list.append(
+          button('Mit Hermes-Standard fortfahren', 'jarvis-option', () => void act('model', { model: 'default' }))
+        );
       }
       options.append(heading, list);
     }
     feedback.textContent =
       {
         running: 'Hermes arbeitet …',
-        choosing:
-          chat?.recommendations?.source === 'local'
-            ? workspace?.catalogInvalid
-              ? 'Modellkonfiguration prüfen. Derzeit ist der Hermes-Standard verfügbar.'
-              : workspace?.models < 3
-                ? 'Für drei Vorschläge müssen weitere Hermes-Modelle hinterlegt sein.'
-                : 'Vorschläge aus dem lokalen Modellkatalog.'
-            : 'Vorschläge vom kostenlosen Modellberater.',
+        choosing: {
+          openrouter: 'OpenRouter hat deine erste Nachricht bewertet. Die Modellpreise stammen aus dem Katalog.',
+          unconfigured: 'Für die Modellberatung fehlt der OpenRouter-Key in SiteOps.',
+          unavailable: 'OpenRouter konnte gerade keine drei gültigen Modelle empfehlen.'
+        }[chat?.recommendations?.source],
         interrupted: 'Die Antwort wurde unterbrochen.',
         stopped: 'SiteOps hat die Verbindung zu diesem Lauf beendet.'
       }[phase] || '';
@@ -237,7 +258,9 @@
         rememberChat();
       }
       submitted = chat;
-      if (action === 'messages' && !chat.model) feedback.textContent = 'Passende Modelle werden gesucht …';
+      if ((action === 'messages' || action === 'retry') && !chat.model) {
+        feedback.textContent = 'OpenRouter sucht passende Modelle …';
+      }
       const payload = action === 'messages' ? { ...data, revision: submitted.revision } : data;
       const value = await api('chats/' + chat.id + '/' + action, payload);
       if (action === 'messages') input.value = '';
