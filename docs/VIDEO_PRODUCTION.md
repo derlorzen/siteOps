@@ -54,3 +54,16 @@ template table. It does not rewrite existing voices or delete any jobs/files.
 Metadata is stored separately from rendered result paths, so publication adapters
 can consume it without creating a second production system. Rendering and YouTube
 publishing remain separate explicit operations.
+
+## FFmpeg post-production skill
+
+The SiteOps Video Suite includes a built-in **FFmpeg · Postproduktion** planning and
+verification method, based on [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill)
+(MIT). It is discoverable in the Video Suite skill catalog and on the work homepage.
+The same built-in skill catalog is used by the Video Suite agent and its MCP methods.
+
+This integration adds an editing workflow to the agent instructions; it does **not**
+vendor/install the upstream package or register its 42 tools with the browser runner.
+The runner's existing FFmpeg rendering pipeline is unchanged. Do not report the
+upstream tools as executable or a media result as verified until a separate
+implementation supplies real tool execution, output measurements, and QA.
