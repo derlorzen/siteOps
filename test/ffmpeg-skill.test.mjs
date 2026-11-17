@@ -18,7 +18,8 @@ test('the upstream FFmpeg workflow is available as one built-in Video Suite skil
 test('the work homepage shows the FFmpeg skill and links to its SiteOps entry and source', () => {
   const html = renderWorkHome({
     websites: {
-      items: [], total_sites: 0,
+      items: [],
+      total_sites: 0,
       counts: { online: 0, attention: 0, unknown: 0, paused: 0 }
     },
     tasks: [],
