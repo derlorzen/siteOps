@@ -53,4 +53,14 @@ try {
     if(str_starts_with($path,'/api/cms/')) {Api::output(['error'=>$error->getMessage()],$error->status);}
     else {echo '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hinweis</title><link rel="stylesheet" href="/assets/cms.css"></head><body><main class="workspace"><h1>'.Html::escape($error->getMessage()).'</h1><p><a href="/admin/">Verwaltung</a> · <a href="/">Startseite</a></p></main></body></html>';}
 }catch(Throwable $error) {ob_clean();error_log((string)$error);http_response_code(500);echo 'Die Anwendung konnte die Anfrage nicht abschließen. Bitte die Einrichtung und das Serverprotokoll prüfen.';}
-if($method==='HEAD'){ob_end_clean();}else{ob_end_flush();}
+if($method==='HEAD') {
+    ob_end_clean();
+} elseif(isset($content) && http_response_code() < 300 && !str_starts_with($path,'/api/') &&
+    (!str_starts_with($path,'/admin/') || $path==='/admin/login/')) {
+    $html=ob_get_clean();
+    $contentTypes = array_filter(headers_list(), static fn($header) => stripos($header,'Content-Type:')===0);
+    $isHtml = !$contentTypes || array_filter($contentTypes, static fn($header) => stripos($header,'Content-Type: text/html')===0);
+    echo $isHtml ? \SiteCms\Consent::append($html,$content,$path==='/admin/login/') : $html;
+} else {
+    ob_end_flush();
+}

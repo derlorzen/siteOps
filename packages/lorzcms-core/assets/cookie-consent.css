@@ -1,0 +1,10 @@
+.lorz-privacy{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:.55rem 1rem;padding:1rem;font-size:.95rem}
+.lorz-privacy a,.lorz-privacy button{color:inherit;text-decoration:underline}
+.lorz-privacy button{background:transparent;border:0;padding:0;cursor:pointer;font:inherit}
+.lorz-consent{box-sizing:border-box;width:min(34rem,calc(100% - 2rem));max-height:calc(100% - 2rem);padding:1.4rem;border:1px solid #546057;border-radius:.75rem;background:#fff;color:#17221b;font:1rem/1.5 system-ui,sans-serif}
+.lorz-consent::backdrop{background:#15221ccc}
+.lorz-consent label{display:block;margin:.65rem 0}
+.lorz-consent label input{margin-inline-end:.4rem}
+.lorz-consent-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem}
+.lorz-consent-actions button{background:#fff;color:#17221b;border:1px solid #546057;border-radius:.4rem;padding:.5rem .75rem;cursor:pointer;font:inherit}
+.lorz-consent :focus-visible,.lorz-privacy :focus-visible{outline:2px solid #245b3f;outline-offset:3px}

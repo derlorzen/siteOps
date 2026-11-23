@@ -7,7 +7,7 @@ final class SiteAdmin {
     public function __construct(private Site $site,private Content $content,private Access $access,private array $configuration) {}
     private function token():string {return '<input type="hidden" name="csrf" value="'.Html::escape($_SESSION['csrf']).'">';}
     public function page(string $path,string $method,array $actor):array {
-        $sections=['/admin/settings/'=>'settings','/admin/layout/'=>'appearance','/admin/categories/'=>'categories','/admin/menus/'=>'menus','/admin/seo/'=>'seo','/admin/redirects/'=>'redirects'];
+        $sections=['/admin/settings/'=>'settings','/admin/layout/'=>'appearance','/admin/categories/'=>'categories','/admin/menus/'=>'menus','/admin/seo/'=>'seo','/admin/privacy/'=>'privacy','/admin/redirects/'=>'redirects'];
         if($path==='/admin/customizations/') {return ['Individualisierungen',$this->modules($actor)];}
         if(preg_match('~^/admin/customizations/([a-z0-9_-]+)/$~D',$path,$m)){$section='module:'.$m[1];}
         else{$section=$sections[$path] ?? throw new HttpError(404,'Bereich nicht gefunden.');}
