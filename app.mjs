@@ -7763,6 +7763,8 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
       path.startsWith('/assets/') ||
       oauthPublic ||
       path === '/login' ||
+      path === '/impressum' ||
+      path === '/datenschutz' ||
       path.startsWith('/video-studio/download/') ||
       // Abo-Adresse der Kalender-Brücke: das geheime Token im Pfad ist die Berechtigung.
       path.startsWith('/calendar/feed/')
@@ -7788,6 +7790,11 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
       ip: req.ip
     });
   });
+  for (const [path, title] of [
+    ['/impressum', 'Impressum'],
+    ['/datenschutz', 'Datenschutz']
+  ])
+    app.get(path, (_req, reply) => dashboardSessions.legalPage(reply, title));
   app.get('/login', (req, reply) => dashboardSessions.loginPage(req, reply));
   app.post('/login', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, (req, reply) =>
     dashboardSessions.loginSubmit(req, reply)
