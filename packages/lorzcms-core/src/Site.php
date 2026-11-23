@@ -14,6 +14,12 @@ final class Site {
                 'contact_email'=>['label'=>'Kontakt-E-Mail','kind'=>'email','max'=>190],
                 'language'=>['label'=>'Sprache','kind'=>'select','options'=>['de','en'],'default'=>'de'],
             ]],
+            'privacy'=>['label'=>'Datenschutz & Cookies','permission'=>'settings','description'=>'Rechtliche Links und optionale Dienste für diese Installation. Aktiviere eine Kategorie erst, wenn die zugehörigen Dienste in der Datenschutzerklärung beschrieben und mit dem Cookie-Manager verbunden sind.','fields'=>[
+                'imprint_path'=>['label'=>'Impressum (interner Pfad)','max'=>500],
+                'privacy_path'=>['label'=>'Datenschutz (interner Pfad)','max'=>500],
+                'statistics'=>['label'=>'Optionale Statistik','kind'=>'select','options'=>['off','on'],'option_labels'=>['off'=>'Aus','on'=>'Einwilligung einholen'],'default'=>'off'],
+                'marketing'=>['label'=>'Optionales Marketing','kind'=>'select','options'=>['off','on'],'option_labels'=>['off'=>'Aus','on'=>'Einwilligung einholen'],'default'=>'off'],
+            ]],
             'seo'=>['label'=>'SEO','permission'=>'settings','description'=>'Globale Vorgaben werden verwendet, wenn ein Inhalt keine eigenen Angaben enthält.','fields'=>[
                 'title_suffix'=>['label'=>'Zusatz im Seitentitel','max'=>100,'default'=>' · '.$this->project['name']],
                 'description'=>['label'=>'Standardbeschreibung','kind'=>'textarea','max'=>1000],

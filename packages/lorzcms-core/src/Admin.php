@@ -12,8 +12,8 @@ final class Admin {
         $path=parse_url($_SERVER['REQUEST_URI'] ?? '/admin/',PHP_URL_PATH);
         echo '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><link rel="icon" href="/assets/sitecms-favicon.svg" type="image/svg+xml"><title>'.$e($title).' · LorzCMS</title><link rel="stylesheet" href="/assets/cms-tailwind.css?v=3.3.0"><link rel="stylesheet" href="/assets/cms.css"><link rel="stylesheet" href="/assets/cms-admin.css"><link rel="stylesheet" href="/assets/builder.css"><link rel="stylesheet" href="/assets/cms-modern.css"></head><body class="admin '.($actor?'signed-in':'signed-out').'"><a class="skip" href="#workspace">Zum Inhalt</a>';
         if($actor){echo '<aside class="admin-sidebar"><a class="admin-brand" href="/admin/">LorzCMS <small>'.$e($this->site->value('settings')['name']).'</small></a><nav aria-label="Verwaltung">';
-            foreach([''=>'Übersicht','contents'=>'Inhalte','templates'=>'Vorlagen','categories'=>'Kategorien','media'=>'Medien','menus'=>'Menüs','layout'=>'Layout','seo'=>'SEO','customizations'=>'Individualisierungen','settings'=>'Einstellungen','users'=>'Benutzer'] as $key=>$label){
-                $permission=match($key){'categories'=>'categories','menus'=>'menus','templates','layout','seo','customizations','settings'=>'settings','users'=>'users',default=>'read'};
+            foreach([''=>'Übersicht','contents'=>'Inhalte','templates'=>'Vorlagen','categories'=>'Kategorien','media'=>'Medien','menus'=>'Menüs','layout'=>'Layout','seo'=>'SEO','privacy'=>'Datenschutz & Cookies','customizations'=>'Individualisierungen','settings'=>'Einstellungen','users'=>'Benutzer'] as $key=>$label){
+                $permission=match($key){'categories'=>'categories','menus'=>'menus','templates','layout','seo','privacy','customizations','settings'=>'settings','users'=>'users',default=>'read'};
                 if(!$this->access->can($actor,$permission)){continue;}$url='/admin/'.($key!==''?$key.'/':'');$active=$key===''?$path==='/admin/':str_starts_with($path,$url) || ($key==='contents' && (str_starts_with($path,'/admin/content/') || str_starts_with($path,'/admin/new/')));
                 echo '<a href="'.$url.'"'.($active?' aria-current="page"':'').'>'.$e($label).'</a>';
             }if(isset($this->project['types']['person'])){echo '<a href="/admin/contents/?type=person">Mein Team</a>';}echo '</nav><div class="sidebar-bottom"><a href="/" target="_blank" rel="noopener">Website ansehen ↗</a><small>'.$e($actor['name'] ?? 'Redaktion').' · '.$e($this->access->roles[$actor['role']]['label']).'</small><form method="post" action="/admin/logout/">'.$this->csrf().'<button class="link">Abmelden</button></form></div></aside>';}
@@ -61,7 +61,7 @@ final class Admin {
             $item=$this->content->get($match[1]) ?? throw new HttpError(404,'Inhalt nicht gefunden.');$this->access->require($actor,'read',$item);
             header('X-Robots-Tag: noindex, nofollow');PageTemplates::output($item,array_replace($this->configuration,['environment'=>'development']),$this->content);return;
         }
-        if(preg_match('~^/admin/(settings|layout|categories|menus|seo|redirects|customizations)(/|$)~',$path)){
+        if(preg_match('~^/admin/(settings|layout|categories|menus|seo|privacy|redirects|customizations)(/|$)~',$path)){
             [$title,$body]=(new SiteAdmin($this->site,$this->content,$this->access,$this->configuration))->page($path,$method,$actor);
             if(http_response_code()!==303){$this->layout($title,$body,$actor);}return;
         }

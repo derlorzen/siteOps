@@ -1,9 +1,9 @@
 {
-  "version": "3.5.1",
+  "version": "3.6.0",
   "schemaVersion": 1,
   "compatibleSchemas": [
     1
   ],
   "minPhp": "8.3",
-  "notes": "Korrektur der Webfont-Einbindung in der LorzCMS-Verwaltung (Manrope WOFF2 statt fehlender TTF)."
+  "notes": "Zentrale Rechtstext-Links und einwilligungsbasierte Cookie-Einstellungen pro Installation."
 }
