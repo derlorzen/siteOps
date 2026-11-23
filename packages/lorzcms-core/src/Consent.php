@@ -38,11 +38,11 @@ final class Consent {
                 '<p><a href="'.Html::escape($privacy).'">Datenschutzerklärung</a></p>'.
                 '<form method="dialog">'.$options.'<div class="lorz-consent-actions">'.
                 '<button value="reject" autofocus>Nur notwendige</button><button value="save">Auswahl speichern</button><button value="accept">Alle akzeptieren</button></div></form></dialog>'.
-                '<script src="/assets/cookie-consent.js?v=3.6.0" defer></script>';
+                '<script src="/assets/cookie-consent.js?v=3.6.1" defer></script>';
         }
         $headEnd = stripos($html, '</head>');
         if ($headEnd !== false && $headEnd < $bodyEnd) {
-            $style = '<link rel="stylesheet" href="/assets/cookie-consent.css?v=3.6.0">';
+            $style = '<link rel="stylesheet" href="/assets/cookie-consent.css?v=3.6.1">';
             $html = substr_replace($html, $style, $headEnd, 0);
             $bodyEnd += strlen($style);
         }
@@ -50,12 +50,20 @@ final class Consent {
     }
 
     private static function legalPath(Content $content, string $configured, array $fallbacks): string {
-        foreach ($configured !== '' ? [$configured] : $fallbacks as $path) {
-            if (preg_match('~^/(?:[a-zA-Z0-9_-]+/)*[a-zA-Z0-9_-]+/?$~D', $path) &&
-                !str_starts_with($path, '/admin/') && !str_starts_with($path, '/api/') && $content->at($path)) {
+        if ($configured !== '') {
+            // Explicit configuration also supports published project routes outside the content store.
+            return self::isInternalLegalPath($configured) ? $configured : '';
+        }
+        foreach ($fallbacks as $path) {
+            if ($content->at($path)) {
                 return $path;
             }
         }
         return '';
+    }
+
+    private static function isInternalLegalPath(string $path): bool {
+        return preg_match('~^/(?:[a-zA-Z0-9_-]+/)*[a-zA-Z0-9_-]+(?:\.html?|/)?$~D', $path) === 1 &&
+            !preg_match('~^/(?:admin|api|assets)(?:/|$)~i', $path);
     }
 }

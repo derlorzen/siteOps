@@ -1,9 +1,9 @@
 {
-  "version": "3.6.0",
+  "version": "3.6.1",
   "schemaVersion": 1,
   "compatibleSchemas": [
     1
   ],
   "minPhp": "8.3",
-  "notes": "Zentrale Rechtstext-Links und einwilligungsbasierte Cookie-Einstellungen pro Installation."
+  "notes": "Rechtstext-Links unterstützen ausdrücklich hinterlegte Projektpfade, auch wenn sie nicht im CMS-Inhaltsspeicher liegen."
 }
