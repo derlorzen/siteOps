@@ -394,6 +394,9 @@ async function approvalState(tool, args) {
     sources.push({ table: 'sites', id: site.id, row: site });
   }
   await add('invoices', args.invoice_id);
+  if (tool === 'invoice_draft_append_entries' || tool.includes('/append-entries')) {
+    for (const entryId of args.entry_ids || []) await add('time_entries', entryId);
+  }
   await add('server_profiles', args.profileId || args.configuration?.profileId);
   await add('cms_installations', args.installationId);
   for (const id of args.installationIds || args.installations || []) await add('cms_installations', id);
