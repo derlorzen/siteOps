@@ -5,7 +5,12 @@ import { summarizeAlertResults } from '../lib/alert-delivery.mjs';
 test('SMTP success reports accepted recipients and message id', () => {
   const result = summarizeAlertResults(
     [{ channel: 'email' }],
-    [{ status: 'fulfilled', value: { accepted: ['test@example.com'], rejected: [], messageId: '<id@example.com>', response: '250 queued' } }]
+    [
+      {
+        status: 'fulfilled',
+        value: { accepted: ['test@example.com'], rejected: [], messageId: '<id@example.com>', response: '250 queued' }
+      }
+    ]
   );
   assert.deepEqual(result, [
     {
@@ -23,7 +28,12 @@ test('SMTP success reports accepted recipients and message id', () => {
 test('SMTP authentication rejection does not count as success or leak raw provider error', () => {
   const result = summarizeAlertResults(
     [{ channel: 'email' }],
-    [{ status: 'rejected', reason: Object.assign(new Error('secret-value-here'), { code: 'EAUTH', responseCode: 535 }) }]
+    [
+      {
+        status: 'rejected',
+        reason: Object.assign(new Error('secret-value-here'), { code: 'EAUTH', responseCode: 535 })
+      }
+    ]
   );
   assert.equal(result[0].ok, false);
   assert.equal(result[0].code, 'EAUTH');
