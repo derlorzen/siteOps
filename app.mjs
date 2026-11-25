@@ -14,6 +14,8 @@ import { Client as FtpClient } from 'basic-ftp';
 import { Readable, Writable } from 'node:stream';
 import nodemailer from 'nodemailer';
 import { summarizeAlertResults } from './lib/alert-delivery.mjs';
+import { createMailService, mailArchiveCsv, repeatAlertDue } from './lib/mail-service.mjs';
+import { renderMailArchive } from './lib/mail-archive-ui.mjs';
 import PHPParser from 'php-parser';
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
@@ -119,6 +121,8 @@ const cfg = {
   defaultMonitorFailureThreshold: Number(env('DEFAULT_MONITOR_FAILURE_THRESHOLD', '3')),
   defaultSslWarnDays: Number(env('DEFAULT_SSL_WARN_DAYS', '14')),
   alertEmail: process.env.ALERT_EMAIL_TO || '',
+  mailRetentionDays: 365,
+  maxIncidentAlerts: 3,
   smtpHost: process.env.SMTP_HOST || '',
   smtpPort: Number(env('SMTP_PORT', '587')),
   smtpSecure: env('SMTP_SECURE', 'false') === 'true',
@@ -350,21 +354,24 @@ const websiteFactory = createWebsiteFactory({
   hostingRootBase: cfg.websiteRootBase
 });
 
+const mailService = createMailService({
+  q,
+  config: () => cfg,
+  createTransport: options => nodemailer.createTransport(options)
+});
+const mailFiltersSchema = z.object({
+  query: z.string().max(200).optional(),
+  status: z.enum(['', 'sending', 'accepted', 'failed', 'partial']).optional(),
+  source: z.string().max(32).optional(),
+  referenceId: z.string().max(191).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).max(1000000).optional()
+});
 const billingWorkflows = createBillingWorkflows({
   db,
   billing: billingController,
   reminderEmail: () => cfg.alertEmail,
-  sendMail: async message => {
-    if (!cfg.smtpHost || !cfg.smtpFrom || cfg.smtpFrom.includes('@localhost'))
-      throw new Error('SMTP-Absender unter SiteOps-Einstellungen konfigurieren.');
-    const transport = nodemailer.createTransport({
-      host: cfg.smtpHost,
-      port: cfg.smtpPort,
-      secure: cfg.smtpSecure,
-      auth: cfg.smtpUser ? { user: cfg.smtpUser, pass: cfg.smtpPassword } : undefined
-    });
-    return transport.sendMail({ from: cfg.smtpFrom, ...message });
-  }
+  sendMail: (message, metadata) => mailService.send(message, metadata)
 });
 
 const workspaceSearch = createWorkspaceSearch({ db });
@@ -501,6 +508,8 @@ async function loadSavedConfig() {
   apply('default_monitor_failure_threshold', 'defaultMonitorFailureThreshold', Number);
   apply('default_ssl_warn_days', 'defaultSslWarnDays', Number);
   apply('alert_email', 'alertEmail');
+  apply('mail_retention_days', 'mailRetentionDays', v => Math.min(3650, Math.max(1, Number(v) || 365)));
+  apply('max_incident_alerts', 'maxIncidentAlerts', v => Math.min(10, Math.max(1, Number(v) || 3)));
   apply('alert_webhook', 'webhook');
   apply('smtp_host', 'smtpHost');
   apply('smtp_port', 'smtpPort', Number);
@@ -532,6 +541,8 @@ async function saveAppSettings(x) {
     ['default_monitor_failure_threshold', 'defaultMonitorFailureThreshold'],
     ['default_ssl_warn_days', 'defaultSslWarnDays'],
     ['alert_email', 'alertEmail'],
+    ['mail_retention_days', 'mailRetentionDays'],
+    ['max_incident_alerts', 'maxIncidentAlerts'],
     ['alert_webhook', 'webhook'],
     ['smtp_host', 'smtpHost'],
     ['smtp_port', 'smtpPort'],
@@ -591,6 +602,8 @@ function publicSettings() {
     defaultMonitorFailureThreshold: cfg.defaultMonitorFailureThreshold,
     defaultSslWarnDays: cfg.defaultSslWarnDays,
     alertEmail: cfg.alertEmail,
+    mailRetentionDays: cfg.mailRetentionDays,
+    maxIncidentAlerts: cfg.maxIncidentAlerts,
     webhook: cfg.webhook,
     smtpHost: cfg.smtpHost,
     smtpPort: cfg.smtpPort,
@@ -2131,18 +2144,12 @@ async function checkSiteNow(site) {
     checkedAt: new Date().toISOString()
   };
 }
-async function sendAlert(subject, text) {
+async function sendAlert(subject, text, metadata = {}) {
   const jobs = [];
-  if (cfg.alertEmail && cfg.smtpHost) {
-    const t = nodemailer.createTransport({
-      host: cfg.smtpHost,
-      port: cfg.smtpPort,
-      secure: cfg.smtpSecure,
-      auth: cfg.smtpUser ? { user: cfg.smtpUser, pass: cfg.smtpPassword } : undefined
-    });
+  if (cfg.alertEmail) {
     jobs.push({
       channel: 'email',
-      promise: t.sendMail({ from: cfg.smtpFrom, to: cfg.alertEmail, subject: `[SiteOps] ${subject}`, text })
+      promise: mailService.send({ to: cfg.alertEmail, subject: `[SiteOps] ${subject}`, text }, metadata)
     });
   }
   if (cfg.webhook)
@@ -2167,7 +2174,7 @@ async function sendAlert(subject, text) {
   }
   return results;
 }
-async function sendAlertWithFixPrompt(subject, text, promptArgs) {
+async function sendAlertWithFixPrompt(subject, text, promptArgs, referenceId = null) {
   let full = text;
   try {
     const built = await buildFixPrompt(promptArgs);
@@ -2175,7 +2182,10 @@ async function sendAlertWithFixPrompt(subject, text, promptArgs) {
   } catch (e) {
     console.error('fix prompt for alert', subject, e);
   }
-  return sendAlert(subject, full);
+  return sendAlert(subject, full, {
+    source: promptArgs.kind === 'monitor' ? 'monitoring' : promptArgs.kind,
+    referenceId: referenceId || promptArgs.id || promptArgs.site
+  });
 }
 async function incidentEvent(incidentId, siteId, eventType, details) {
   await q('insert into incident_events(incident_id,site_id,event_type,details) values(?,?,?,?)', [
@@ -2237,7 +2247,8 @@ async function processMonitor(site) {
       }
       const alertResult = await sendAlert(
         `RECOVERED: ${site.domain}`,
-        `${site.domain} is healthy again. Response ${result.responseMs} ms.`
+        `${site.domain} is healthy again. Response ${result.responseMs} ms.`,
+        { source: 'monitoring', referenceId: open }
       );
       await incidentEvent(open, site.id, 'recovery_alert', alertResult);
     }
@@ -2264,10 +2275,12 @@ async function processMonitor(site) {
       } catch (error) {
         console.error('monitor task creation', site.domain, error);
       }
-      const alertResult = await sendAlertWithFixPrompt(`DOWN: ${site.domain}`, JSON.stringify(result, null, 2), {
-        kind: 'monitor',
-        site: site.id
-      });
+      const alertResult = await sendAlertWithFixPrompt(
+        `DOWN: ${site.domain}`,
+        JSON.stringify(result, null, 2),
+        { kind: 'monitor', site: site.id },
+        incidentId
+      );
       alertCount = 1;
       lastAlert = Date.now();
       await incidentEvent(incidentId, site.id, 'alert', alertResult);
@@ -2278,12 +2291,19 @@ async function processMonitor(site) {
         console.error('monitor task retry', site.domain, error);
       }
       await incidentEvent(incidentId, site.id, 'check_failed', { failureCount: failures, result });
-      const repeatMs = Math.max(1, Number(site.alert_repeat_minutes || 60)) * 60000;
-      if (!lastAlert || Date.now() - lastAlert >= repeatMs) {
+      if (
+        repeatAlertDue({
+          alertCount,
+          lastAlert,
+          repeatMinutes: site.alert_repeat_minutes,
+          maxAlerts: cfg.maxIncidentAlerts
+        })
+      ) {
         const alertResult = await sendAlertWithFixPrompt(
           `STILL DOWN: ${site.domain}`,
           JSON.stringify({ failures, result }, null, 2),
-          { kind: 'monitor', site: site.id }
+          { kind: 'monitor', site: site.id },
+          incidentId
         );
         alertCount++;
         lastAlert = Date.now();
@@ -2819,7 +2839,10 @@ async function runSyntheticTest(testId, { saveBaseline = false, actor = 'manual'
       { kind: 'synthetic', id: runId }
     );
   if (actor === 'scheduler' && status === 'passed' && previous?.status === 'failed')
-    await sendAlert('SYNTHETIC RECOVERED: ' + site.domain + ' · ' + t.name, 'Browser journey is healthy again.');
+    await sendAlert('SYNTHETIC RECOVERED: ' + site.domain + ' · ' + t.name, 'Browser journey is healthy again.', {
+      source: 'synthetic',
+      referenceId: runId
+    });
   return syntheticRunGet(runId);
 }
 async function syntheticStatus(siteId) {
@@ -4477,6 +4500,16 @@ function mcpServer(principal) {
       _siteops: { module: 'ai', service: 'ai.configure', ui: '/ai', access: 'write', approval: true }
     },
     async input => toolText(await aiUsage.configure(input))
+  );
+  registerTool(
+    'mail_archive_list',
+    {
+      description:
+        'Versandprotokoll mit Empfängern, Betreff, Zeitpunkt, SMTP-Status und Referenzen lesen; keine Inhalte oder Anhänge.',
+      inputSchema: mailFiltersSchema,
+      _siteops: { module: 'settings', service: 'mailArchive.search', ui: '/mail-archive', access: 'read', approval: false }
+    },
+    async filters => toolText(await mailService.search(filters))
   );
   registerTool(
     'audit_log_list',
@@ -6387,6 +6420,8 @@ function settingsPage() {
       <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">Alarme</span><h2>Benachrichtigungen</h2></div></div>
         <p class="lead">E-Mail und Webhook können parallel genutzt werden. Das SMTP-Passwort wird wie der GitHub-Token verschlüsselt gespeichert.</p>
         <div class="formgrid">
+          <label>Maximale Fehlermeldungen pro Monitoring-Vorfall <small>Inklusive Erstmeldung; Wiederholungen frühestens nach 6 bzw. weiteren 24 Stunden. Entwarnung zählt nicht.</small><input name="maxIncidentAlerts" type="number" min="1" max="10" value="${s.maxIncidentAlerts}"></label>
+          <label>Mailarchiv-Aufbewahrung (Tage)<input name="mailRetentionDays" type="number" min="1" max="3650" value="${s.mailRetentionDays}"></label>
           <label>Alarm-E-Mail <small>Empfänger für DOWN-, RECOVERED- und Backup-Fehler.</small><input name="alertEmail" type="email" value="${esc(s.alertEmail)}" placeholder="alerts@example.com"></label>
           <label>Webhook-URL <small>Optional, z. B. für eigene Automationen.</small><input name="webhook" type="url" value="${esc(s.webhook)}" placeholder="https://…"></label>
           <label>SMTP-Host<input name="smtpHost" value="${esc(s.smtpHost)}" placeholder="smtp.example.de"></label>
@@ -6472,6 +6507,7 @@ sudo bash runner/install-systemd.sh</code></pre></div>
         defaultSslWarnDays:Number(fd.get('defaultSslWarnDays')),alertEmail:fd.get('alertEmail').trim(),webhook:fd.get('webhook').trim(),
         smtpHost:fd.get('smtpHost').trim(),smtpPort:Number(fd.get('smtpPort')),smtpSecure:form.smtpSecure.checked,smtpUser:fd.get('smtpUser').trim(),
         smtpPassword:fd.get('smtpPassword'),smtpFrom:fd.get('smtpFrom').trim(),
+        maxIncidentAlerts:Number(fd.get('maxIncidentAlerts')),mailRetentionDays:Number(fd.get('mailRetentionDays')),
         seoMaxPages:Number(fd.get('seoMaxPages')),pageSpeedApiKey:fd.get('pageSpeedApiKey'),browserRunnerUrl:String(fd.get('browserRunnerUrl')||'').trim(),browserRunnerToken:String(fd.get('browserRunnerToken')||'')
       };
     }
@@ -8361,6 +8397,19 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   registerProjectOverviewRoutes(app, projectOverview);
   registerWorkspaceActivityRoutes(app, workspaceActivity);
   app.get('/api/settings', async () => publicSettings());
+  app.get('/api/mail-archive', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return mailService.search(mailFiltersSchema.parse(req.query || {}));
+  });
+  app.get('/api/mail-archive.csv', async (req, reply) => {
+    const filters = mailFiltersSchema.parse(req.query || {});
+    const records = await mailService.search({ ...filters, limit: 10000, offset: 0 }, 10000);
+    return reply
+      .header('Cache-Control', 'no-store')
+      .header('Content-Disposition', 'attachment; filename="siteops-mail-archive.csv"')
+      .type('text/csv; charset=utf-8')
+      .send(mailArchiveCsv(records));
+  });
   app.get('/api/oauth/connections', async () => oauthConnections());
   app.get('/api/audit-log', async req => auditLogList(req.query?.limit));
   app.post('/api/oauth/revoke-all', async () => {
@@ -8386,6 +8435,8 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
       defaultMonitorFailureThreshold: z.coerce.number().int().min(1).max(20),
       defaultSslWarnDays: z.coerce.number().int().min(1).max(365),
       alertEmail: z.string().max(320),
+      maxIncidentAlerts: z.coerce.number().int().min(1).max(10).optional(),
+      mailRetentionDays: z.coerce.number().int().min(1).max(3650).optional(),
       webhook: z.string().max(2000),
       smtpHost: z.string().max(255),
       smtpPort: z.coerce.number().int().min(1).max(65535),
@@ -8434,7 +8485,9 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   app.post('/api/settings/alert-test', async (req, reply) => {
     if (!(cfg.webhook || (cfg.alertEmail && cfg.smtpHost)))
       throw new Error('Configure an alert email with SMTP or a webhook first');
-    const deliveries = await sendAlert('TEST', 'SiteOps test notification from ' + cfg.publicBaseUrl);
+    const deliveries = await sendAlert('TEST', 'SiteOps test notification from ' + cfg.publicBaseUrl, {
+      source: 'test'
+    });
     const ok = deliveries.length > 0 && deliveries.every(x => x.ok);
     return reply.code(ok ? 200 : 502).send({
       ok,
@@ -8520,6 +8573,14 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   app.get('/api/previews/:id/status', async req => applyStatus(req.params.id));
   app.get('/mcp-info', async (_r, reply) => reply.type('text/html').send(mcpInfoPage()));
   app.get('/settings', async (_r, reply) => reply.type('text/html').send(settingsPage()));
+  app.get('/mail-archive', async (req, reply) => {
+    const filters = { ...mailFiltersSchema.parse(req.query || {}), limit: 50 };
+    const rows = await mailService.search(filters);
+    return reply
+      .header('Cache-Control', 'no-store')
+      .type('text/html')
+      .send(page('Mailarchiv', renderMailArchive({ rows, filters, esc, fmtDateTime, retentionDays: cfg.mailRetentionDays })));
+  });
   app.get('/setup', async (_r, reply) => reply.type('text/html').send(setupPage()));
   app.get('/sites/:slug/delete', async (req, reply) => {
     const site = await getSite(req.params.slug);
@@ -8543,6 +8604,10 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
   app.get('/incidents/:id', async (req, reply) => reply.type('text/html').send(await incidentPage(req.params.id)));
   if (databaseReady) {
     startMonitor();
+    mailService.cleanup().catch(() => console.warn('Mail archive cleanup failed'));
+    setInterval(() => {
+      mailService.cleanup().catch(() => console.warn('Mail archive cleanup failed'));
+    }, 86400000).unref();
     // Durable, DB-locked maintenance rules; process overdue rules after startup as well.
     billingWorkflows.runRecurring().catch(error => console.error('recurring billing startup', error));
     billingWorkflows.notifyDue().catch(error => console.error('billing due reminder startup', error));
