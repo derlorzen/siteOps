@@ -4507,7 +4507,13 @@ function mcpServer(principal) {
       description:
         'Versandprotokoll mit Empfängern, Betreff, Zeitpunkt, SMTP-Status und Referenzen lesen; keine Inhalte oder Anhänge.',
       inputSchema: mailFiltersSchema,
-      _siteops: { module: 'settings', service: 'mailArchive.search', ui: '/mail-archive', access: 'read', approval: false }
+      _siteops: {
+        module: 'settings',
+        service: 'mailArchive.search',
+        ui: '/mail-archive',
+        access: 'read',
+        approval: false
+      }
     },
     async filters => toolText(await mailService.search(filters))
   );
@@ -8579,7 +8585,9 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
     return reply
       .header('Cache-Control', 'no-store')
       .type('text/html')
-      .send(page('Mailarchiv', renderMailArchive({ rows, filters, esc, fmtDateTime, retentionDays: cfg.mailRetentionDays })));
+      .send(
+        page('Mailarchiv', renderMailArchive({ rows, filters, esc, fmtDateTime, retentionDays: cfg.mailRetentionDays }))
+      );
   });
   app.get('/setup', async (_r, reply) => reply.type('text/html').send(setupPage()));
   app.get('/sites/:slug/delete', async (req, reply) => {
