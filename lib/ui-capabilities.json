@@ -717,6 +717,13 @@
   "GET /api/server-profiles": {
     "tools": ["server_profiles_list"]
   },
+  "GET /api/mail-archive": {
+    "tools": ["mail_archive_list"]
+  },
+  "GET /api/mail-archive.csv": {
+    "tools": ["mail_archive_list"],
+    "reason": "CSV-Export der gleichen gefilterten Versandmetadaten; MCP liest die Datensätze direkt."
+  },
   "GET /api/settings": {
     "tools": ["settings_get"]
   },

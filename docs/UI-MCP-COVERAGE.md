@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 312 API-Funktionen, 265 MCP-Tools, 58 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 314 API-Funktionen, 266 MCP-Tools, 58 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -178,6 +178,8 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | server-profiles | /mcp-info | Dashboard-Administration | GET /api/server-profiles/source-sites | – | Lesen | Dashboard-Entscheidung | Begründete Ausnahme | Administrative Auswahl für die Übernahme verschlüsselter Verbindungsdaten. MCP verwendet die bereits freigegebenen Profile aus server_profiles_list. |
 | server-profiles | /mcp-info | Dashboard-Administration | POST /api/server-profiles | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen. |
 | settings | /settings | settings_get | GET /api/build-info | settings_get | Lesen | Keine zusätzliche | Zugeordnet |  |
+| settings | /mail-archive | mailArchive.search | GET /api/mail-archive.csv | mail_archive_list | Lesen | Keine zusätzliche | Zugeordnet | CSV-Export der gleichen gefilterten Versandmetadaten; MCP liest die Datensätze direkt. |
+| settings | /mail-archive | mailArchive.search | GET /api/mail-archive | mail_archive_list | Lesen | Keine zusätzliche | Zugeordnet |  |
 | settings | /mcp-info | Dashboard-Administration | POST /api/settings/alert-test | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Versendet eine externe Testnachricht; die administrative Benachrichtigungseinrichtung bleibt im Dashboard. |
 | settings | /mcp-info | Dashboard-Administration | POST /api/settings/browser-runner-test | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Neue Runner-URLs und Tokens werden im Dashboard eingerichtet. MCP prüft den gespeicherten Runner mit video_studio_runner_status. |
 | settings | /mcp-info | Dashboard-Administration | POST /api/settings/github-test | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Einrichtung und Prüfung neuer GitHub-Zugangsdaten erfolgen im Dashboard; MCP verwendet die bestehende Backupkonfiguration. |
