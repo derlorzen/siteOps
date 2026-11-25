@@ -226,8 +226,6 @@ async function umamiTrackingSet({ site: siteRef, enabled, privacyPath }) {
     umami: website ? { websiteId: website.id, created: Boolean(website.created), url: umami.origin } : null
   };
   if (installation) {
-    if (!website && !enabled)
-      return { ...base, lorzcms: null, message: 'Für diese Domain gibt es keine Umami-Website.' };
     const applied = await cmsController.applyUmami(installation.id, {
       enabled,
       host: umami.origin,
