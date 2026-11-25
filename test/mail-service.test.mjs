@@ -108,7 +108,7 @@ test('archive reads are bounded and CSV neutralizes spreadsheet formulas', async
   assert.deepEqual(calls[0].params.slice(-2), [100, 0]);
   await mail.cleanup();
   assert.deepEqual(calls[1].params, [365]);
-  assert.ok(mailArchiveCsv([{ subject: '=SUM(1;2)' }]).includes('"\'=SUM(1;2)"'));
+  assert.ok(mailArchiveCsv([{ subject: '=SUM(1;2)' }]).includes("'" + '=SUM(1;2)'));
 });
 
 test('mail archive renders metadata as escaped text', () => {
