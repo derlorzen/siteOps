@@ -31,7 +31,7 @@ function fixture(overrides = {}, status = 'draft') {
     amount_cents: 0,
     sort_position: 7
   };
-  const items = [structuredClone(old)];
+  const items = [globalThis.structuredClone(old)];
   const source = {
     id: entryId,
     entry_date: '2026-09-30',
@@ -46,7 +46,7 @@ function fixture(overrides = {}, status = 'draft') {
   let snapshot;
   const conn = {
     async beginTransaction() {
-      snapshot = structuredClone({ invoice, items });
+      snapshot = globalThis.structuredClone({ invoice, items });
     },
     async commit() {},
     async rollback() {
