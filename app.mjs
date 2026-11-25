@@ -13,6 +13,7 @@ import SftpClient from 'ssh2-sftp-client';
 import { Client as FtpClient } from 'basic-ftp';
 import { Readable, Writable } from 'node:stream';
 import nodemailer from 'nodemailer';
+import { summarizeAlertResults } from './lib/alert-delivery.mjs';
 import PHPParser from 'php-parser';
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
@@ -2154,11 +2155,17 @@ async function sendAlert(subject, text) {
       })
     });
   const settled = await Promise.allSettled(jobs.map(x => x.promise));
-  return jobs.map((x, i) => ({
-    channel: x.channel,
-    ok: settled[i]?.status === 'fulfilled',
-    error: settled[i]?.status === 'rejected' ? String(settled[i].reason?.message || settled[i].reason) : null
-  }));
+  const results = summarizeAlertResults(jobs, settled);
+  for (const failure of results.filter(x => !x.ok)) {
+    console.warn('SiteOps alert delivery failed', {
+      channel: failure.channel,
+      code: failure.code,
+      responseCode: failure.responseCode,
+      httpStatus: failure.httpStatus,
+      error: failure.error
+    });
+  }
+  return results;
 }
 async function sendAlertWithFixPrompt(subject, text, promptArgs) {
   let full = text;
@@ -6470,7 +6477,7 @@ sudo bash runner/install-systemd.sh</code></pre></div>
     }
     form.onsubmit=async e=>{e.preventDefault();configStatus.textContent='Speichere…';const r=await fetch('/api/settings',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(payload())});const x=await r.json();configStatus.textContent=r.ok?'Gespeichert.':'Fehler: '+(x.message||x.error||JSON.stringify(x));if(r.ok){document.dispatchEvent(new CustomEvent('siteops:form-saved',{detail:'configForm'}));setTimeout(()=>location.reload(),500);}};
     testGitHub.onclick=async()=>{githubStatus.textContent='Prüfe…';const p=payload();const r=await fetch('/api/settings/github-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({githubBackupRepo:p.githubBackupRepo,githubBackupToken:p.githubBackupToken,backupBranch:p.backupBranch})}),x=await r.json();githubStatus.textContent=r.ok?'✓ '+x.repository+' erreichbar und privat':'✗ '+(x.message||x.error||JSON.stringify(x));};
-    testAlert.onclick=async()=>{alertStatus.textContent='Sende…';const r=await fetch('/api/settings/alert-test',{method:'POST'}),x=await r.json();alertStatus.textContent=r.ok?'✓ Test ausgelöst':'✗ '+(x.message||x.error||JSON.stringify(x));};
+    testAlert.onclick=async()=>{alertStatus.textContent='Sende…';try{const r=await fetch('/api/settings/alert-test',{method:'POST'}),x=await r.json();const details=(x.deliveries||[]).map(d=>d.channel==='email'?(d.ok?'SMTP: vom Server angenommen'+(d.messageId?' ('+d.messageId+')':''):'SMTP: '+(d.error||d.code||'fehlgeschlagen')):(d.ok?'Webhook: bestätigt':'Webhook: '+(d.error||'fehlgeschlagen'))).join(' · ');alertStatus.textContent=(r.ok?'✓ ':'✗ ')+(details||x.message||x.error||'Kein Versandstatus verfügbar.');}catch(e){alertStatus.textContent='✗ SiteOps-Server nicht erreichbar.';}};
     testPageSpeed.onclick=async()=>{pageSpeedStatus.textContent='Prüfe…';const p=payload(),url=String(form.elements.namedItem('pageSpeedTestUrl')?.value||'').trim();const r=await fetch('/api/settings/pagespeed-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pageSpeedApiKey:p.pageSpeedApiKey,url})}),x=await r.json();pageSpeedStatus.textContent=r.ok?'✓ '+x.url+' · Performance '+(x.result?.scores?.performance??'–')+' · SEO '+(x.result?.scores?.seo??'–'):'✗ '+(x.message||x.error||JSON.stringify(x));};
     testBrowserRunner.onclick=async()=>{browserRunnerStatus.textContent='Prüfe…';const p=payload();if(!p.browserRunnerUrl){browserRunnerStatus.textContent='✗ URL fehlt';return;}const r=await fetch('/api/settings/browser-runner-test',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({browserRunnerUrl:p.browserRunnerUrl,browserRunnerToken:p.browserRunnerToken})}),x=await r.json();browserRunnerStatus.textContent=r.ok?'✓ Runner '+(x.result?.version||'')+' erreichbar und authentifiziert':'✗ '+(x.message||x.error||JSON.stringify(x));};
     </script>`
@@ -8424,11 +8431,18 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
       backupRepoMeta = null;
     }
   });
-  app.post('/api/settings/alert-test', async () => {
+  app.post('/api/settings/alert-test', async (req, reply) => {
     if (!(cfg.webhook || (cfg.alertEmail && cfg.smtpHost)))
       throw new Error('Configure an alert email with SMTP or a webhook first');
-    await sendAlert('TEST', 'SiteOps test notification from ' + cfg.publicBaseUrl);
-    return { ok: true };
+    const deliveries = await sendAlert('TEST', 'SiteOps test notification from ' + cfg.publicBaseUrl);
+    const ok = deliveries.length > 0 && deliveries.every(x => x.ok);
+    return reply.code(ok ? 200 : 502).send({
+      ok,
+      deliveries,
+      message: ok
+        ? 'Alle konfigurierten Kanäle haben die Nachricht angenommen. Die endgültige Zustellung kann nicht bestätigt werden.'
+        : 'Mindestens ein Benachrichtigungskanal hat die Testnachricht nicht angenommen.'
+    });
   });
   app.post('/api/settings/pagespeed-test', async req => {
     const schema = z.object({ pageSpeedApiKey: z.string().max(1000).optional(), url: z.string().url() }),
