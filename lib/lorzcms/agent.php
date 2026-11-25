@@ -114,7 +114,7 @@ try {
     if (strlen($raw) > 65536) { cmsAgentFail(413, 'Anfrage zu groß.'); }
     $body = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
     $action = $body['action'] ?? '';
-    if (in_array($action, ['theme-apply','admin-password-reset'], true)) {
+    if (in_array($action, ['theme-apply','admin-password-reset','analytics-apply'], true)) {
         if (!$state || !is_file($root.'/config/local.php')) { cmsAgentFail(409,'CMS noch nicht eingerichtet.'); }
         if (is_file($root.'/.lorzcms/maintenance')) { cmsAgentFail(409,'Wartungsmodus aktiv.'); }
         $lock = fopen($root.'/.lorzcms/deploy.lock','c');
@@ -137,6 +137,31 @@ try {
                 $store->query('DELETE FROM tokens WHERE user_id=?',[$actor['id']]);
             });
             echo json_encode(['ok'=>true,'instanceId'=>$agent['instance_id'],'email'=>$actor['email'],'passwordUpdated'=>true],JSON_THROW_ON_ERROR);
+            return;
+        }
+        if ($action === 'analytics-apply') {
+            if (version_compare((string)$state['version'], '3.7.0', '<')) { cmsAgentFail(409,'Umami benötigt LorzCMS 3.7.0 oder neuer. Zuerst das CMS aktualisieren.'); }
+            $umami = $body['umami'] ?? null;
+            if (!is_array($umami) || array_diff(array_keys($umami),['enabled','host','websiteId','privacyPath']) || !is_bool($umami['enabled'] ?? null)) { cmsAgentFail(422,'Ungültige Umami-Daten.'); }
+            $current=$content->site->get('privacy');
+            $updated=$current['value'];
+            if ($umami['enabled']) {
+                if (!is_string($umami['host'] ?? null) || !is_string($umami['websiteId'] ?? null)) { cmsAgentFail(422,'Umami-Adresse und Website-ID fehlen.'); }
+                $updated=array_replace($updated,['statistics'=>'on','umami'=>'on','umami_host'=>$umami['host'],'umami_website_id'=>$umami['websiteId']]);
+                if (isset($umami['privacyPath'])) {
+                    if (!is_string($umami['privacyPath']) || strlen($umami['privacyPath']) > 500) { cmsAgentFail(422,'Ungültiger Pfad zur Datenschutzerklärung.'); }
+                    $updated['privacy_path']=$umami['privacyPath'];
+                }
+            } else {
+                $updated['umami']='off';
+            }
+            try { $updated=$content->site->validate('privacy',$updated); }
+            catch (\SiteCms\HttpError $invalid) { cmsAgentFail(422,$invalid->getMessage()); }
+            $backupId='privacy-'.gmdate('YmdHis').'-'.bin2hex(random_bytes(5));
+            cmsAgentBackup($root,$backupId,$store->db);
+            $saved=$content->site->save('privacy',(int)$current['version'],$updated,$actor);
+            $active=\SiteCms\Consent::umami($content->site);
+            echo json_encode(['ok'=>true,'instanceId'=>$agent['instance_id'],'umamiEnabled'=>$active!==null,'consentReady'=>\SiteCms\Consent::privacyPath($content)!=='','statistics'=>$saved['value']['statistics'] ?? $updated['statistics'],'privacyVersion'=>$saved['version'],'backupId'=>$backupId],JSON_THROW_ON_ERROR);
             return;
         }
         $appearance=$body['appearance'] ?? null;

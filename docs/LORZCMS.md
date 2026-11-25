@@ -161,6 +161,12 @@ editorial databases stay in place. The unified core preserves both HSG's status
 panels and NorDiaMed's photo picker. Enrolling a website does not install the
 bundled new core: the operator schedules that separately.
 
+## Umami-Statistik (ab LorzCMS 3.7.0)
+
+Unter **Verwaltung → Datenschutz & Cookies** gibt es den Schalter **Umami-Statistik** mit Adresse und Website-ID der Umami-Instanz. Umami wird nur aktiv, wenn zusätzlich **Optionale Statistik** eingeschaltet ist und eine Datenschutzseite erkannt wird. Das Tracking-Skript lädt erst nach Einwilligung in „Statistik“ über `/assets/umami-loader.js`; die Content-Security-Policy erlaubt `script-src` und `connect-src` nur für die eingetragene Umami-Origin und nur solange Umami eingeschaltet ist. Umami setzt keine Cookies.
+
+SiteOps schaltet das per MCP-Tool `umami_tracking_set` (Website `site`, `enabled`, optional `privacyPath`) ein oder aus: Es legt die Website bei Bedarf in Umami an und setzt die Werte über den CMS-Anschluss (`analytics-apply`, mit Sicherung). `umami_stats` liest Seitenaufrufe, Besucher, Top-Seiten und Verweise. Für Websites ohne LorzCMS liefert `umami_tracking_set` nur das Snippet. Zugangsdaten: `UMAMI_URL`, `UMAMI_USERNAME`, `UMAMI_PASSWORD`. Die Datenschutzerklärung der jeweiligen Website muss Umami beschreiben.
+
 ## Updates and rollback
 
 An update uploads a complete release below `.lorzcms/releases/VERSION/`, then

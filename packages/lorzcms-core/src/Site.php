@@ -19,6 +19,9 @@ final class Site {
                 'privacy_path'=>['label'=>'Datenschutz (interner Pfad)','max'=>500],
                 'statistics'=>['label'=>'Optionale Statistik','kind'=>'select','options'=>['off','on'],'option_labels'=>['off'=>'Aus','on'=>'Einwilligung einholen'],'default'=>'off'],
                 'marketing'=>['label'=>'Optionales Marketing','kind'=>'select','options'=>['off','on'],'option_labels'=>['off'=>'Aus','on'=>'Einwilligung einholen'],'default'=>'off'],
+                'umami'=>['label'=>'Umami-Statistik','kind'=>'select','options'=>['off','on'],'option_labels'=>['off'=>'Aus','on'=>'Nach Einwilligung in „Statistik“ laden'],'default'=>'off','help'=>'Cookielose Reichweitenmessung mit einer selbst betriebenen Umami-Instanz. Wirkt nur, wenn „Optionale Statistik“ eingeschaltet ist. Umami in der Datenschutzerklärung beschreiben.'],
+                'umami_host'=>['label'=>'Umami-Adresse','max'=>200,'help'=>'Nur die HTTPS-Adresse der Instanz, zum Beispiel https://stats.lorzen.de'],
+                'umami_website_id'=>['label'=>'Umami-Website-ID','max'=>36,'help'=>'UUID der Website aus Umami.'],
             ]],
             'seo'=>['label'=>'SEO','permission'=>'settings','description'=>'Globale Vorgaben werden verwendet, wenn ein Inhalt keine eigenen Angaben enthält.','fields'=>[
                 'title_suffix'=>['label'=>'Zusatz im Seitentitel','max'=>100,'default'=>' · '.$this->project['name']],
@@ -110,6 +113,7 @@ final class Site {
         if(isset($this->sections()[$section])){
             $result=(new Schema(['configuration'=>['fields'=>$this->sections()[$section]['fields']]]))->fields('configuration',$value);
             if($section==='appearance'){foreach(['header','footer'] as $region){$result[$region.'_template']=PageTemplates::validatePartial($result[$region.'_template'],$region);}}
+            if($section==='privacy'){$result=Consent::validateUmami($result);}
             return $result;
         }
         if(str_starts_with($section,'module:')){return (new Schema(['configuration'=>['fields'=>$this->project['customizations'][substr($section,7)]['fields']]]))->fields('configuration',$value);}

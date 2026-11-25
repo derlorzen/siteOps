@@ -55,6 +55,7 @@ import { createVideoStudio, registerVideoStudioRoutes } from './lib/video-studio
 import { registerVideoStudioTools } from './lib/video-studio-mcp.mjs';
 import { createYouTubeService } from './lib/youtube.mjs';
 import { createSearchConsoleService } from './lib/search-console.mjs';
+import { createUmamiClient } from './lib/umami.mjs';
 import { registerSearchConsoleRoutes, registerSearchConsoleTools } from './lib/search-console-api.mjs';
 import { renderSearchConsole, renderSearchConsoleOverview } from './lib/search-console-ui.mjs';
 import { createYouTubeUploadWorker } from './lib/youtube-upload.mjs';
@@ -137,7 +138,10 @@ const cfg = {
   oauthRefreshTokenTtlSeconds: Number(env('OAUTH_REFRESH_TOKEN_TTL_SECONDS', '2592000')),
   oauthCodeTtlSeconds: Number(env('OAUTH_CODE_TTL_SECONDS', '600')),
   websiteAdminEmail: process.env.SITEOPS_DEFAULT_CMS_ADMIN_EMAIL || process.env.ALERT_EMAIL_TO || '',
-  websiteRootBase: process.env.SITEOPS_WEBSITE_ROOT_BASE || '/siteops-websites'
+  websiteRootBase: process.env.SITEOPS_WEBSITE_ROOT_BASE || '/siteops-websites',
+  umamiUrl: process.env.UMAMI_URL || '',
+  umamiUsername: process.env.UMAMI_USERNAME || '',
+  umamiPassword: process.env.UMAMI_PASSWORD || ''
 };
 const buildInfo = await resolveBuildInfo();
 const db = mysql.createPool(
@@ -206,6 +210,56 @@ function key() {
 }
 const encrypt = value => encryptWithKey(value, key());
 const decrypt = value => decryptWithKey(value, key());
+const umami = createUmamiClient({ url: cfg.umamiUrl, username: cfg.umamiUsername, password: cfg.umamiPassword });
+async function umamiSite(siteRef) {
+  const site = await getSite(siteRef);
+  const domain = String(site.domain || '').replace(/^www\./, '');
+  return { site, domain };
+}
+async function umamiTrackingSet({ site: siteRef, enabled, privacyPath }) {
+  const { site, domain } = await umamiSite(siteRef);
+  const installation = (await cmsController.overview()).installations.find(i => i.siteId === site.id) || null;
+  const website = enabled ? await umami.ensureWebsite({ domain, name: site.name }) : await umami.findWebsite(domain);
+  const base = {
+    site: site.slug,
+    domain,
+    umami: website ? { websiteId: website.id, created: Boolean(website.created), url: umami.origin } : null
+  };
+  if (installation) {
+    if (!website && !enabled)
+      return { ...base, lorzcms: null, message: 'Für diese Domain gibt es keine Umami-Website.' };
+    const applied = await cmsController.applyUmami(installation.id, {
+      enabled,
+      host: umami.origin,
+      websiteId: website?.id,
+      privacyPath
+    });
+    return {
+      ...base,
+      lorzcms: applied,
+      message: applied.umamiEnabled
+        ? applied.consentReady
+          ? 'Umami lädt nach Einwilligung in „Statistik“. Datenschutzerklärung um Umami ergänzen.'
+          : 'Umami ist eingetragen, aber ohne erkannte Datenschutzseite erscheint kein Einwilligungsdialog. privacyPath angeben.'
+        : 'Umami ist für diese Website ausgeschaltet.'
+    };
+  }
+  return {
+    ...base,
+    lorzcms: null,
+    snippet: website
+      ? '<script defer src="' +
+        umami.origin +
+        '/script.js" data-website-id="' +
+        website.id +
+        '" data-domains="' +
+        domain +
+        '"></script>'
+      : null,
+    message:
+      'Keine LorzCMS-Installation. Das Snippet nur nach Einwilligung in Statistik laden und in der Datenschutzerklärung beschreiben.'
+  };
+}
 const cmsController = createCmsController({
   q,
   db,
@@ -5477,6 +5531,55 @@ function mcpServer(principal) {
   registerVideoStudioTools(s, () => videoStudioService, toolText);
   registerYouTubeTools(s, youtubeService, toolText);
   registerSearchConsoleTools(s, searchConsoleService, toolText);
+  registerTool(
+    'umami_status',
+    {
+      description:
+        'Verbindung zur selbst betriebenen Umami-Instanz prüfen (Erreichbarkeit, Anzahl Websites). Zugangsdaten kommen aus UMAMI_URL, UMAMI_USERNAME und UMAMI_PASSWORD.',
+      inputSchema: z.object({}),
+      _siteops: { module: 'analytics', service: 'umami.status', ui: '/websites', access: 'read', approval: false }
+    },
+    async () => toolText(await umami.status())
+  );
+  registerTool(
+    'umami_stats',
+    {
+      description:
+        'Cookielose Umami-Besucherstatistik einer Website lesen: Seitenaufrufe, Besucher, Besuche, Absprünge, Top-Seiten und Verweise für die letzten Tage.',
+      inputSchema: z.object({ site: z.string().min(1).max(255), days: z.number().int().min(1).max(366).default(30) }),
+      _siteops: { module: 'analytics', service: 'umami.stats', ui: '/websites', access: 'read', approval: false }
+    },
+    async ({ site, days }) => {
+      const { site: row, domain } = await umamiSite(site);
+      const website = await umami.findWebsite(domain);
+      if (!website)
+        return toolText({
+          site: row.slug,
+          domain,
+          tracked: false,
+          message: 'Für diese Domain gibt es keine Umami-Website.'
+        });
+      return toolText({ site: row.slug, domain, tracked: true, ...(await umami.stats(website.id, { days })) });
+    }
+  );
+  registerTool(
+    'umami_tracking_set',
+    {
+      description:
+        'Umami-Statistik für eine verwaltete Website ein- oder ausschalten. Legt die Website bei Bedarf in Umami an. Bei LorzCMS (ab 3.7.0) wird Umami unter Datenschutz & Cookies gesetzt und lädt erst nach Einwilligung in „Statistik“. Bei anderen Websites wird nur das Snippet geliefert. Datenschutzerklärung separat ergänzen.',
+      inputSchema: z.object({
+        site: z.string().min(1).max(255),
+        enabled: z.boolean(),
+        privacyPath: z
+          .string()
+          .max(500)
+          .regex(/^\/[a-zA-Z0-9_\/.-]*$/)
+          .optional()
+      }),
+      _siteops: { module: 'analytics', service: 'umami.tracking', ui: '/lorzcms', access: 'write', approval: true }
+    },
+    async input => toolText(await umamiTrackingSet(input))
+  );
   registerTool(
     'video_image_get',
     {
