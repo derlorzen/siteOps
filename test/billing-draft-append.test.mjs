@@ -23,6 +23,7 @@ function fixture(overrides = {}, status = 'draft') {
   const old = {
     id: oldId,
     entry_id: oldId,
+    entry_date: '2026-10-01',
     description: 'Manuell korrigiert',
     quantity: '1.500000',
     unit: 'Std.',
@@ -56,7 +57,20 @@ function fixture(overrides = {}, status = 'draft') {
     release() {},
     async query(sql, params) {
       if (sql.startsWith('SELECT * FROM invoices')) return [[invoice]];
-      if (sql.startsWith('SELECT * FROM invoice_items')) return [items];
+      if (sql.startsWith('SELECT * FROM invoice_items')) {
+        if (sql.includes('ORDER BY entry_date,sort_position,id'))
+          return [
+            [...items].sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.sort_position - b.sort_position)
+          ];
+        if (sql.includes('ORDER BY sort_position'))
+          return [[...items].sort((a, b) => a.sort_position - b.sort_position)];
+        return [items];
+      }
+      if (sql.startsWith('UPDATE invoice_items SET sort_position=')) {
+        const [position, , itemId] = params;
+        items.find(item => item.id === itemId).sort_position = position;
+        return [{}];
+      }
       if (sql.startsWith('SELECT e.id,e.entry_date')) {
         return [
           params.includes(source.id)
@@ -143,4 +157,36 @@ test('MCP serializes dates and HTTP append uses the draft approval guard', () =>
     entry_date: '2026-10-01T00:00:00.000Z'
   });
   assert.equal(needsHttpApproval('POST', '/api/billing/invoices/' + invoiceId + '/append-entries'), true);
+});
+
+test('sort changes only position numbers and preserves snapshots, links, ties and totals', async () => {
+  const { billing, invoice, items } = fixture();
+  await billing.appendDraftEntries(invoiceId, { entry_ids: [entryId] });
+  items.push({
+    ...items[0],
+    id: '00000000-0000-4000-8000-000000000005',
+    entry_id: null,
+    quantity: '0.130000',
+    duration_seconds: 468,
+    sort_position: 9
+  });
+  const previousInvoice = globalThis.structuredClone(invoice);
+  const previousItems = globalThis.structuredClone(items);
+  const result = await billing.sortDraft(invoiceId);
+  assert.deepEqual(
+    result.items.map(item => item.id),
+    [previousItems[1].id, previousItems[0].id, previousItems[2].id]
+  );
+  for (const [position, item] of result.items.entries()) {
+    assert.deepEqual(item, { ...previousItems.find(old => old.id === item.id), sort_position: position });
+  }
+  assert.deepEqual(invoice, previousInvoice);
+  assert.deepEqual(await billing.sortDraft(invoiceId), result);
+  assert.equal(needsHttpApproval('POST', '/api/billing/invoices/' + invoiceId + '/sort'), true);
+});
+
+test('sort rejects issued invoices without changing rows', async () => {
+  const { billing, items, old } = fixture({}, 'issued');
+  await assert.rejects(billing.sortDraft(invoiceId), { statusCode: 409 });
+  assert.deepEqual(items, [old]);
 });

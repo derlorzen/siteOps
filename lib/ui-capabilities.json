@@ -177,6 +177,9 @@
   "POST /api/billing/invoices/:id/append-entries": {
     "tools": ["invoice_draft_append_entries"]
   },
+  "POST /api/billing/invoices/:id/sort": {
+    "tools": ["invoice_draft_sort"]
+  },
   "GET /api/billing/invoices/:id/preview": {
     "tools": ["invoice_preview"]
   },

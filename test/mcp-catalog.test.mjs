@@ -87,7 +87,8 @@ test('authenticated ChatGPT and Claude discover the same complete tool definitio
     'search_console_status',
     'search_console_change_execute',
     'search_console_performance',
-    'video_studio_demo_templates'
+    'video_studio_demo_templates',
+    'invoice_draft_sort'
   ]) {
     assert.ok(
       catalogs[0].some(tool => tool.name === name),
