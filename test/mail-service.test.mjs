@@ -112,7 +112,11 @@ test('archive reads are bounded and CSV neutralizes spreadsheet formulas', async
 });
 
 test('mail archive renders metadata as escaped text', () => {
-  const esc = s => String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
+  const esc = s =>
+    String(s ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('"', '&quot;');
   const html = renderMailArchive({
     rows: [{ subject: '<script>alert(1)</script>', recipients: '["a@example.test"]', status: 'failed' }],
     filters: { query: 'a@example.test' },
