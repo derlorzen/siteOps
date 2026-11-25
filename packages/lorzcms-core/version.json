@@ -1,9 +1,9 @@
 {
-  "version": "3.6.1",
+  "version": "3.7.0",
   "schemaVersion": 1,
   "compatibleSchemas": [
     1
   ],
   "minPhp": "8.3",
-  "notes": "Rechtstext-Links unterstützen ausdrücklich hinterlegte Projektpfade, auch wenn sie nicht im CMS-Inhaltsspeicher liegen."
+  "notes": "Optionale, cookielose Umami-Statistik pro Installation: lädt erst nach Einwilligung in „Statistik“, erweitert die CSP nur für die eingetragene Umami-Instanz."
 }

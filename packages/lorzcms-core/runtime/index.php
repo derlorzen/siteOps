@@ -12,6 +12,7 @@ ob_start();
 try {
     [$configuration,$project,$store,$schema,$access,$content]=cms_boot();
     $site=$content->site;
+    header('Content-Security-Policy: '.\SiteCms\Consent::csp($site));
     $project['name']=$site->value('settings')['name'];
     if($configuration['environment']!=='production') {header('X-Robots-Tag: noindex, nofollow');}
     $media=new Media($store,$configuration['storage'].'/media',$access);

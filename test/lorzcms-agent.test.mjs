@@ -225,6 +225,49 @@ test(
     assert.equal(css.status, 200);
     assert.match(css.headers.get('content-type'), /text\/css/);
     assert.equal((await fetch(base + '/config/local.php')).status, 404);
+    const baseCsp = (await fetch(base + '/')).headers.get('content-security-policy');
+    assert.doesNotMatch(baseCsp, /stats\.example\.de/);
+    assert.equal(
+      (
+        await call({
+          action: 'analytics-apply',
+          umami: { enabled: true, host: 'http://stats.example.de', websiteId: 'x' }
+        })
+      ).status,
+      422,
+      'only HTTPS origins and UUIDs are accepted'
+    );
+    const websiteId = '0f5e0c6a-1b2c-4d3e-8f90-a1b2c3d4e5f6';
+    const enabled = await call({
+      action: 'analytics-apply',
+      umami: { enabled: true, host: 'https://stats.example.de/', websiteId, privacyPath: '/datenschutz.html' }
+    });
+    assert.equal(enabled.status, 200, JSON.stringify(enabled.data));
+    assert.equal(enabled.data.umamiEnabled, true);
+    assert.equal(enabled.data.statistics, 'on');
+    assert.equal(enabled.data.consentReady, true);
+    const tracked = await fetch(base + '/');
+    assert.match(
+      tracked.headers.get('content-security-policy'),
+      /script-src 'self' https:\/\/stats\.example\.de; connect-src 'self' https:\/\/stats\.example\.de;/
+    );
+    const trackedHtml = await tracked.text();
+    assert.match(trackedHtml, /data-consent-dialog/, 'consent dialog is rendered');
+    {
+      const placeholder = load(trackedHtml)('script[data-lorzcms-umami]');
+      assert.equal(placeholder.attr('type'), 'text/plain', 'Umami waits for consent');
+      assert.equal(placeholder.attr('data-lorzcms-consent'), 'statistics');
+      assert.equal(placeholder.attr('data-website-id'), websiteId);
+      assert.equal(placeholder.attr('data-host'), 'https://stats.example.de');
+      assert.doesNotMatch(trackedHtml, /<script[^>]+src="https:\/\/stats\.example\.de/);
+    }
+    assert.match(await (await fetch(base + '/assets/umami-loader.js')).text(), /data-lorzcms-umami/);
+    const disabled = await call({ action: 'analytics-apply', umami: { enabled: false } });
+    assert.equal(disabled.status, 200, JSON.stringify(disabled.data));
+    assert.equal(disabled.data.umamiEnabled, false);
+    const untracked = await fetch(base + '/');
+    assert.doesNotMatch(untracked.headers.get('content-security-policy'), /stats\.example\.de/);
+    assert.doesNotMatch(await untracked.text(), /data-lorzcms-umami/);
     assert.equal((await fetch(base + '/.lorzcms/backups/test/database.sqlite')).status, 404);
     const config = await readFile(join(root, 'config/local.php'));
     const parts = initial.version.split('.');

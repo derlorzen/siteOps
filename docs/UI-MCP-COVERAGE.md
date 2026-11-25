@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 310 API-Funktionen, 260 MCP-Tools, 58 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 310 API-Funktionen, 263 MCP-Tools, 58 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -343,6 +343,9 @@ Diese Tools ergänzen zusammengesetzte Abläufe oder vorhandene Website-Services
 | cms_install_allinkl | cms | /lorzcms | write | Ja | Create an ALL-INKL subdomain, prepare an empty public/ webroot using a saved FTP/SFTP profile, and queue a new LorzCMS website. Requires an existing KAS account, released CMS version and HTTPS readiness. |
 | cms_theme_apply | cms | /lorzcms | write | Ja | Apply a theme designed for a managed LorzCMS website. industrial = Containerdienst/Bau, protection = Unfallversicherung/Sport. Updates only the selected website appearance, preserving existing content and page URLs. |
 | cms_admin_recovery | cms | /lorzcms | read | Nein | Den persönlichen Einstieg zur Wiederherstellung eines CMS-Administrators abrufen. Setzt kein Passwort zurück. Neue Zugangsdaten werden ausschließlich im geschützten Dashboard angezeigt. |
+| umami_status | analytics | /websites | read | Nein | Verbindung zur selbst betriebenen Umami-Instanz prüfen (Erreichbarkeit, Anzahl Websites). Zugangsdaten kommen aus UMAMI_URL, UMAMI_USERNAME und UMAMI_PASSWORD. |
+| umami_stats | analytics | /websites | read | Nein | Cookielose Umami-Besucherstatistik einer Website lesen: Seitenaufrufe, Besucher, Besuche, Absprünge, Top-Seiten und Verweise für die letzten Tage. |
+| umami_tracking_set | analytics | /lorzcms | write | Ja | Umami-Statistik für eine verwaltete Website ein- oder ausschalten. Legt die Website bei Bedarf in Umami an. Bei LorzCMS (ab 3.7.0) wird Umami unter Datenschutz & Cookies gesetzt und lädt erst nach Einwilligung in „Statistik“. Bei anderen Websites wird nur das Snippet geliefert. Datenschutzerklärung separat ergänzen. |
 | action_prepare | mcp | /mcp-info | write | Nein | Kritische Aktion vorbereiten, ohne sie auszuführen. Das genaue Tool und seine Argumente angeben; der Benutzer muss die Vorschau anschließend persönlich im SiteOps-Dashboard freigeben. Zustimmung des Agenten genügt nicht. |
 | video_page_inspect | video | /video-suite#script | write | Ja | Freigegebene Demo-Seite lesen: sichtbare Bedienelemente mit geprüften Selektoren, Überschriften und Links, optional nach bereits geplanten Aktionen. Führt diese Aktionen auf der Testumgebung aus, nimmt nichts auf. |
 | operation_status | operations | /mcp-info | read | Nein | Tatsächlichen Zustand eines vorhandenen SEO-, CMS-, Coolify- oder Videoauftrags nachladen. Keine erfundenen Fortschrittswerte; unbekannte Providerzustände bleiben unbekannt. |

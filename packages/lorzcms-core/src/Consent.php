@@ -38,15 +38,65 @@ final class Consent {
                 '<p><a href="'.Html::escape($privacy).'">Datenschutzerklärung</a></p>'.
                 '<form method="dialog">'.$options.'<div class="lorz-consent-actions">'.
                 '<button value="reject" autofocus>Nur notwendige</button><button value="save">Auswahl speichern</button><button value="accept">Alle akzeptieren</button></div></form></dialog>'.
-                '<script src="/assets/cookie-consent.js?v=3.6.1" defer></script>';
+                ($statistics && ($umami = self::umami($site)) ? '<script type="text/plain" data-lorzcms-consent="statistics" data-src="/assets/umami-loader.js?v=3.7.0" data-lorzcms-umami data-host="'.Html::escape($umami['host']).'" data-website-id="'.Html::escape($umami['website_id']).'"></script>' : '').
+                '<script src="/assets/cookie-consent.js?v=3.7.0" defer></script>';
         }
         $headEnd = stripos($html, '</head>');
         if ($headEnd !== false && $headEnd < $bodyEnd) {
-            $style = '<link rel="stylesheet" href="/assets/cookie-consent.css?v=3.6.1">';
+            $style = '<link rel="stylesheet" href="/assets/cookie-consent.css?v=3.7.0">';
             $html = substr_replace($html, $style, $headEnd, 0);
             $bodyEnd += strlen($style);
         }
         return substr_replace($html, $markup, $bodyEnd, 0);
+    }
+
+    /** Public privacy policy path; without it no consent dialog and therefore no optional service is rendered. */
+    public static function privacyPath(Content $content): string {
+        return self::legalPath($content, (string)($content->site->value('privacy')['privacy_path'] ?? ''), ['/datenschutz/', '/datenschutzerklaerung/', '/datenschutzerklaerung-eu/', '/privacy-policy/']);
+    }
+
+    /** Umami tracking target, only when statistics consent is offered and the configuration is complete. */
+    public static function umami(Site $site): ?array {
+        $value = $site->value('privacy');
+        if (($value['statistics'] ?? 'off') !== 'on' || ($value['umami'] ?? 'off') !== 'on') {
+            return null;
+        }
+        $host = (string)($value['umami_host'] ?? '');
+        $id = strtolower((string)($value['umami_website_id'] ?? ''));
+        if (!self::isUmamiHost($host) || !self::isUuid($id)) {
+            return null;
+        }
+        return ['host' => rtrim($host, '/'), 'website_id' => $id];
+    }
+
+    /** Content-Security-Policy for public pages; the Umami origin is allowed only while tracking is configured. */
+    public static function csp(?Site $site): string {
+        $umami = $site ? self::umami($site) : null;
+        $origin = $umami ? ' '.$umami['host'] : '';
+        return "default-src 'self'; img-src 'self' https:; style-src 'self'; script-src 'self'".$origin."; connect-src 'self'".$origin."; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'";
+    }
+
+    public static function validateUmami(array $value): array {
+        $value['umami_host'] = rtrim(trim((string)($value['umami_host'] ?? '')), '/');
+        $value['umami_website_id'] = strtolower(trim((string)($value['umami_website_id'] ?? '')));
+        if ($value['umami_host'] !== '' && !self::isUmamiHost($value['umami_host'])) {
+            throw new HttpError(422, 'Die Umami-Adresse muss eine HTTPS-Adresse ohne Pfad sein, zum Beispiel https://stats.lorzen.de');
+        }
+        if ($value['umami_website_id'] !== '' && !self::isUuid($value['umami_website_id'])) {
+            throw new HttpError(422, 'Die Umami-Website-ID muss eine UUID sein.');
+        }
+        if (($value['umami'] ?? 'off') === 'on' && ($value['umami_host'] === '' || $value['umami_website_id'] === '')) {
+            throw new HttpError(422, 'Für Umami werden Adresse und Website-ID benötigt.');
+        }
+        return $value;
+    }
+
+    private static function isUmamiHost(string $host): bool {
+        return preg_match('~^https://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+/?$~D', $host) === 1;
+    }
+
+    private static function isUuid(string $id): bool {
+        return preg_match('~^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$~D', $id) === 1;
     }
 
     private static function legalPath(Content $content, string $configured, array $fallbacks): string {
