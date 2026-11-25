@@ -1,0 +1,19 @@
+name: Temporary mail archive formatting diagnostic
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  format-diff:
+    if: github.head_ref == 'feature/mail-archive-alert-limits'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: |
+          npx prettier --write lib/mail-archive-ui.mjs lib/mail-service.mjs test/mail-service.test.mjs
+          git diff -- lib/mail-archive-ui.mjs lib/mail-service.mjs test/mail-service.test.mjs
