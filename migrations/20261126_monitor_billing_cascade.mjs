@@ -7,12 +7,12 @@ export default async function ({ db }) {
     ['fk_monitor_billing_task', 'task_id', 'project_tasks']
   ]) {
     const [rows] = await db.query(
-      'SELECT DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME=? AND CONSTRAINT_NAME=?',
-      ['monitor_billing_tasks', name]
+      'SELECT DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME=? AND CONSTRAINT_NAME IN (?,?)',
+      ['monitor_billing_tasks', name, name + '_cascade']
     );
-    if (rows[0]?.DELETE_RULE === 'CASCADE') continue;
+    if (rows.some(row => row.DELETE_RULE === 'CASCADE')) continue;
     const drop = rows.length ? 'DROP FOREIGN KEY ' + name + ', ' : '';
-    await db.query('ALTER TABLE monitor_billing_tasks ' + drop + 'ADD CONSTRAINT ' + name +
+    await db.query('ALTER TABLE monitor_billing_tasks ' + drop + 'ADD CONSTRAINT ' + name + '_cascade' + 
       ' FOREIGN KEY (' + column + ') REFERENCES ' + parent + '(id) ON DELETE CASCADE');
   }
 }

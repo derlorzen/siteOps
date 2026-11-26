@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 314 API-Funktionen, 266 MCP-Tools, 58 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 316 API-Funktionen, 268 MCP-Tools, 58 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -39,7 +39,9 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | billing | /billing/invoices | billing.updateDraft | PATCH /api/billing/invoices/:id | invoice_draft_update | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | billing | /billing/invoices | billing.invoices | GET /api/billing/invoices | invoices_list | Lesen | Keine zusätzliche | Zugeordnet |  |
 | billing | /billing/invoices | billing.createDraft | POST /api/billing/invoices | invoice_draft_create | Ändern | Keine zusätzliche | Zugeordnet |  |
+| billing | /billing | billing.projectDeletion.confirm | POST /api/billing/project-deletions/confirm | project_delete_confirm | Ändern | Gebundene Freigabe | Zugeordnet |  |
 | billing | /billing | billing.editProject | PATCH /api/billing/projects/:id | project_update | Ändern | Keine zusätzliche | Zugeordnet |  |
+| billing | /billing | billing.projectDeletion.preview | POST /api/billing/projects/:id/delete-preview | project_delete_preview | Ändern | Keine zusätzliche | Zugeordnet |  |
 | billing | /billing | billing.listRules | GET /api/billing/projects/:projectId/recurring | project_recurring_rules | Lesen | Keine zusätzliche | Zugeordnet |  |
 | billing | /billing | billing.addRule | POST /api/billing/projects/:projectId/recurring | project_recurring_add | Ändern | Keine zusätzliche | Zugeordnet |  |
 | billing | /billing | billing.applyTemplate | POST /api/billing/projects/:projectId/template | project_template_apply | Ändern | Keine zusätzliche | Zugeordnet |  |
