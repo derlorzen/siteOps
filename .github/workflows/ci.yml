@@ -58,7 +58,7 @@ jobs:
         run: npm run check
       - name: Browser runner import check
         working-directory: runner
-        run: node -e "Promise.all([import('fastify'),import('pixelmatch'),import('pngjs'),import('playwright')]).then(()=>console.log('Runner imports OK'))"
+        run: node -e "Promise.all([import('fastify'),import('pixelmatch'),import('pngjs'),import('playwright'),import('lighthouse'),import('@axe-core/playwright')]).then(()=>console.log('Runner imports OK'))"
       - name: Install Chromium for Search Console UI tests
         working-directory: runner
         run: npx playwright install --with-deps chromium
@@ -66,6 +66,10 @@ jobs:
         env:
           RUN_GSC_BROWSER_TESTS: '1'
         run: node --test test/search-console-browser.test.mjs
+      - name: SEO audit with axe-core and Lighthouse in real Chromium
+        env:
+          RUN_SEO_BROWSER_TESTS: '1'
+        run: node --test test/seo-runner-browser.test.mjs
       - name: CRM filters and invoice draft browser workflow
         env:
           RUN_CRM_BROWSER_TESTS: '1'

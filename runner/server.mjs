@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import { launchGuarded } from './browser-capacity.mjs';
 import { registerRunnerHealth } from './version.mjs';
 import { registerVideoRunner } from './video-studio.mjs';
+import { registerSeoAudit } from './seo-audit.mjs';
 
 const app = Fastify({ logger: true, bodyLimit: 20 * 1024 * 1024 });
 const port = Number(process.env.PORT || 3200),
@@ -266,4 +267,5 @@ app.post('/run', async (req, reply) => {
   };
 });
 registerVideoRunner(app,auth);
+registerSeoAudit(app, auth);
 await app.listen({ host, port });

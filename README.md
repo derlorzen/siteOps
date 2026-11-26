@@ -99,7 +99,6 @@ Runner **1.1.1** uses the encrypted Video Suite OpenAI key for narration as well
 
 Both Runner health and authentication version endpoints now use `runner/package.json`. SiteOps also reads health after authenticating, correcting the stale `1.0.0` response from older `/auth-test` builds without requiring a Runner update just for the label.
 
-
 The Creative Agent supports **Ctrl+Enter** (Cmd+Enter on macOS) to send; Enter inserts a newline. Attach up to three PNG/JPG/WebP screenshots or paste an image into the composer. Images are resized to a maximum 2048-pixel edge and stored privately with project-bound IDs; the actual image data is included in Responses API input. The latest three earlier images remain available to follow-up questions. Uploads are limited to 10 MB before client preparation and 2 MB after preparation.
 
 For authenticated Bagisto screen recordings, update the **existing Browser Runner to 1.1.0**, allow the demo hostname under Suite settings, and save a dedicated test account under **Bagisto-Demo anmelden**. Supply its login URL and a protected landing page; the actual login selectors are editable. The login runs in a separate context without recording. Credentials remain encrypted in SiteOps and only travel to the authenticated Runner; the session lives in memory for the job and is never put in prompts, scene JSON, job status or cookie files. Failed authentication stops production. CAPTCHA/2FA are not bypassed.
@@ -108,13 +107,11 @@ Associate the saved account with reusable demo scenes. Scene actions still need 
 
 Landscape videos are **1920×1080 Full HD**, portrait/Shorts **1080×1920**. Runner 1.1.0 verifies the exported dimensions using FFprobe before marking a job done. Existing videos are not automatically re-rendered.
 
-
 Video Suite settings include an encrypted, source-attributed Bagisto plugin knowledge base shared with every agent request. Edit/import the JSON inventory there; private product documentation is not shipped in the repository. Keep versions dated and distinguish published products, internal packages and demos.
 
 Use **Verbindung testen** after saving OpenAI settings to test the selected model with the actual Responses API schema. Provider rejections include HTTP status, provider error code/parameter, request ID and a specific remediation hint; credentials are redacted. **Verfügbare Modelle laden** offers model IDs without changing the saved selection. Model listing alone does not establish Responses API compatibility or permission.
 
 Productions support a recoverable **Papierkorb**. Deleting a production hides it from active lists; restore it from the trash to render or prepare a new YouTube upload. Files, ongoing jobs, upload history and already published YouTube videos are retained. This does not reclaim disk space.
-
 
 Produce English/German videos and Shorts directly from ChatGPT through the
 existing MCP integration, reuse approved test-only demo scenes, and prepare
@@ -484,35 +481,35 @@ The OAuth issuer and MCP resource URLs are derived from this value, so it must b
 
 ## Core
 
-| Variable | Required | Purpose |
-|---|---:|---|
-| `HOST` | no | Bind address, default `0.0.0.0` |
-| `PORT` | usually no | HTTP port; managed hosting often supplies it |
-| `PUBLIC_BASE_URL` | production: yes | Public SiteOps origin used for OAuth/MCP links |
-| `SITEOPS_MASTER_KEY` | yes | Base64-encoded 32-byte key used for secret encryption |
-| `DASHBOARD_USER` | yes | Dashboard / OAuth approval username |
-| `DASHBOARD_PASSWORD` | yes | Dashboard / OAuth approval password |
-| `MCP_API_TOKEN` | no | Legacy static Bearer token for older MCP clients |
+| Variable             |        Required | Purpose                                               |
+| -------------------- | --------------: | ----------------------------------------------------- |
+| `HOST`               |              no | Bind address, default `0.0.0.0`                       |
+| `PORT`               |      usually no | HTTP port; managed hosting often supplies it          |
+| `PUBLIC_BASE_URL`    | production: yes | Public SiteOps origin used for OAuth/MCP links        |
+| `SITEOPS_MASTER_KEY` |             yes | Base64-encoded 32-byte key used for secret encryption |
+| `DASHBOARD_USER`     |             yes | Dashboard / OAuth approval username                   |
+| `DASHBOARD_PASSWORD` |             yes | Dashboard / OAuth approval password                   |
+| `MCP_API_TOKEN`      |              no | Legacy static Bearer token for older MCP clients      |
 
 ## Database
 
-| Variable | Required | Purpose |
-|---|---:|---|
-| `DATABASE_URL` | alternative | Full MySQL connection string |
-| `DB_HOST` | yes without DATABASE_URL | MySQL hostname |
-| `DB_PORT` | no | Default `3306` |
-| `DB_USER` | yes without DATABASE_URL | MySQL user |
-| `DB_PASSWORD` | yes without DATABASE_URL | MySQL password |
-| `DB_NAME` | yes without DATABASE_URL | MySQL database |
+| Variable       |                 Required | Purpose                      |
+| -------------- | -----------------------: | ---------------------------- |
+| `DATABASE_URL` |              alternative | Full MySQL connection string |
+| `DB_HOST`      | yes without DATABASE_URL | MySQL hostname               |
+| `DB_PORT`      |                       no | Default `3306`               |
+| `DB_USER`      | yes without DATABASE_URL | MySQL user                   |
+| `DB_PASSWORD`  | yes without DATABASE_URL | MySQL password               |
+| `DB_NAME`      | yes without DATABASE_URL | MySQL database               |
 
 ## Backup repository
 
-| Variable | Required | Purpose |
-|---|---:|---|
-| `GITHUB_BACKUP_REPO` | for backups | `owner/repository` of the private snapshot repository |
-| `GITHUB_BACKUP_TOKEN` | for backups | GitHub PAT with repository Contents read/write |
-| `BACKUP_REPO_BRANCH` | no | Default `main` |
-| `BACKUP_MAX_FILE_BYTES` | no | Default 50 MiB per file |
+| Variable                |    Required | Purpose                                               |
+| ----------------------- | ----------: | ----------------------------------------------------- |
+| `GITHUB_BACKUP_REPO`    | for backups | `owner/repository` of the private snapshot repository |
+| `GITHUB_BACKUP_TOKEN`   | for backups | GitHub PAT with repository Contents read/write        |
+| `BACKUP_REPO_BRANCH`    |          no | Default `main`                                        |
+| `BACKUP_MAX_FILE_BYTES` |          no | Default 50 MiB per file                               |
 
 ## Default site settings
 
@@ -542,6 +539,8 @@ The OAuth issuer and MCP resource URLs are derived from this value, so it must b
 - `SEO_CRAWL_CONCURRENCY` — pages fetched in parallel (default `4`, max `16`)
 - `SEO_CRAWL_MAX_REQUESTS_PER_MINUTE` — upper bound per crawl, to protect shared hosting (default `120`)
 - `SEO_CRAWL_RETRIES` — extra attempts for network errors, 408/425/429 and 5xx responses (default `2`)
+- `SEO_AXE_MAX_PAGES` — pages per crawl checked with axe-core in the Browser Runner (default `10`, `0` disables)
+- `SEO_EXTERNAL_LINK_MAX_CHECKS` — distinct outgoing links checked per crawl (default `200`, `0` disables)
 
 Crawl scheduling (queue, deduplication, autoscaled concurrency, rate limit, retries) uses
 [Crawlee](https://github.com/apify/crawlee) (Apache-2.0) in-process with in-memory storage;
@@ -550,6 +549,18 @@ render fallback and all SEO checks remain SiteOps code. The link crawl runs brea
 the homepage, then sitemap URLs the links did not reach are crawled for orphan detection.
 
 The normal SiteOps SEO crawler does **not** require a PageSpeed API key.
+
+With Browser Runner **1.8.0** or later, Lighthouse (mobile and desktop) runs locally in the
+runner's Chromium and axe-core checks WCAG 2.1 A/AA rules on the rendered page. No Google API
+key or quota is needed. Without a runner, Lighthouse falls back to the PageSpeed Insights API
+when a key is configured. axe findings appear as `accessibility_axe` issues (serious/critical
+as warnings); the static accessibility quick check remains as a baseline for every page.
+
+Links and resources are checked once per URL, HEAD first with a ranged-GET fallback and one
+retry on 429/503 (technique from linkinator/lychee). Outgoing links are checked too
+(`broken_external_link`), only against public IP addresses; 401/403/999 responses count as
+blocked for bots, not as broken. A DNS rebinding window between the address check and the
+request remains; only the status code is used.
 
 ### Content analysis on client-rendered pages (Next.js and similar)
 
