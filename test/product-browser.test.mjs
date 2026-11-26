@@ -9,6 +9,7 @@ import { monitoringState } from '../lib/workspace-overview.mjs';
 import { renderCmsWorkspace } from '../lib/lorzcms-workspace.mjs';
 import { renderAllInklWorkspace } from '../lib/allinkl-ui.mjs';
 import { renderCoolifyWorkspace } from '../lib/coolify-ui.mjs';
+import { renderCoolifySite } from '../lib/coolify-deployer-ui.mjs';
 import { renderVideoStudio } from '../lib/video-studio-ui.mjs';
 import { renderYouTube } from '../lib/youtube-ui.mjs';
 import { renderSearchConsole } from '../lib/search-console-ui.mjs';
@@ -61,6 +62,7 @@ test(
         slug: 'nordlicht',
         name: 'Nordlicht Studio',
         domain: 'nordlicht.example.test',
+        enabled: 1,
         monitor_enabled: 1,
         last_check_ok: 0,
         last_checked_at: new Date().toISOString(),
@@ -78,6 +80,17 @@ test(
         last_checked_at: new Date().toISOString()
       }
     ].map(site => ({ ...site, status: monitoringState(site) }));
+    const coolifySite = {
+      id: '44444444-4444-4444-8444-444444444444',
+      slug: 'coolify-demo',
+      name: 'Coolify Demo',
+      domain: 'coolify.example.test',
+      deployment_mode: 'coolify',
+      enabled: 1,
+      monitor_enabled: 1,
+      monitor_interval_seconds: 60,
+      monitor_expected_status: 200
+    };
     const portfolio = {
       items: sites,
       total: 2,
@@ -182,6 +195,13 @@ test(
           body: await readFile(new URL('../public/' + url.pathname.slice(8), import.meta.url), 'utf8')
         });
       if (url.pathname.startsWith('/api/')) {
+        if (url.pathname === '/api/sites/coolify-demo') {
+          if (route.request().method() === 'PATCH') {
+            assert.deepEqual(route.request().postDataJSON(), { monitor_enabled: !coolifySite.monitor_enabled });
+            coolifySite.monitor_enabled = Number(!coolifySite.monitor_enabled);
+          }
+          return route.fulfill({ json: coolifySite });
+        }
         if (url.pathname === '/api/workspace/websites') {
           if (failList) return route.fulfill({ status: 503, json: { message: 'Testausfall' } });
           const query = url.searchParams.get('query') || '',
@@ -315,6 +335,8 @@ test(
       else if (url.pathname === '/mcp-info') html = mcpInfoPage();
       else if (url.pathname === '/setup') html = setupPage();
       else if (url.pathname === '/sites/nordlicht') html = await siteOperationsPage('nordlicht');
+      else if (url.pathname === '/sites/coolify-demo')
+        html = renderPage('Coolify Demo', renderCoolifySite(coolifySite, [], escapeHtml));
       else if (url.pathname === '/sites/nordlicht/seo') html = await seoDashboardPage('nordlicht');
       else if (url.pathname === '/sites/nordlicht/tests') html = await syntheticTestsPage('nordlicht');
       else {
@@ -588,6 +610,25 @@ test(
     await page.locator('#backupNow').click();
     await page.getByText('Sicherung erstellt und im Sicherungsverlauf gespeichert.', { exact: true }).waitFor();
     assert.equal(backupPolls, 2);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('https://siteops.test/sites/coolify-demo');
+    assert.deepEqual(await siteView(), ['overview']);
+    assert.equal(await page.locator('.ops-site-tabs a', { hasText: 'Dateien' }).count(), 0);
+    await page.getByRole('button', { name: 'Überwachung pausieren', exact: true }).click();
+    await page.getByRole('button', { name: 'Überwachung aktivieren', exact: true }).waitFor();
+    assert.equal(coolifySite.monitor_enabled, 0);
+    await page.locator('.ops-site-tabs a', { hasText: 'Überwachung' }).click();
+    await page.locator('[data-site-view="history"]').waitFor({ state: 'visible' });
+    assert.deepEqual(await siteView(), ['history']);
+    await page.locator('.ops-site-tabs a', { hasText: 'Einstellungen' }).click();
+    await page.locator('#coolifyMonitorForm').waitFor({ state: 'visible' });
+    assert.deepEqual(await siteView(), ['settings']);
+    await page.getByRole('button', { name: 'Überwachung aktivieren', exact: true }).click();
+    await page.getByRole('button', { name: 'Überwachung pausieren', exact: true }).waitFor();
+    assert.equal(coolifySite.monitor_enabled, 1);
+    assert.deepEqual(await siteView(), ['settings']);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+    await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto('https://siteops.test/ai');
     await page.locator('[name=monthly_calls]').fill('600');
     await page.getByRole('button', { name: 'Limits speichern', exact: true }).click();
