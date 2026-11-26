@@ -287,7 +287,7 @@ body:has(#crmRoot) .navinner{max-width:1620px}
 #crmRoot .crm-linked-site{display:flex;align-items:center;gap:12px;background:#f9f9fd;border:1px solid #eaebf3;border-radius:10px;padding:10px 12px}
 #crmRoot .crm-linked-site>div{display:grid;gap:3px;min-width:0;flex:1}
 #crmRoot .crm-linked-site strong{font-size:var(--fs-control,14px);overflow-wrap:anywhere}
-#crmRoot .crm-linked-site small{font-size:var(--fs-meta,12px);color:#7e8797}
+#crmRoot .crm-linked-site small{font-size:var(--fs-meta,12px);color:var(--ink-muted,#5f6d7e)}
 #crmRoot .crm-project-websites .crm-inline-row{align-items:flex-end;gap:9px}
 #crmRoot .crm-project-websites .crm-inline-row label{min-width:180px;flex:1}
 #crmRoot .crm-standalone-site .crm-project-icon{background:#ecf7fc;color:#3484a5}
@@ -309,7 +309,7 @@ body:has(#crmRoot) .navinner{max-width:1620px}
 #crmRoot .crm-360-kpis>div{display:grid;gap:7px;background:#f8f9fd;border:1px solid #edf0f5;
   border-radius:9px;padding:15px}
 #crmRoot .crm-360-kpis strong{font-size:23px;letter-spacing:-.04em;color:#272c3c}
-#crmRoot .crm-360-kpis small{font-size:var(--fs-meta,12px);color:#7e8798;font-weight:700}
+#crmRoot .crm-360-kpis small{font-size:var(--fs-meta,12px);color:var(--ink-muted,#5f6d7e);font-weight:700}
 #crmRoot .crm-360-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:25px}
 #crmRoot .crm-360-columns h3{font-size:var(--fs-control,14px);margin:5px 0 12px}
 #crmRoot .crm-360-site,#crmRoot .crm-360-invoice{display:flex;align-items:center;gap:10px;
@@ -317,7 +317,7 @@ body:has(#crmRoot) .navinner{max-width:1620px}
 #crmRoot .crm-360-site:hover,#crmRoot .crm-360-invoice:hover{background:#f7f7fd;border-color:var(--siteops-accent-border)}
 #crmRoot .crm-360-site>span:first-child,#crmRoot .crm-360-invoice>span:first-child{display:grid;gap:3px;min-width:0}
 #crmRoot .crm-360-site strong,#crmRoot .crm-360-invoice strong{font-size:var(--fs-meta,12px);overflow-wrap:anywhere}
-#crmRoot .crm-360-site small,#crmRoot .crm-360-invoice small{font-size:var(--fs-meta,12px);color:#8891a2}
+#crmRoot .crm-360-site small,#crmRoot .crm-360-invoice small{font-size:var(--fs-meta,12px);color:var(--ink-muted,#5f6d7e)}
 #crmRoot .crm-360-incident{display:grid;gap:4px;padding:10px 13px;border:1px solid #f6c8d1;
   border-radius:9px;background:#fff5f7;font-size:var(--fs-meta,12px);margin:8px 0}
 #crmRoot .crm-360-incident strong{color:#a12e4b}
