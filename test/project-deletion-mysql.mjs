@@ -35,6 +35,13 @@ export async function checkProjectDeletionMysql(db) {
     assert.equal(await count('project_tasks', task), 1);
     const [links] = await db.query('SELECT * FROM monitor_billing_tasks WHERE incident_id=?', [incident]);
     assert.equal(links.length, 0);
+    await db.query('INSERT INTO time_entries(id,task_id,entry_date,duration_seconds,hourly_cents) VALUES(?,?,?,?,?)', [
+      entry, task, '2026-11-26', 0, 0
+    ]);
+    const financial = await deletion.preview({ project_id: project });
+    assert.equal(financial.token, null);
+    assert.equal(financial.time_entries, 1);
+    await db.query('DELETE FROM time_entries WHERE id=?', [entry]);
     const stale = await deletion.preview({ project_id: project });
     await db.query('INSERT INTO project_tasks(id,project_id,name,status) VALUES(?,?,?,?)', [extra, project, 'New task', 'open']);
     await assert.rejects(deletion.confirm({ token: stale.token, confirmation: name }), { statusCode: 409 });

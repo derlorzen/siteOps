@@ -12,7 +12,16 @@ export default async function ({ db }) {
     );
     if (rows.some(row => row.DELETE_RULE === 'CASCADE')) continue;
     const drop = rows.length ? 'DROP FOREIGN KEY ' + name + ', ' : '';
-    await db.query('ALTER TABLE monitor_billing_tasks ' + drop + 'ADD CONSTRAINT ' + name + '_cascade' + 
-      ' FOREIGN KEY (' + column + ') REFERENCES ' + parent + '(id) ON DELETE CASCADE');
+    await db.query(
+      'ALTER TABLE monitor_billing_tasks ' +
+        drop +
+        'ADD CONSTRAINT ' +
+        name +
+        '_cascade FOREIGN KEY (' +
+        column +
+        ') REFERENCES ' +
+        parent +
+        '(id) ON DELETE CASCADE'
+    );
   }
 }
