@@ -32,6 +32,8 @@ test('migrate() applies every migration file and is idempotent on re-run', { ski
   await checkSearchConsoleMysql(db, migrate);
   const { checkBillingDraftsMysql } = await import('./billing-drafts-mysql.mjs');
   await checkBillingDraftsMysql(db);
+  const { checkProjectDeletionMysql } = await import('./project-deletion-mysql.mjs');
+  await checkProjectDeletionMysql(db);
 
   // Serialize this check with migrations and other database fixtures. It exercises
   // the real policy row lock, so mocks cannot hide overspending under concurrency.

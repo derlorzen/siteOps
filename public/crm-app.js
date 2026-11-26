@@ -275,37 +275,38 @@
       '<span class="crm-timeline-time">'+prettyDate(e.occurred_at)+'</span></a>'
     ).join('')+'</div>';
   }
+  const projectSections=[['overview','Übersicht'],['tasks','Aufgaben'],['websites','Websites'],['billing','Zeiten & Abrechnung'],['activity','Aktivität'],['settings','Einstellungen']];
+  function projectSection(){
+    const hash=location.hash.slice(1);
+    return projectSections.some(([key])=>key===hash)?hash:'overview';
+  }
   function project360Panel(){
     const data=state.overview;
-    if(!data)return '<section class="crm-360-panel"><div class="crm-panel-head"><h2>Projekt-360°</h2>'+
-      '<p>Aufgaben, Websites, Monitoring und Abrechnung im Zusammenhang.</p></div>'+
-      '<p class="crm-muted">Projektkennzahlen werden geladen oder sind momentan nicht verfügbar.</p></section>';
-    const time=data.time||{};
-    const activeIncidents=data.incidents||[];
-    return '<section class="crm-360-panel"><div class="crm-panel-head"><div><h2>Projekt-360°</h2>'+
-      '<p>Websitebetrieb, Arbeitsfortschritt und Abrechnung an einem Ort.</p></div></div>'+
+    if(!data)return '<section class="crm-360-panel"><h2>Projektübersicht</h2><p class="crm-muted">'+(state.boardLoading?'Projektkennzahlen werden geladen …':'Projektkennzahlen sind momentan nicht verfügbar.')+'</p>'+
+      button('Erneut laden','retry-board','','crm-btn-ghost')+'</section>';
+    const time=data.time||{},activeIncidents=data.incidents||[];
+    return '<section class="crm-360-panel"><div class="crm-panel-head"><div><h2>Handlungsbedarf</h2><p>Was steht an und wo gibt es offene Probleme?</p></div></div>'+
       '<div class="crm-360-kpis">'+[
-        [data.sites.length,'Websites'],
-        [Number(data.task_counts?.overdue||0),'Überfällige Tasks'],
-        [(Number(time.unbilled_seconds||0)/3600).toFixed(1)+' h','Noch nicht abgerechnet'],
-        [eur(time.unbilled_cents),'Offener Leistungswert']
-      ].map(([value,label])=>'<div><strong>'+esc(value)+'</strong><small>'+esc(label)+'</small></div>').join('')+'</div>'+
-      '<div class="crm-360-columns"><div><h3>Website-Gesundheit</h3>'+
-      (data.sites.length?data.sites.map(site=>
-        '<a class="crm-360-site" href="/sites/'+encodeURIComponent(site.slug)+'"><span>'+
-        '<strong>'+esc(site.name)+'</strong><small>'+esc(site.domain)+'</small></span>'+
-        badge(site.status?.label||'Status unbekannt',site.status?.tone==='positive'?'positive':site.status?.tone==='danger'?'danger':'')+
-        '</a>').join(''):'<p class="crm-muted">Noch keine Websites im Projekt.</p>')+
-      (activeIncidents.length?'<h3>Aktuelle Störungen</h3>'+activeIncidents.map(issue=>
-        '<a class="crm-360-incident" href="/sites/'+encodeURIComponent(issue.slug)+'">'+
-        '<strong>'+esc(issue.site_name)+'</strong><span>'+esc(issue.title)+'</span></a>').join(''):'')+
-      '</div><div><h3>Rechnungen zu diesem Projekt</h3>'+
-      ((data.invoices||[]).length?data.invoices.map(i=>
-        '<a class="crm-360-invoice" href="/billing/invoices" data-route="/billing/invoices">'+
-        '<span><strong>'+esc(i.invoice_number||'Entwurf')+'</strong><small>'+
-        esc(i.status)+' · Projektanteil netto '+eur(i.project_net_cents)+'</small></span>'+
-        '<span>→</span></a>').join(''):'<p class="crm-muted">Noch keine Rechnungen aus Projektzeiten.</p>')+
-      '</div></div></section>';
+        [data.sites.length,'Websites','websites'],
+        [Number(data.task_counts?.overdue||0),'Überfällige Aufgaben','tasks'],
+        [(Number(time.unbilled_seconds||0)/3600).toFixed(1)+' h','Noch nicht abgerechnet','billing'],
+        [eur(time.unbilled_cents),'Offener Leistungswert','billing']
+      ].map(([value,label,section])=>'<button type="button" class="crm-project-kpi" data-action="project-section" data-section="'+section+'"><strong>'+esc(value)+'</strong><small>'+esc(label)+'</small></button>').join('')+'</div>'+
+      '<h3>Website-Zustand</h3>'+
+      (data.sites.length?data.sites.map(site=>'<a class="crm-360-site" href="/sites/'+encodeURIComponent(site.slug)+'"><span><strong>'+esc(site.name)+'</strong><small>'+esc(site.domain)+'</small></span>'+
+        badge(site.status?.label||'Status unbekannt',site.status?.tone==='positive'?'positive':site.status?.tone==='danger'?'danger':'')+'</a>').join(''):'<p class="crm-muted">Noch keine Websites im Projekt.</p>')+
+      (activeIncidents.length?'<p>'+activeIncidents.length+' offene Störung(en). Details findest du in der Website-Überwachung.</p>':'')+
+      button('Websites verwalten','project-section','data-section="websites"','crm-btn-ghost')+'</section>';
+  }
+  function projectBillingPanel(id){
+    const data=state.overview,entries=state.entries.filter(e=>e.project_id===id);
+    return '<section class="crm-360-panel"><div class="crm-panel-head"><div><h2>Zeiten & Abrechnung</h2><p>Nur erfasste Leistungen und Rechnungen dieses Projekts.</p></div>'+
+      '<a class="crm-btn crm-btn-ghost" href="/billing/time?project_id='+encodeURIComponent(id)+'">Zeitbuchungen öffnen</a></div>'+
+      (data?'<div class="crm-360-kpis"><div><strong>'+hour(data.time?.total_seconds)+'</strong><small>Erfasst</small></div><div><strong>'+hour(data.time?.unbilled_seconds)+'</strong><small>Noch nicht abgerechnet</small></div><div><strong>'+eur(data.time?.unbilled_cents)+'</strong><small>Offener Leistungswert</small></div></div>':'<p class="crm-muted">Abrechnungsübersicht derzeit nicht verfügbar.</p>')+
+      '<h3>Letzte Zeitbuchungen</h3>'+
+      (entries.length?entries.slice(0,10).map(e=>'<div class="crm-360-invoice"><span><strong>'+esc(e.task_name)+'</strong><small>'+day(e.entry_date)+' · '+esc(e.description||'')+'</small></span><span>'+hour(e.duration_seconds)+'</span></div>').join(''):'<p class="crm-muted">Noch keine Zeitbuchungen.</p>')+
+      '<h3>Rechnungen zu diesem Projekt</h3>'+
+      ((data?.invoices||[]).length?data.invoices.map(i=>'<a class="crm-360-invoice" href="/billing/invoices" data-route="/billing/invoices"><span><strong>'+esc(i.invoice_number||'Entwurf')+'</strong><small>'+esc(i.status)+' · Projektanteil netto '+eur(i.project_net_cents)+'</small></span><span>→</span></a>').join(''):data?'<p class="crm-muted">Noch keine Rechnungen aus Projektzeiten.</p>':'')+'</section>';
   }
   async function loadWorkspaceActivity(){
     state.activityLoading=true;state.activityError='';
@@ -347,6 +348,7 @@
     const availableSites=state.sites.filter(site=>!state.siteLinks.some(link=>link.site_id===site.id));
     const cmsBySite=new Map((state.cmsInstallations.installations||[]).map(c=>[c.siteId,c]));
     const cmsSites=linkedSites.filter(link=>cmsBySite.has(link.site_id));
+    const section=projectSection();
     const cmsPanel='<section class="crm-project-websites crm-project-cms">'+
       '<div class="crm-panel-head"><div><h2>LorzCMS in diesem Projekt</h2>'+
       '<p>Installation, CMS-Core und Redaktionszugriff direkt im Projekt verwalten.</p></div>'+
@@ -366,13 +368,13 @@
       '<div class="crm-linked-site"><span class="crm-project-icon">◎</span><div><strong>'+esc(link.site_name)+'</strong>'+
       '<small>'+esc(link.domain)+'</small></div>'+
       '<a class="crm-btn crm-btn-ghost" href="/sites/'+encodeURIComponent(link.slug)+'">Öffnen →</a>'+
-      button('Entfernen','unlink-site','data-site-id="'+esc(link.site_id)+'"','crm-btn-ghost')+'</div>'
+      button('Verknüpfung lösen','unlink-site','data-site-id="'+esc(link.site_id)+'"','crm-btn-ghost')+'</div>'
       ).join('')||'<p class="crm-muted">Noch keine Websites verknüpft.</p>')+'</div>'+
       '<div class="crm-inline-row"><label class="crm-field"><span>Website verknüpfen</span>'+
       select('attach_site',[['','Website auswählen'],...availableSites.map(s=>[s.id,s.name+' · '+s.domain])],'','id="crmAttachSite"')+
       '</label>'+button('Verknüpfen','attach-site','','crm-btn-primary')+
-      '<a class="crm-btn crm-btn-ghost" href="/setup">+ Neue Website</a></div></section>';
-    const stats='<div class="crm-project-stats"><div><strong>'+taskList.length+'</strong><span>Tasks</span></div>'+
+      '<a class="crm-btn crm-btn-ghost" href="/setup">+ Neue Website</a><a class="crm-btn crm-btn-ghost" href="/coolify?projectId='+encodeURIComponent(project.id)+'">+ Coolify-Anwendung</a></div></section>';
+    const stats='<div class="crm-project-stats"><div><strong>'+taskList.length+'</strong><span>Aufgaben</span></div>'+
       '<div><strong>'+complete+'</strong><span>Erledigt</span></div>'+
       '<div><strong>'+(taskList.length?progress+' %':'–')+'</strong><span>Fortschritt</span></div>'+
       '<div><strong>'+Math.round(totalSeconds/3600*10)/10+' h</strong><span>Arbeitszeit</span></div></div>';
@@ -383,15 +385,22 @@
       state.boardError?'<div class="crm-empty is-error"><h3>Board konnte nicht geladen werden</h3><p>'+esc(state.boardError)+
       '</p>'+button('Erneut versuchen','retry-board','','crm-btn-primary')+'</div>':
       !state.board?'<div class="crm-loading">Board wird vorbereitet …</div>':state.view==='list'?listView():boardView();
+    const sectionNav='<nav class="crm-project-sections" aria-label="Projektbereiche">'+projectSections.map(([key,label])=>
+      '<button type="button" data-action="project-section" data-section="'+key+'"'+(section===key?' aria-current="page" class="selected"':'')+'>'+label+'</button>').join('')+'</nav>';
+    const overview=stats+project360Panel()+'<section class="crm-panel"><h2>Nächster Schritt</h2>'+
+      '<p>'+esc(project.description||'Arbeite an offenen Aufgaben, verwalte die Websites oder erfasse deine Leistungen.')+'</p>'+
+      button('Aufgaben öffnen','project-section','data-section="tasks"','crm-btn-primary')+'</section>';
+    const taskPanel='<div class="crm-project-toolbar"><div>'+tabs+'</div><div class="crm-project-tools">'+button('Board neu laden','retry-board','','crm-btn-ghost')+'</div></div>'+
+      board+'<details class="crm-project-maintenance"><summary>Wartungsaufgaben & Vorlagen</summary>'+maintenanceView()+'</details>';
+    const activity='<section class="crm-activity-panel"><div class="crm-panel-head"><div><h2>Projektaktivitäten</h2><p>Nur Ereignisse dieses Projekts, chronologisch.</p></div></div>'+activityTimeline(state.activityEntries.slice(0,15))+'</section>';
+    const settings='<section class="crm-panel"><h2>Projekteinstellungen</h2><p>Projektname, Beschreibung, Status und Stundensatz.</p>'+
+      button('Projekt bearbeiten','edit-project','','crm-btn-ghost')+'</section><section class="crm-panel crm-project-danger"><h2>Projekt entfernen</h2><p>Aufgaben und Projektverläufe entfernen. Websites müssen zuvor gelöst oder separat gelöscht werden. Projekte mit Zeiteinträgen bleiben geschützt.</p>'+
+      button('Projekt löschen','delete-project-preview','','crm-btn-ghost')+'</section>';
+    const content={overview, tasks:taskPanel, websites:sitePanel+cmsPanel, billing:projectBillingPanel(id), activity, settings}[section];
     return '<div class="crm-breadcrumb"><a href="/billing" data-route="/billing">Projekte</a><span>›</span><span>'+esc(customer?.name||'')+'</span></div>'+
-      heading('PROJEKT',project.name,customer?.name||'',
-        '<a class="crm-btn crm-btn-ghost" href="/coolify?projectId='+encodeURIComponent(project.id)+'">+ Coolify-Anwendung</a>'+button('Aufgabe erstellen','new-task','','crm-btn-primary')+button('Projekt bearbeiten','edit-project','','crm-btn-ghost'))+
-      stats+'<div class="crm-project-toolbar"><div>'+tabs+'</div><div class="crm-project-tools">'+
-      button('↻','retry-board','aria-label="Board neu laden"','crm-btn-ghost')+'</div></div>'+
-      board+'<details class="crm-project-maintenance"><summary>Websites und Abrechnung im Projekt</summary>'+project360Panel()+sitePanel+cmsPanel+'</details><details class="crm-project-maintenance"><summary>Wartungsaufgaben & Vorlagen</summary>'+maintenanceView()+'</details>'+
-      '<section class="crm-activity-panel"><div class="crm-panel-head"><h2>Letzte Projektaktivitäten</h2>'+
-      '<a class="crm-btn crm-btn-ghost" href="/billing/activity" data-route="/billing/activity">Gesamter Verlauf →</a></div>'+
-      activityTimeline(state.activityEntries.slice(0,10))+'</section>';
+      heading('PROJEKT',project.name,(customer?.name||'')+' · '+({active:'Aktiv',paused:'Pausiert',completed:'Abgeschlossen'}[project.status]||'Status unbekannt'),
+        section==='tasks'?button('Aufgabe erstellen','new-task','','crm-btn-primary'):'')+
+      sectionNav+'<div data-project-section="'+section+'">'+content+'</div>';
   }
   function statusOptions(value) {return select('status',statusOrder.map(s=>[s,statusName[s]]),value,'data-status-select');}
   function card(task) {
@@ -810,6 +819,27 @@
       }
       case 'new-project':projectModal('',source.dataset.customerId);break;
       case 'edit-project':projectModal(project);break;
+      case 'project-section':{
+        const section=source.dataset.section;
+        if(!projectSections.some(([key])=>key===section))break;
+        history.pushState({},'',location.pathname+location.search+'#'+section);
+        render();
+        root.querySelector('[data-action="project-section"][data-section="'+section+'"]')?.focus();
+        break;
+      }
+      case 'delete-project-preview':{
+        source.disabled=true;
+        try{
+          const plan=await api('/api/billing/projects/'+encodeURIComponent(project)+'/delete-preview','POST',{});
+          const summary='<p>'+esc(plan.tasks)+' Aufgaben · '+esc(plan.recurring_rules)+' wiederkehrende Regeln · '+esc(plan.websites)+' Websites · '+esc(plan.time_entries)+' Zeitbuchungen</p><p>'+esc(plan.warning)+'</p>';
+          modal(modalFrame('Projekt löschen',plan.name,summary+
+            (plan.blockers.length?'<div class="crm-error" role="alert">'+plan.blockers.map(x=>'<p>'+esc(x)+'</p>').join('')+'</div><button type="button" class="crm-btn" data-action="close-modal">Schließen</button>':
+              '<form class="crm-stack" data-form="project-delete" data-id="'+esc(plan.token)+'">'+
+              field('Zur Bestätigung Projektname eingeben','confirmation','','required autocomplete="off" placeholder="'+esc(plan.confirmation)+'"')+
+              '<button type="submit" class="crm-btn crm-btn-primary">Projekt endgültig löschen</button></form>')),'project-delete');
+        }finally{source.disabled=false;}
+        break;
+      }
       case 'new-task':taskModal('',source.dataset.status||'open');break;
       case 'open-task':taskModal(taskId);break;
       case 'manual-time':manualTimeModal();break;
@@ -948,6 +978,10 @@
     const kind=form.dataset.form;
     const id=form.dataset.id||'';
     switch(kind){
+      case 'project-delete':{
+        await api('/api/billing/project-deletions/confirm','POST',{token:id,confirmation:formVal(form,'confirmation')});
+        closeModal();state.projectId='';state.board=null;await reload();navigate('/billing');notice('Projekt gelöscht.');break;
+      }
       case 'invoice-reset':{
         const draft=await api('/api/billing/invoices/'+id+'/reset-draft','POST',{reason:formVal(form,'reason')});
         closeModal();await reload();

@@ -132,6 +132,12 @@
   "PATCH /api/billing/projects/:id": {
     "tools": ["project_update"]
   },
+  "POST /api/billing/projects/:id/delete-preview": {
+    "tools": ["project_delete_preview"]
+  },
+  "POST /api/billing/project-deletions/confirm": {
+    "tools": ["project_delete_confirm"]
+  },
   "GET /api/billing/boards/:projectId": {
     "tools": ["project_board"]
   },
