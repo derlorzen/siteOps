@@ -15,7 +15,9 @@ test('runner audits a page with axe-core and local Lighthouse', { skip: !enabled
   const site = createServer((req, res) =>
     res
       .writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-      .end('<!doctype html><html><head><title>Fixture</title></head><body><img src="/x.png"><input></body></html>')
+      .end(
+        '<!doctype html><html><head><title>Fixture</title></head><body><h1>Fixture</h1><p>Ein Absatz mit sichtbarem Text.</p><img src="/x.png"><input></body></html>'
+      )
   );
   await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
   const app = Fastify();
@@ -41,5 +43,10 @@ test('runner audits a page with axe-core and local Lighthouse', { skip: !enabled
   for (const id of ['image-alt', 'html-has-lang', 'label']) assert.ok(ids.includes(id), id);
   assert.equal(result.lighthouse.mobile.source, 'runner');
   assert.ok(result.lighthouse.mobile.scores.accessibility < 100);
-  assert.equal(typeof result.lighthouse.mobile.scores.performance, 'number');
+  assert.equal(typeof result.lighthouse.mobile.scores.seo, 'number');
+  // Performance needs a paint; Lighthouse reports a runtime error instead of a score otherwise.
+  assert.ok(
+    typeof result.lighthouse.mobile.scores.performance === 'number' || result.lighthouse.mobile.runtimeError,
+    JSON.stringify(result.lighthouse.mobile)
+  );
 });

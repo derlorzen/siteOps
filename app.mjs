@@ -4059,6 +4059,13 @@ async function runSeoAudit(
           });
           if (audit.lighthouse?.mobile) p.lighthouseMobile = audit.lighthouse.mobile;
           if (audit.lighthouse?.desktop) p.lighthouseDesktop = audit.lighthouse.desktop;
+          for (const report of [audit.lighthouse?.mobile, audit.lighthouse?.desktop])
+            if (report?.runtimeError)
+              p.issues.push({
+                level: 'info',
+                code: 'pagespeed_error',
+                text: 'Lighthouse ' + report.strategy + ': ' + String(report.runtimeError).slice(0, 300)
+              });
           if (audit.axe) {
             seoApplyAxe(p, audit.axe);
             axePages++;
