@@ -493,6 +493,9 @@ test(
     await page.locator('#crmProjectSearch').fill('Nordlicht');
     assert.equal(await page.locator('#crmProjectTable tbody tr').count(), 1);
     await page.locator('#crmProjectTable a.ui-identity').click();
+    await page.locator('[data-project-section="overview"]').waitFor();
+    assert.equal(await page.locator('.crm-task-card').count(),0);
+    await page.locator('.crm-project-sections [data-section="tasks"]').click();
     await page.locator('.crm-task-card [data-status-select]').selectOption('in_progress');
     await page.getByText('Task verschoben.', { exact: true }).waitFor();
     assert.equal(task.status, 'in_progress');
@@ -546,23 +549,25 @@ test(
       await page.reload();
       assert.deepEqual(await visible(), [keys[1]], 'a reload keeps the open area');
     }
-    // The website page has three views; tabs follow the address.
+    // Website areas follow the address and do not mix monitoring with backups.
     await page.goto('https://siteops.test/sites/nordlicht');
     const siteView = () =>
       page.locator('[data-site-view]:visible').evaluateAll(nodes => nodes.map(node => node.dataset.siteView));
     assert.deepEqual(await siteView(), ['overview']);
     assert.deepEqual(await page.locator('.ops-site-tabs a').allTextContents(), [
       'Übersicht',
+      'Überwachung',
       'Dateien',
       'Sichtbarkeit',
       'Tests',
       'Bericht',
-      'Verlauf',
+      'Sicherungen',
       'Einstellungen'
     ]);
     for (const [label, view] of [
       ['Einstellungen', 'settings'],
-      ['Verlauf', 'history'],
+      ['Überwachung', 'history'],
+      ['Sicherungen', 'backups'],
       ['Übersicht', 'overview']
     ]) {
       await page.locator('.ops-site-tabs a', { hasText: label }).click();

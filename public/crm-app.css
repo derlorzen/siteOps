@@ -358,3 +358,16 @@ body:has(#crmRoot) .navinner{max-width:1620px}
  #crmRoot .crm-topbar-label{flex:1;overflow:hidden}
  #crmRoot .crm-top-actions{min-width:42px}
 }
+
+#crmRoot .crm-project-sections{display:flex;flex-wrap:wrap;gap:8px 20px;margin:12px 0 22px;border-bottom:1px solid var(--crm-line)}
+#crmRoot .crm-project-sections button{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--ink-secondary,#4b5369);min-height:44px;padding:8px 2px;font:inherit;font-weight:600;text-align:left}
+#crmRoot .crm-project-sections button.selected{border-bottom-color:var(--siteops-accent);color:var(--siteops-accent-strong)}
+#crmRoot .crm-project-kpi{background:var(--surface,#fff);border:1px solid var(--crm-line);color:inherit;text-align:left;padding:12px;border-radius:8px;display:grid;gap:5px;min-width:0;min-height:44px}
+#crmRoot .crm-project-kpi strong{font-size:var(--fs-h2,20px)}
+#crmRoot .crm-project-kpi small{color:var(--ink-secondary,#4b5369);white-space:normal}
+#crmRoot .crm-project-danger{margin-top:24px}
+@media(max-width:600px){
+  #crmRoot .crm-project-sections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
+  #crmRoot .crm-project-sections button{white-space:normal;overflow-wrap:anywhere}
+  #crmRoot .crm-project-danger button{width:100%;min-height:44px}
+}
