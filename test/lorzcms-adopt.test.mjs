@@ -7,7 +7,8 @@ const id = '11111111-1111-4111-8111-111111111111';
 const oldId = '22222222-2222-4222-8222-222222222222';
 const key = 'a'.repeat(64);
 const hash = crypto.createHash('sha256').update(key).digest('hex');
-const config = (owner, keyHash) => Buffer.from("<?php\nreturn ['instance_id'=>'" + owner + "','key_hash'=>'" + keyHash + "'];\n");
+const config = (owner, keyHash) =>
+  Buffer.from("<?php\nreturn ['instance_id'=>'" + owner + "','key_hash'=>'" + keyHash + "'];\n");
 const agentFiles = new Map([
   ['.lorzcms/agent.php', Buffer.from('new agent')],
   ['.lorzcms/project.php', Buffer.from('new project helper')],
@@ -76,11 +77,14 @@ test('adopt stops on foreign owners and repairs only after matching confirmation
     '/public/siteops.php': 'old wrapper'
   });
   const before = new Map(files);
-  await assert.rejects(() => repair(remote), error => {
-    assert.equal(error.cmsCode, 'CMS_FOREIGN_OWNER');
-    assert.deepEqual(error.foreignOwners, [oldId]);
-    return true;
-  });
+  await assert.rejects(
+    () => repair(remote),
+    error => {
+      assert.equal(error.cmsCode, 'CMS_FOREIGN_OWNER');
+      assert.deepEqual(error.foreignOwners, [oldId]);
+      return true;
+    }
+  );
   assert.deepEqual(files, before);
   await assert.rejects(() => repair(remote, { confirmedOwners: [id] }), /Schlüssel wird ersetzt/);
   assert.deepEqual(files, before);
@@ -96,7 +100,12 @@ test('401 or health-check failure restores previous bytes and removes newly adde
   });
   const before = new Map(files);
   await assert.rejects(
-    () => repair(remote, { verify: async () => { throw cmsAgentHttpError(401); } }),
+    () =>
+      repair(remote, {
+        verify: async () => {
+          throw cmsAgentHttpError(401);
+        }
+      }),
     /HTTP 401/
   );
   assert.deepEqual(files, before);

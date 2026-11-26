@@ -253,10 +253,16 @@ test(
     const copiedCore = await readFile(new URL('../lib/lorzcms/index.php', import.meta.url));
     const oldOwner = crypto.randomUUID();
     files.set('/copy/public/index.php', copiedCore);
-    files.set('/copy/.lorzcms/active.json', Buffer.from(JSON.stringify({ version: base.version, digest: base.digest })));
+    files.set(
+      '/copy/.lorzcms/active.json',
+      Buffer.from(JSON.stringify({ version: base.version, digest: base.digest }))
+    );
     files.set('/copy/.lorzcms/releases/' + base.version + '/manifest.json', Buffer.from(base.manifestText));
     files.set('/copy/.lorzcms/owner.json', Buffer.from(JSON.stringify({ instanceId: oldOwner })));
-    files.set('/copy/config/siteops.php', Buffer.from("<?php return ['instance_id'=>'" + oldOwner + "','key_hash'=>'" + 'b'.repeat(64) + "'];"));
+    files.set(
+      '/copy/config/siteops.php',
+      Buffer.from("<?php return ['instance_id'=>'" + oldOwner + "','key_hash'=>'" + 'b'.repeat(64) + "'];")
+    );
     files.set('/copy/.lorzcms/agent.php', Buffer.from('old agent'));
     files.set('/copy/public/siteops.php', Buffer.from('old wrapper'));
     const copyInput = { site: copy.id, baseUrl: 'https://copy.example.de', publicRootReady: true };
