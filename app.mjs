@@ -660,6 +660,12 @@ class SftpAdapter {
     await this.client.mkdir(pathPosix.dirname(path), true);
     await this.client.put(content, path);
   }
+  async rename(from, to) {
+    // POSIX rename replaces an existing file without an intermediate missing-file window.
+    // If unsupported, fail closed for an existing target; never delete it first.
+    if (await this.exists(to)) return this.client.posixRename(from, to);
+    return this.client.rename(from, to);
+  }
   async exists(path) {
     return Boolean(await this.client.exists(path));
   }
@@ -716,6 +722,10 @@ class FtpAdapter {
     const dir = pathPosix.dirname(path);
     await this.client.ensureDir(dir);
     await this.client.uploadFrom(Readable.from(content), pathPosix.basename(path));
+  }
+  async rename(from, to) {
+    // RNFR/RNTO in the same directory: never remove the destination before renaming.
+    await this.client.rename(from, to);
   }
   async exists(path) {
     try {
