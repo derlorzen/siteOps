@@ -20,6 +20,8 @@
     "capabilities": "node scripts/capability-matrix.mjs"
   },
   "dependencies": {
+    "@crawlee/basic": "^3.18.2",
+    "@crawlee/memory-storage": "^3.18.2",
     "@fastify/rate-limit": "^10.2.2",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",

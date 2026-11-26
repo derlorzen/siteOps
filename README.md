@@ -539,6 +539,15 @@ The OAuth issuer and MCP resource URLs are derived from this value, so it must b
 - `PAGESPEED_API_KEY`
 - `SEO_USER_AGENT`
 - `SEO_RENDER_MAX_PAGES` — max pages per crawl re-rendered through the Browser Runner when the raw HTML looks too thin (default `20`, see below)
+- `SEO_CRAWL_CONCURRENCY` — pages fetched in parallel (default `4`, max `16`)
+- `SEO_CRAWL_MAX_REQUESTS_PER_MINUTE` — upper bound per crawl, to protect shared hosting (default `120`)
+- `SEO_CRAWL_RETRIES` — extra attempts for network errors, 408/425/429 and 5xx responses (default `2`)
+
+Crawl scheduling (queue, deduplication, autoscaled concurrency, rate limit, retries) uses
+[Crawlee](https://github.com/apify/crawlee) (Apache-2.0) in-process with in-memory storage;
+no extra service and no files are written. Page fetching, redirect capture, the Browser Runner
+render fallback and all SEO checks remain SiteOps code. The link crawl runs breadth-first from
+the homepage, then sitemap URLs the links did not reach are crawled for orphan detection.
 
 The normal SiteOps SEO crawler does **not** require a PageSpeed API key.
 

@@ -90,6 +90,7 @@ import { createAiUsage, aiLimitsSchema } from './lib/ai-usage.mjs';
 import { renderAiUsage } from './lib/ai-usage-ui.mjs';
 import { createBackupJobs, backupJobInput } from './lib/backup-jobs.mjs';
 import { renderWebsiteFiles } from './lib/website-files-ui.mjs';
+import { crawlSeoSite } from './lib/seo-crawler.mjs';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -135,6 +136,9 @@ const cfg = {
   pageSpeedApiKey: process.env.PAGESPEED_API_KEY || '',
   seoMaxPages: Number(env('SEO_MAX_PAGES', '100')),
   seoRenderMaxPages: Number(env('SEO_RENDER_MAX_PAGES', '20')),
+  seoCrawlConcurrency: Number(env('SEO_CRAWL_CONCURRENCY', '4')),
+  seoCrawlMaxRequestsPerMinute: Number(env('SEO_CRAWL_MAX_REQUESTS_PER_MINUTE', '120')),
+  seoCrawlRetries: Number(env('SEO_CRAWL_RETRIES', '2')),
   seoUserAgent: env('SEO_USER_AGENT', 'Lorzen-SiteOps-SEO/1.0'),
   browserRunnerUrl: process.env.BROWSER_RUNNER_URL || '',
   browserRunnerToken: process.env.BROWSER_RUNNER_TOKEN || '',
@@ -3785,53 +3789,24 @@ async function runSeoAudit(
     root = seoNormalizeUrl(configuredUrl.origin + '/'),
     rootUrl = new URL(root),
     rootHost = rootUrl.hostname,
-    queue = [{ url: root, depth: 0 }],
-    queued = new Set([seoSiteUrlKey(root)]),
-    crawled = new Set(),
-    pages = [],
-    links = [],
     renderBudget = { remaining: cfg.seoRenderMaxPages };
   const sitemap = await seoDiscoverSitemaps(root, Math.min(maxPages * 3, 1500)),
     sitemapKeySet = new Set(sitemap.pages.map(seoSiteUrlKey)),
-    rootKey = seoSiteUrlKey(root),
-    sitemapPending = sitemap.pages.filter(url => seoSiteUrlKey(url) !== rootKey);
+    rootKey = seoSiteUrlKey(root);
   try {
-    while ((queue.length || sitemapPending.length) && pages.length < maxPages) {
-      if (!queue.length) {
-        let candidate = null;
-        while (sitemapPending.length && !candidate) {
-          const next = sitemapPending.shift(),
-            key = seoSiteUrlKey(next);
-          if (!crawled.has(key) && !queued.has(key)) candidate = next;
-        }
-        if (!candidate) break;
-        queued.add(seoSiteUrlKey(candidate));
-        queue.push({ url: candidate, depth: null });
-      }
-      const item = queue.shift(),
-        itemKey = seoSiteUrlKey(item.url);
-      queued.delete(itemKey);
-      if (crawled.has(itemKey)) continue;
-      crawled.add(itemKey);
-      const page = await crawlSeoPage(item.url, rootHost, item.depth, renderBudget);
-      crawled.add(seoSiteUrlKey(page.finalUrl));
-      pages.push(page);
-      links.push(...page.links);
-      for (const l of page.links) {
-        const targetKey = seoSiteUrlKey(l.target);
-        if (!l.internal || !seoCrawlableUrl(l.target, rootHost) || crawled.has(targetKey)) continue;
-        const linkedDepth = item.depth == null ? 1 : item.depth + 1,
-          existing = queue.find(x => seoSiteUrlKey(x.url) === targetKey);
-        if (existing) {
-          if (existing.depth == null || linkedDepth < existing.depth) existing.depth = linkedDepth;
-          continue;
-        }
-        if (pages.length + queue.length < maxPages && !queued.has(targetKey)) {
-          queued.add(targetKey);
-          queue.push({ url: l.target, depth: linkedDepth });
-        }
-      }
-    }
+    // Queue, deduplication, concurrency, rate limit and retries: Crawlee (lib/seo-crawler.mjs).
+    const pages = await crawlSeoSite({
+        root,
+        sitemapPages: sitemap.pages,
+        maxPages,
+        keyOf: seoSiteUrlKey,
+        isCrawlable: url => seoCrawlableUrl(url, rootHost),
+        fetchPage: (url, depth) => crawlSeoPage(url, rootHost, depth, renderBudget),
+        concurrency: cfg.seoCrawlConcurrency,
+        maxRequestsPerMinute: cfg.seoCrawlMaxRequestsPerMinute,
+        retries: cfg.seoCrawlRetries
+      }),
+      links = pages.flatMap(p => p.links);
     const canonicalUrlByKey = new Map(pages.map(p => [seoSiteUrlKey(p.url), p.url])),
       graphLinks = links.map(l =>
         l.internal
@@ -8668,6 +8643,7 @@ export {
   seoSiteUrlKey,
   seoCrawlableUrl,
   seoFetchDocument,
+  crawlSeoPage,
   isUtf8Text,
   gitTreeEntryPayload,
   githubRateLimitMessage,
