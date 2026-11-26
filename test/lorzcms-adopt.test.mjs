@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { cmsAgentHttpError, connectorOwners, proveAdoptTarget, repairAdoptConnector } from '../lib/lorzcms-adopt.mjs';
 
-const id = '6dd277f6-aece-42cb-9b57-58a33a770566';
-const oldId = '38030078-f036-40e4-8bb6-ea6e624fbc93';
+const id = '11111111-1111-4111-8111-111111111111';
+const oldId = '22222222-2222-4222-8222-222222222222';
 const key = 'a'.repeat(64);
 const hash = crypto.createHash('sha256').update(key).digest('hex');
 const config = (owner, keyHash) => Buffer.from("<?php\nreturn ['instance_id'=>'" + owner + "','key_hash'=>'" + keyHash + "'];\n");
