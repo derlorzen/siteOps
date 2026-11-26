@@ -174,8 +174,9 @@
     if(!match)return;
     const slug=match[1], sub=match[2]||'overview', base='/sites/'+esc(slug);
     // One website, one set of areas. SEO and Search Console are two views of "Sichtbarkeit".
-    const tabs=[['overview','Übersicht',''],['files','Dateien','/files'],['visibility','Sichtbarkeit','/seo'],['tests','Tests','/tests'],['report','Bericht','/report'],['history','Verlauf','#history'],['settings','Einstellungen','#settings']];
-    const current=()=>sub==='overview'?(['settings','history'].includes(location.hash.slice(1))?location.hash.slice(1):'overview'):(['seo','search-console'].includes(sub)?'visibility':sub);
+    const coolify=Boolean($('[data-site-kind="coolify"]'));
+    const tabs=[['overview','Übersicht',''],['history','Überwachung','#history'],['files','Dateien','/files'],['visibility','Sichtbarkeit','/seo'],['tests','Tests','/tests'],['report','Bericht','/report'],['backups','Sicherungen','#backups'],['settings','Einstellungen','#settings']].filter(([key])=>!coolify||!['files','backups'].includes(key));
+    const current=()=>sub==='overview'?(['settings','history','backups'].includes(location.hash.slice(1))?location.hash.slice(1):'overview'):(['seo','search-console'].includes(sub)?'visibility':sub);
     const main=$('.ops-main');
     for(const old of main.querySelectorAll(':scope > a.backlink'))old.remove();
     const back=document.createElement('a');back.className='ops-site-back';back.href='/websites';back.textContent='← Alle Websites';
@@ -216,8 +217,25 @@
     // A link or script that targets something inside a hidden panel opens that panel first.
     window.SiteOpsTabs={show:id=>{const panel=document.getElementById(id)?.closest('[data-ui-panel]');if(panel)select(panel.dataset.uiPanel);}};
   }
+  function monitorControl(){
+    const control=$('[data-monitor-control]');if(!control)return;
+    const button=control.querySelector('[data-monitor-toggle]'),feedback=control.querySelector('[data-monitor-feedback]');
+    button.addEventListener('click',async()=>{
+      const active=control.dataset.monitorActive==='true', enabled=control.dataset.siteEnabled==='true';
+      button.disabled=true;feedback.hidden=false;feedback.textContent='Speichere …';
+      try{
+        const payload={monitor_enabled:!active};
+        if(!active&&!enabled)payload.enabled=true;
+        const response=await fetch('/api/sites/'+encodeURIComponent(control.dataset.slug),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+        const result=await response.json();if(!response.ok)throw Error(result.message||result.error||'Speichern fehlgeschlagen.');
+        feedback.textContent=active?'Überwachung pausiert.':'Überwachung aktiviert.';
+        location.reload();
+      }catch(error){feedback.textContent=error.message;button.disabled=false;}
+    });
+  }
   uiTabs();
   siteTabs();
+  monitorControl();
   if(/^\/sites\/[^/]+$/.test(path)){
     void Promise.all([fetchRelations(),fetchJSON('/api/sites/'+decodeURIComponent(path.split('/')[2]))])
       .then(([,site])=>renderSiteAssignment(site))

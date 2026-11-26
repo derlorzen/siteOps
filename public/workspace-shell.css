@@ -188,3 +188,14 @@ body.siteops-workspace .ops-main .site-danger{border-color:#f0cdd0}
 @media(max-width:600px){.ops-site-subtabs{display:flex}.ops-site-subtabs a{flex:1;justify-content:center;padding:6px 8px}}
 body:is([data-site-current=settings],[data-site-current=history]) :is(#opsSiteProject,.ops-site-project){display:none}
 .ui-link-cards li{margin:0;padding:0;border:0}
+
+/* Website operations: quick action stays visible without a hidden settings menu. */
+.siteops-workspace .site-monitor-control{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;margin:12px 0 20px;border:1px solid var(--line);border-radius:8px;background:var(--surface,#fff);min-width:0}
+.siteops-workspace .site-monitor-control p{margin:4px 0 0;color:var(--ink-secondary);font-size:var(--fs-control,14px)}
+.siteops-workspace .site-monitor-control button{min-height:44px;flex-shrink:0}
+@media(max-width:600px){
+  .siteops-workspace .site-monitor-control{align-items:stretch;flex-direction:column;gap:10px}
+  .siteops-workspace .site-monitor-control button{width:100%;white-space:normal}
+  body.siteops-workspace .ops-main .ops-site-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;overflow:visible;margin-bottom:16px}
+  body.siteops-workspace .ops-main .ops-site-tabs a{white-space:normal;overflow-wrap:anywhere;display:flex;align-items:center;min-height:44px;padding:8px 0}
+}

@@ -1,6 +1,7 @@
 import { configuredApprovalMode, mcpOperatingInstructions } from './lib/approval-mode.mjs';
 import { createSiteDeletion, deletionPlanSchema, deletionConfirmSchema } from './lib/site-deletion.mjs';
 import { renderSiteDeletion } from './lib/site-deletion-ui.mjs';
+import { renderMonitorControl } from './lib/site-monitor-ui.mjs';
 import Fastify from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import mysql from 'mysql2/promise';
@@ -7413,7 +7414,7 @@ async function seoPageDetailPage(id) {
 async function siteOperationsPage(slug) {
   const site = await getSite(slug);
   if (site.deployment_mode === 'coolify')
-    return page('Website · ' + site.name, renderCoolifySite(site, await listMonitorChecks(site.id, 50), esc));
+    return page('Website · ' + site.name, renderCoolifySite(site, await listMonitorChecks(site.id, 50), esc, await listIncidents(site.id, 30)));
   const hist = await listHistory(site.id, 30),
     backups = await listBackups(site, 30),
     checks = await listMonitorChecks(site.id, 200),
@@ -7462,10 +7463,11 @@ async function siteOperationsPage(slug) {
     site.name,
     `
     <header><div><h1>${esc(site.name)}</h1><p><a href="https://${esc(site.domain)}" target="_blank" rel="noopener noreferrer">${esc(site.domain)} ↗</a> · <span class="ui-status" data-tone="${viewStatus.code === 'online' ? 'positive' : viewStatus.code === 'attention' ? 'danger' : 'neutral'}">${esc(viewStatus.label)}</span>${site.enabled ? '' : ' · pausiert'}</p></div><div class="actions"><button class="ghost" id="checkNow">Erreichbarkeit prüfen</button><button id="backupNow">Sicherung erstellen</button><details class="ui-more-actions"><summary>Weitere Aktionen</summary><button type="button" class="ghost" id="monitorNow">Monitoring protokollieren</button><a class="button ghost" href="#settings">Einstellungen</a></details></div></header>
-    ${latest && !latest.ok ? `<div class="notice bad"><strong>Monitoringfehler</strong><span>${esc(latest.error || latestDetails.error || 'HTTP ' + (latest.http_status ?? 'unbekannt'))}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'monitor',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
-    ${openIncidents.length ? `<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span><a href="/incidents/${openIncidents[0].id}">${esc(openIncidents[0].title)}</a> · seit ${fmtDateTime(openIncidents[0].created_at)}</span></div>` : ''}
-    ${backupState?.last_error ? `<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'backup',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
+    ${renderMonitorControl(site, esc)}
     <div data-site-view="overview">
+    ${site.enabled && site.monitor_enabled && latest && !latest.ok ? `<div class="notice bad"><strong>Monitoringfehler</strong><span>${esc(latest.error || latestDetails.error || 'HTTP ' + (latest.http_status ?? 'unbekannt'))}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'monitor',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
+    ${site.enabled && site.monitor_enabled && openIncidents.length ? `<div class="notice bad"><strong>${openIncidents.length} offener Incident</strong><span><a href="/incidents/${openIncidents[0].id}">${esc(openIncidents[0].title)}</a> · seit ${fmtDateTime(openIncidents[0].created_at)}</span></div>` : ''}
+    ${site.enabled && site.backup_enabled && backupState?.last_error ? `<div class="notice bad"><strong>Backupfehler</strong><span>${esc(backupState.last_error)}</span><button class="ghost" onclick="siteOpsCopyPrompt({kind:'backup',site:'${site.slug}'},this)">Fix-Prompt kopieren</button></div>` : ''}
     <div class="metrics big ops-metrics"><span>${uptime}%<em>Uptime letzte ${checks.length} Checks</em></span><span>${latest?.response_ms ?? '–'} ms<em>Response</em></span><span>${latest?.ssl_days ?? '–'} d<em>SSL</em></span><span>${latest?.http_status ?? '–'}<em>HTTP</em></span><span>${backups[0]?.created_at ? fmtDateTime(backups[0].created_at) : '–'}<em>Letztes Backup</em></span></div>
 
     <div class="twocol ops-grid">
@@ -7482,7 +7484,7 @@ async function siteOperationsPage(slug) {
         </dl>
       </section>
       <section>
-        <div class="sectionhead"><div><h2>Sicherung</h2></div><a href="#history">Alle Sicherungen</a></div>
+        <div class="sectionhead"><div><h2>Sicherung</h2></div><a href="#backups">Alle Sicherungen</a></div>
         <dl class="facts compact-facts"><div><dt>Letzter Versuch</dt><dd>${backupState?.last_attempt_at ? fmtDateTime(backupState.last_attempt_at) : '–'}</dd></div><div><dt>Letzter Erfolg</dt><dd>${backupState?.last_success_at ? fmtDateTime(backupState.last_success_at) : '–'}</dd></div><div><dt>Backup-Pfad</dt><dd><code>sites/${esc(site.slug)}/public</code></dd></div></dl>
       </section>
     </div>
@@ -7527,8 +7529,8 @@ async function siteOperationsPage(slug) {
       <section>
         <div class="sectionhead"><div><h2>Monitoring & Alarmierung</h2></div><span class="pill ${viewStatus.code === 'online' ? 'ok' : viewStatus.code === 'attention' ? 'bad' : ''}">${esc(viewStatus.label)}</span></div>
         <details class="ui-settings-disclosure" open><summary>Prüfregeln und Alarmierung bearbeiten</summary><form id="monitorForm" class="inner-form" data-unsaved-guard>
-          <label class="check"><input type="checkbox" name="enabled" ${site.enabled ? 'checked' : ''}> Website aktiv verwalten</label>
-          <label class="check"><input type="checkbox" name="monitor_enabled" ${site.monitor_enabled ? 'checked' : ''}> Monitoring aktiv</label>
+          <label class="check"><input type="checkbox" name="enabled" ${site.enabled ? 'checked' : ''}> Website-Verwaltung aktiv (auch automatische Sicherungen)</label>
+          <label class="check"><input type="checkbox" name="monitor_enabled" ${site.monitor_enabled ? 'checked' : ''}> Automatische Überwachung aktiv</label>
           <label>Monitor-URL<input name="monitor_url" value="${esc(site.monitor_url || 'https://' + site.domain)}"></label>
           <div class="formgrid">
             <label>Erwarteter HTTP-Status<input name="monitor_expected_status" type="number" value="${site.monitor_expected_status}"></label>
@@ -7556,20 +7558,22 @@ async function siteOperationsPage(slug) {
           <button>Backup-Einstellungen speichern</button><span id="backupState" class="inline-status"></span>
         </form></details>
       </section>
-      <section class="site-danger"><div class="sectionhead"><div><h2>Website entfernen</h2></div></div><p class="lead">Entfernt die Website aus SiteOps. Die Dateien auf dem Server bleiben erhalten.</p><a class="button ghost" href="/sites/${esc(site.slug)}/delete">Website löschen</a></section>
+      <section class="site-danger"><div class="sectionhead"><div><h2>Website entfernen</h2></div></div><p class="lead">Entfernt den SiteOps-Eintrag. Externe Dateien oder Domains werden nur gelöscht, wenn du sie in der Vorschau ausdrücklich auswählst.</p><a class="button ghost" href="/sites/${esc(site.slug)}/delete">Website löschen</a></section>
     </div>
 
     <div data-site-view="history" hidden>
-    <section><div class="sectionhead"><div><h2>Monitoring-Verlauf</h2></div><small>Bis zu ${checks.length} aktuelle Prüfungen · filterbar und paginiert.</small></div><div class="filterbar"><input id="monitorSearch" type="search" placeholder="URL oder HTTP-Status filtern"><select id="monitorStatus" aria-label="Prüfungen nach Status filtern"><option value="all">OK + Fehler</option><option value="ok">Nur OK</option><option value="error">Nur Fehler</option></select><select id="monitorPageSize" aria-label="Prüfungen pro Seite"><option value="10">10 / Seite</option><option value="20" selected>20 / Seite</option><option value="50">50 / Seite</option><option value="100">100 / Seite</option></select></div><div class="tablewrap"><table id="monitorTable"><thead><tr><th>Zeit</th><th>Status</th><th>HTTP</th><th>Response</th><th>SSL</th><th>Finale URL</th><th>Redirects</th></tr></thead><tbody>${checkRows}</tbody></table></div><div class="pagination-bar" id="monitorPager"></div></section>
-    <section><div class="sectionhead"><div><h2>Incidents</h2></div><small>Öffnen für vollständige Ereignis- und Alert-Timeline.</small></div><div class="tablewrap"><table><thead><tr><th>Incident</th><th>Status</th><th>Start</th><th>Ende</th><th>Dauer</th></tr></thead><tbody>${incidentRows}</tbody></table></div></section>
-    <section><div class="sectionhead"><div><h2>Backups</h2></div><small>Restore erstellt zuerst automatisch einen Safety-Snapshot.</small></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Commit</th><th>Dateien</th><th>Stand</th><th></th></tr></thead><tbody>${backupRows}</tbody></table></div></section>
+    <section><div class="sectionhead"><div><h2>Prüfverlauf</h2></div><small>Bis zu ${checks.length} aktuelle Prüfungen · filterbar und paginiert.</small></div><div class="filterbar"><input id="monitorSearch" type="search" placeholder="URL oder HTTP-Status filtern"><select id="monitorStatus" aria-label="Prüfungen nach Status filtern"><option value="all">OK + Fehler</option><option value="ok">Nur OK</option><option value="error">Nur Fehler</option></select><select id="monitorPageSize" aria-label="Prüfungen pro Seite"><option value="10">10 / Seite</option><option value="20" selected>20 / Seite</option><option value="50">50 / Seite</option><option value="100">100 / Seite</option></select></div><div class="tablewrap"><table id="monitorTable"><thead><tr><th>Zeit</th><th>Status</th><th>HTTP</th><th>Response</th><th>SSL</th><th>Finale URL</th><th>Redirects</th></tr></thead><tbody>${checkRows}</tbody></table></div><div class="pagination-bar" id="monitorPager"></div></section>
+    <section><div class="sectionhead"><div><h2>Störungen</h2></div><small>Öffnen für vollständige Ereignis- und Alert-Timeline.</small></div><div class="tablewrap"><table><thead><tr><th>Incident</th><th>Status</th><th>Start</th><th>Ende</th><th>Dauer</th></tr></thead><tbody>${incidentRows}</tbody></table></div></section>
+    </div>
+    <div data-site-view="backups" hidden>
+    <section><div class="sectionhead"><div><h2>Sicherungen</h2></div><small>Restore erstellt zuerst automatisch einen Safety-Snapshot.</small></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Commit</th><th>Dateien</th><th>Stand</th><th></th></tr></thead><tbody>${backupRows}</tbody></table></div></section>
     <section><div class="sectionhead"><div><h2>Änderungen</h2></div></div><div class="tablewrap"><table><thead><tr><th>Zeit</th><th>Änderung</th><th>Quelle</th><th>Status</th><th></th></tr></thead><tbody>${historyRows}</tbody></table></div></section>
     </div>
 
     <script>
     const slug=${JSON.stringify(site.slug)};
-    // Übersicht, Einstellungen und Verlauf sind Ansichten derselben Seite (#settings, #history).
-    function showSiteView(){const view=['settings','history'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';for(const el of document.querySelectorAll('[data-site-view]'))el.hidden=el.dataset.siteView!==view;document.body.dataset.siteCurrent=view;document.dispatchEvent(new CustomEvent('siteops:site-view',{detail:view}));}
+    // Website-Ansichten sind per Hash direkt erreichbar; Details bleiben im fachlich passenden Bereich.
+    function showSiteView(){const view=['settings','history','backups'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';for(const el of document.querySelectorAll('[data-site-view]'))el.hidden=el.dataset.siteView!==view;document.body.dataset.siteCurrent=view;document.dispatchEvent(new CustomEvent('siteops:site-view',{detail:view}));}
     window.addEventListener('hashchange',showSiteView);showSiteView();
     window.addEventListener('DOMContentLoaded',()=>siteOpsTableView({tableId:'monitorTable',searchId:'monitorSearch',pageSizeId:'monitorPageSize',pagerId:'monitorPager',defaultSize:20,filters:[{id:'monitorStatus',data:'status'}]}));
     const byId=id=>document.getElementById(id);
