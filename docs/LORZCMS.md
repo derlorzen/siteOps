@@ -144,6 +144,40 @@ extension prevents installation. Fix the hosting setting and use **Erneut
 starten**; completed actions use the same job ID. Do not point the domain at the
 CMS project root: configuration, databases and deployment snapshots are private.
 
+## Kopierte, bereits verwaltete CMS-Installationen
+
+Bei einer Migration auf eine neue Website verwendet `cms_attach` einen eigenen,
+verschlüsselt gespeicherten Anschluss-Token. `adopt` erkennt einen bereits
+aktivierten Core am Start-Shim und dem aktiven Release-Manifest. Die laufende
+Website wird **nicht** erneut installiert. Ein vorhandener Anschlussauftrag
+wird bei wiederholtem `cms_attach` zurückgegeben.
+
+Fehlende oder nicht passende Anschlussdateien werden vor der Prüfung über
+FTP/FTPS/SFTP repariert. Eine zufällige, nicht geheime CSS-Prüfdatei beweist
+zuvor, dass das FTP-Verzeichnis wirklich von der angegebenen HTTPS-Domain
+ausgeliefert wird. Die Datei wird anschließend entfernt. Wenn eine andere
+verwaltete Domain mit derselben gespeicherten FTP-Zuordnung dieselbe Datei
+ausliefert, wird kein Schlüssel getauscht.
+
+Wird eine fremde Installation in `config/siteops.php` oder
+`.lorzcms/owner.json` gefunden, zeigt der Auftrag ihre ID(s) und unterbricht
+vor dem Schlüsseltausch. Ein ausdrücklicher erneuter Start bestätigt genau
+diese Eigentümer; eine inzwischen abweichende Zuordnung erfordert eine neue
+Bestätigung. Der Token bleibt verschlüsselt in SiteOps, der Host erhält nur
+den SHA-256-Hash. Die Connector-Dateien werden mit verifiziertem
+Same-Directory-Rename ausgetauscht, bei fehlgeschlagener Agent-/Website-Prüfung
+werden die vorherigen Bytes bzw. die ursprüngliche Abwesenheit wiederhergestellt.
+Server ohne unterstütztes atomisches Ersetzen werden nicht durch vorheriges
+Löschen der Zieldatei umgangen.
+
+`cms_inspect` liefert bei einem laufenden oder unterbrochenen Anschluss den
+bestehenden Jobzustand und bei Agentfehlern konkrete Hinweise: 401 Schlüssel,
+404 fehlender Agent/Konfiguration, 422 falscher Document-Root. Der Retry behält
+Job-ID und Installations-ID. Erfolgreich ist der Anschluss erst, wenn die
+erwartete Core-Version, die Startseite und die Admin-Anmeldeseite erreichbar
+sind. Die Admin-Prüfung kontrolliert die Login-Seite per HTTP, nicht die
+Authentifizierung mit einem Passwort.
+
 ## Existing HSG and NorDiaMed installations
 
 Register the existing hosting connection in SiteOps with the CMS **project root**
