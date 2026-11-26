@@ -494,7 +494,7 @@ test(
     assert.equal(await page.locator('#crmProjectTable tbody tr').count(), 1);
     await page.locator('#crmProjectTable a.ui-identity').click();
     await page.locator('[data-project-section="overview"]').waitFor();
-    assert.equal(await page.locator('.crm-task-card').count(),0);
+    assert.equal(await page.locator('.crm-task-card').count(), 0);
     await page.locator('.crm-project-sections [data-section="tasks"]').click();
     await page.locator('.crm-task-card [data-status-select]').selectOption('in_progress');
     await page.getByText('Task verschoben.', { exact: true }).waitFor();

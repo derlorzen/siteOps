@@ -7414,7 +7414,10 @@ async function seoPageDetailPage(id) {
 async function siteOperationsPage(slug) {
   const site = await getSite(slug);
   if (site.deployment_mode === 'coolify')
-    return page('Website · ' + site.name, renderCoolifySite(site, await listMonitorChecks(site.id, 50), esc, await listIncidents(site.id, 30)));
+    return page(
+      'Website · ' + site.name,
+      renderCoolifySite(site, await listMonitorChecks(site.id, 50), esc, await listIncidents(site.id, 30))
+    );
   const hist = await listHistory(site.id, 30),
     backups = await listBackups(site, 30),
     checks = await listMonitorChecks(site.id, 200),
