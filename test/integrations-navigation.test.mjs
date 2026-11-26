@@ -17,7 +17,14 @@ test('settings links target the existing sections and preserve one form implemen
   const group = workspaceNavigation.find(item => item.label === 'Einstellungen');
   assert.deepEqual(
     group.children.map(item => item.href),
-    ['/settings#system', '/settings#backups', '/settings#defaults', '/settings#alerts', '/mail-archive', '/settings#seo']
+    [
+      '/settings#system',
+      '/settings#backups',
+      '/settings#defaults',
+      '/settings#alerts',
+      '/mail-archive',
+      '/settings#seo'
+    ]
   );
   const script = await readFile(new URL('../public/ops-workspace.js', import.meta.url), 'utf8');
   assert.match(script, /scrollToSetting/);
