@@ -57,7 +57,8 @@ export async function seoAuditCapabilities() {
   return {
     seoAuditVersion: SEO_AUDIT_VERSION,
     lighthouse: Boolean(await loadLighthouse()),
-    axe: Boolean(await loadAxe())
+    axe: Boolean(await loadAxe()),
+    privacy: true
   };
 }
 
@@ -117,6 +118,39 @@ export function summarizeAxe(results) {
   };
 }
 
+// Third-party requests and cookies of a first visit in a fresh context, before any click: what a
+// visitor's browser sends before the consent banner was answered.
+export function createPrivacyRecorder(pageUrl) {
+  const site = new URL(pageUrl).hostname,
+    byHost = new Map();
+  return {
+    onRequest(request) {
+      let u;
+      try {
+        u = new URL(request.url());
+      } catch {
+        return;
+      }
+      if (!/^https?:$/.test(u.protocol)) return;
+      const entry = byHost.get(u.hostname) || { host: u.hostname, count: 0, types: new Set(), url: '' };
+      entry.count++;
+      entry.types.add(request.resourceType());
+      // Keep one URL per host (path only, no query) for consent tool detection on the own host.
+      if (!entry.url || (u.hostname === site && /cookie|consent|borlabs|complianz|klaro/i.test(u.pathname)))
+        entry.url = u.origin + u.pathname;
+      byHost.set(u.hostname, entry);
+    },
+    result(cookies = []) {
+      return {
+        requests: [...byHost.values()]
+          .slice(0, 200)
+          .map(e => ({ host: e.host, url: e.url, type: [...e.types].join(','), count: e.count })),
+        cookies: cookies.slice(0, 100).map(c => ({ name: c.name, domain: c.domain }))
+      };
+    }
+  };
+}
+
 function normalizeStrategies(value) {
   if (value === true) return ['mobile', 'desktop'];
   const list = Array.isArray(value) ? value : value ? [value] : [];
@@ -143,8 +177,9 @@ export function registerSeoAudit(app, auth, { launch = chromium.launch.bind(chro
       timeoutMs = Math.min(90000, Math.max(5000, Number(body.timeoutMs || 45000))),
       strategies = normalizeStrategies(body.lighthouse),
       wantAxe = Boolean(body.axe),
+      wantPrivacy = Boolean(body.privacy),
       started = Date.now(),
-      result = { ok: true, url, axe: null, lighthouse: {}, errors: [] };
+      result = { ok: true, url, axe: null, privacy: null, lighthouse: {}, errors: [] };
     const [lighthouse, AxeBuilder] = await Promise.all([
       strategies.length ? loadLighthouse() : null,
       wantAxe ? loadAxe() : null
@@ -158,19 +193,35 @@ export function registerSeoAudit(app, auth, { launch = chromium.launch.bind(chro
         headless: true,
         args: ['--disable-dev-shm-usage', '--remote-debugging-port=' + port]
       });
-      if (AxeBuilder) {
-        const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+      if (AxeBuilder || wantPrivacy) {
+        // Fresh context: no cookies, no stored consent. Nothing is clicked before both checks.
+        const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, locale: 'de-DE' });
+        const recorder = wantPrivacy ? createPrivacyRecorder(url) : null;
+        if (recorder) context.on('request', request => recorder.onRequest(request));
         try {
           const page = await context.newPage();
           page.setDefaultTimeout(timeoutMs);
           await page.goto(url, { waitUntil: 'domcontentloaded' });
           await page.waitForLoadState('networkidle', { timeout: Math.min(timeoutMs, 8000) }).catch(() => {});
-          result.axe = summarizeAxe(
-            await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
-          );
-          result.axe.finalUrl = page.url();
+          if (recorder) {
+            try {
+              result.privacy = { finalUrl: page.url(), ...recorder.result(await context.cookies()) };
+            } catch (e) {
+              result.errors.push('Datenschutz: ' + String(e.message || e).slice(0, 300));
+            }
+          }
+          if (AxeBuilder) {
+            try {
+              result.axe = summarizeAxe(
+                await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
+              );
+              result.axe.finalUrl = page.url();
+            } catch (e) {
+              result.errors.push('axe: ' + String(e.message || e).slice(0, 300));
+            }
+          }
         } catch (e) {
-          result.errors.push('axe: ' + String(e.message || e).slice(0, 300));
+          result.errors.push((AxeBuilder ? 'axe: ' : 'Datenschutz: ') + String(e.message || e).slice(0, 300));
         } finally {
           await context.close().catch(() => {});
         }

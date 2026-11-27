@@ -2,7 +2,7 @@
 
 ## Browser Runner 1.8.0 – SEO-Audit
 
-Ab Runner **1.8.0** bietet der Runner `/seo/audit`: Lighthouse (mobil/Desktop) lokal im Chromium und axe-core-Barrierefreiheitsprüfung für den SEO-Check. Dafür ist kein PageSpeed-API-Key nötig. Node.js **22.19** oder neuer wird benötigt (Lighthouse 13).
+Ab Runner **1.8.0** bietet der Runner `/seo/audit`: Lighthouse (mobil/Desktop) lokal im Chromium und axe-core-Barrierefreiheitsprüfung für den SEO-Check. Dafür ist kein PageSpeed-API-Key nötig. Node.js **22.19** oder neuer wird benötigt (Lighthouse 13). Mit `privacy: true` öffnet `/seo/audit` die Seite außerdem in einem frischen Kontext ohne Klick und meldet die angefragten Hosts und gesetzten Cookies (nur Name und Domain) für den DSGVO-Check.
 
 ## Browser Runner 1.5.0 – Release-Abnahme und Reihenfolge
 

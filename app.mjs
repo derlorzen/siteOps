@@ -93,6 +93,32 @@ import { createBackupJobs, backupJobInput } from './lib/backup-jobs.mjs';
 import { renderWebsiteFiles } from './lib/website-files-ui.mjs';
 import { crawlSeoSite } from './lib/seo-crawler.mjs';
 import { checkUrls } from './lib/seo-link-check.mjs';
+import {
+  anchorIssues,
+  contentIssues,
+  crossPageIssues,
+  DESCRIPTION_MAX_PX,
+  directiveIssues,
+  evaluateCustomRules,
+  headingIssues,
+  imageIssues,
+  parseRobotsTxt,
+  performanceIssues,
+  privacyIssues,
+  richResultIssues,
+  searchConsoleIssues,
+  snippetIssues,
+  TITLE_MAX_PX,
+  urlIssues,
+  validateCustomRules,
+  CUSTOM_RULE_TYPES
+} from './lib/seo-rules.mjs';
+import {
+  seoAuditOverviewHtml,
+  seoCustomRulesEditorHtml,
+  seoPageExtrasHtml,
+  seoSnippetPreviewHtml
+} from './lib/seo-ui.mjs';
 import { publicIp, publicAddresses } from './lib/coolify-public-http.mjs';
 import { isIP } from 'node:net';
 
@@ -145,6 +171,9 @@ const cfg = {
   seoCrawlRetries: Number(env('SEO_CRAWL_RETRIES', '2')),
   seoAxeMaxPages: Number(env('SEO_AXE_MAX_PAGES', '10')),
   seoExternalLinkMaxChecks: Number(env('SEO_EXTERNAL_LINK_MAX_CHECKS', '200')),
+  seoImageMaxChecks: Number(env('SEO_IMAGE_MAX_CHECKS', '300')),
+  seoImageMaxKb: Number(env('SEO_IMAGE_MAX_KB', '100')),
+  seoPrivacyMaxPages: Number(env('SEO_PRIVACY_MAX_PAGES', '3')),
   seoUserAgent: env('SEO_USER_AGENT', 'Lorzen-SiteOps-SEO/1.0'),
   browserRunnerUrl: process.env.BROWSER_RUNNER_URL || '',
   browserRunnerToken: process.env.BROWSER_RUNNER_TOKEN || '',
@@ -188,6 +217,7 @@ const jsonFields = new Set([
   'security',
   'accessibility',
   'content_fingerprint',
+  'seo_custom_rules',
   'steps',
   'result'
 ]);
@@ -3385,7 +3415,8 @@ function seoIssues(page) {
   if (page.h1.length === 0) issues.push({ level: 'error', code: 'h1_missing', text: 'H1 fehlt' });
   if (page.h1.length > 1)
     issues.push({ level: 'warn', code: 'h1_multiple', text: page.h1.length + ' H1-Überschriften' });
-  if (!page.canonical) issues.push({ level: 'info', code: 'canonical_missing', text: 'Canonical fehlt' });
+  if (!page.canonical && !page.headerCanonical)
+    issues.push({ level: 'info', code: 'canonical_missing', text: 'Canonical fehlt' });
   if (/noindex/i.test(page.robots || ''))
     issues.push({ level: 'error', code: 'noindex', text: 'Seite steht auf noindex' });
   if (/nofollow/i.test(page.robots || ''))
@@ -3417,7 +3448,47 @@ function seoIssues(page) {
     });
   if ((page.resources || []).some(x => String(x).startsWith('http://')) && String(page.url).startsWith('https://'))
     issues.push({ level: 'warn', code: 'mixed_content', text: 'HTTP-Ressource auf HTTPS-Seite gefunden' });
+  // Screaming-Frog-style checks (lib/seo-rules.mjs).
+  issues.push(
+    ...urlIssues(page.url),
+    ...headingIssues(page),
+    ...snippetIssues(page).issues,
+    ...anchorIssues(page.links),
+    ...directiveIssues(page),
+    ...contentIssues(page),
+    ...performanceIssues(page),
+    ...richResultIssues(page.structuredData).issues
+  );
   return issues;
+}
+// Link: <https://example.com/a>; rel="canonical"
+function seoHeaderCanonical(header, baseUrl) {
+  for (const part of String(header || '').split(/,(?=\s*<)/)) {
+    const m = /<([^>]+)>\s*;(.*)$/.exec(part.trim());
+    if (m && /rel\s*=\s*"?canonical"?/i.test(m[2])) return seoNormalizeUrl(m[1], baseUrl) || '';
+  }
+  return '';
+}
+// Extra per-page data for the dashboard and MCP (stored as seo_pages.details).
+function seoPageDetails(page, extracted) {
+  const snippet = snippetIssues(page);
+  return {
+    ttfbMs: page.ttfbMs ?? null,
+    xRobotsTag: page.xRobotsTag || null,
+    headerCanonical: page.headerCanonical || null,
+    canonicals: page.canonicals || [],
+    viewport: page.viewport ?? null,
+    headings: page.headings || [],
+    snippet: {
+      titlePx: snippet.titlePx,
+      descriptionPx: snippet.descriptionPx,
+      titleMaxPx: TITLE_MAX_PX,
+      descriptionMaxPx: DESCRIPTION_MAX_PX
+    },
+    richResultTypes: richResultIssues(page.structuredData).types,
+    images: (page.images || []).slice(0, 50),
+    ...(extracted && Object.keys(extracted).length ? { extracted } : {})
+  };
 }
 function calcPageRank(urls, links) {
   const n = urls.length;
@@ -3531,23 +3602,27 @@ async function seoFetchDocument(url) {
       current = next;
       continue;
     }
-    return { res, html: await res.text(), finalUrl: current, redirects, responseMs: Date.now() - started };
+    // fetch() resolves once the response headers arrived: time to first byte of the final hop.
+    const ttfbMs = Date.now() - started;
+    return { res, html: await res.text(), finalUrl: current, redirects, responseMs: Date.now() - started, ttfbMs };
   }
   throw new Error('Zu viele Redirects');
 }
-async function crawlSeoPage(url, rootHost, depth, renderBudget) {
+async function crawlSeoPage(url, rootHost, depth, renderBudget, { customRules = [] } = {}) {
   const started = Date.now();
   let res,
     html = '',
     error = null,
     finalUrl = url,
-    redirects = [];
+    redirects = [],
+    ttfbMs = null;
   try {
     const doc = await seoFetchDocument(url);
     res = doc.res;
     html = doc.html;
     finalUrl = doc.finalUrl;
     redirects = doc.redirects;
+    ttfbMs = doc.ttfbMs;
   } catch (e) {
     error = String(e.message || e);
   }
@@ -3561,6 +3636,7 @@ async function crawlSeoPage(url, rootHost, depth, renderBudget) {
     path: new URL(url).pathname,
     statusCode,
     responseMs,
+    ttfbMs,
     contentBytes,
     error,
     title: '',
@@ -3585,15 +3661,20 @@ async function crawlSeoPage(url, rootHost, depth, renderBudget) {
     accessibility: { issueCount: 0 },
     contentHash: null,
     contentFingerprint: [],
-    indexable: false
+    indexable: false,
+    details: { ttfbMs }
   };
   if (error || !contentType.includes('text/html'))
     return {
       ...empty,
       issues: [{ level: 'error', code: error ? 'fetch_error' : 'not_html', text: error || 'Kein HTML-Dokument' }]
     };
-  const security = seoSecurity(res.headers, finalUrl);
-  let extracted = seoExtractDocument(cheerio.load(html), { finalUrl, rootHost, sourceUrl: finalUrl, statusCode });
+  const security = seoSecurity(res.headers, finalUrl),
+    xRobotsTag = res.headers.get('x-robots-tag') || '',
+    headerCanonical = seoHeaderCanonical(res.headers.get('link'), finalUrl);
+  let $doc = cheerio.load(html),
+    docHtml = html;
+  let extracted = seoExtractDocument($doc, { finalUrl, rootHost, sourceUrl: finalUrl, statusCode });
   let renderedFallback = false;
   if (
     extracted.wordCount < SEO_THIN_CONTENT_WORDS &&
@@ -3617,6 +3698,8 @@ async function crawlSeoPage(url, rootHost, depth, renderBudget) {
         if (reExtracted.wordCount > extracted.wordCount) {
           extracted = reExtracted;
           renderedFallback = true;
+          $doc = cheerio.load(rendered.html);
+          docHtml = rendered.html;
         }
       }
     } catch {
@@ -3630,14 +3713,24 @@ async function crawlSeoPage(url, rootHost, depth, renderBudget) {
     path: new URL(finalUrl).pathname + (new URL(finalUrl).search || ''),
     statusCode,
     responseMs,
+    ttfbMs,
     contentBytes,
     depth,
     redirectCount: redirects.length,
     redirects,
     security,
+    xRobotsTag,
+    headerCanonical,
     ...extracted
   };
+  // X-Robots-Tag noindex makes the page non-indexable just like the meta tag.
+  if (/noindex/i.test(xRobotsTag)) page.indexable = false;
+  const custom = customRules.length
+    ? evaluateCustomRules(customRules, { $: $doc, html: docHtml, text: page.text })
+    : null;
   page.issues = seoIssues(page);
+  if (custom) page.issues.push(...custom.issues);
+  page.details = seoPageDetails(page, custom?.extracted);
   if (renderedFallback)
     page.issues.push({
       level: 'info',
@@ -3652,7 +3745,17 @@ function seoExtractDocument($, { finalUrl, rootHost, sourceUrl, statusCode }) {
     canonicalHref = $('link[rel="canonical"]').attr('href') || '',
     canonical = canonicalHref ? seoNormalizeUrl(canonicalHref, finalUrl) : '',
     robots = $('meta[name="robots"]').attr('content') || '',
-    lang = ($('html').attr('lang') || '').trim();
+    lang = ($('html').attr('lang') || '').trim(),
+    canonicals = $('link[rel="canonical"]')
+      .map((_, e) => seoNormalizeUrl($(e).attr('href') || '', finalUrl))
+      .get()
+      .filter(Boolean),
+    viewport = $('meta[name="viewport"]').length > 0,
+    headings = $('h1,h2,h3,h4,h5,h6')
+      .map((_, e) => Number(e.tagName?.slice(1) || e.name?.slice(1)))
+      .get()
+      .filter(Boolean)
+      .slice(0, 200);
   const h1 = $('h1')
       .map((_, e) => $(e).text().replace(/\s+/g, ' ').trim())
       .get()
@@ -3681,7 +3784,21 @@ function seoExtractDocument($, { finalUrl, rootHost, sourceUrl, statusCode }) {
   const social = seoSocial($),
     accessibility = seoAccessibility($);
   const images = $('img').length,
-    imagesMissingAlt = $('img').filter((_, e) => !($(e).attr('alt') || '').trim()).length;
+    imagesMissingAlt = $('img').filter((_, e) => !($(e).attr('alt') || '').trim()).length,
+    imageList = [];
+  $('img').each((_, e) => {
+    if (imageList.length >= 100) return;
+    const el = $(e),
+      raw = el.attr('src') || el.attr('data-src') || '',
+      src = raw && !/^data:/i.test(raw) ? seoNormalizeUrl(raw, finalUrl) : null;
+    if (!src) return;
+    imageList.push({
+      src,
+      alt: (el.attr('alt') || '').trim().slice(0, 300),
+      width: el.attr('width') || null,
+      height: el.attr('height') || null
+    });
+  });
   const stripped = el => {
     const clone = el.clone();
     clone.find('script,style,noscript,svg,template').remove();
@@ -3708,8 +3825,13 @@ function seoExtractDocument($, { finalUrl, rootHost, sourceUrl, statusCode }) {
     const tu = new URL(target),
       internal = seoSameSiteHost(tu.hostname, rootHost),
       anchor = $(e).text().replace(/\s+/g, ' ').trim().slice(0, 250),
-      nofollow = /\bnofollow\b/i.test($(e).attr('rel') || '');
-    links.push({ source: sourceUrl, target, anchor, internal, nofollow });
+      nofollow = /\bnofollow\b/i.test($(e).attr('rel') || ''),
+      imageAlt = anchor
+        ? ''
+        : ($(e).find('img[alt]').first().attr('alt') || $(e).attr('aria-label') || $(e).attr('title') || '')
+            .trim()
+            .slice(0, 250);
+    links.push({ source: sourceUrl, target, anchor, internal, nofollow, ...(imageAlt ? { imageAlt } : {}) });
   });
   const resources = [];
   $('img[src],script[src],link[rel="stylesheet"][href]').each((_, e) => {
@@ -3723,11 +3845,15 @@ function seoExtractDocument($, { finalUrl, rootHost, sourceUrl, statusCode }) {
     title,
     metaDescription,
     canonical,
+    canonicals,
     robots,
     lang,
+    viewport,
+    headings,
     h1,
     h2,
     wordCount,
+    images: imageList,
     imagesTotal: images,
     imagesMissingAlt,
     structuredData,
@@ -3779,7 +3905,79 @@ async function seoAuditResources(pages, rootHost, limit = 250) {
         text: 'Ressource nicht erreichbar (' + (r.status || r.error || 'Netzwerkfehler') + '): ' + url
       });
   }
-  return { checked: results.size, broken };
+  return { checked: results.size, broken, results };
+}
+// Image weight and format: HEAD (or a one-byte ranged GET) per image, reusing the resource
+// check results for same-site images. External images only on public addresses.
+async function seoAuditImages(pages, rootHost, known = new Map(), limit = cfg.seoImageMaxChecks) {
+  const sizes = new Map();
+  for (const [url, r] of known) if (r.bytes) sizes.set(url, r);
+  const owners = seoCollectTargets(
+    pages,
+    p => (p.images || []).map(i => i.src).filter(src => /^https?:/i.test(src) && !known.has(src)),
+    Math.max(0, limit)
+  );
+  if (owners.size) {
+    const results = await checkUrls([...owners.keys()], {
+      userAgent: cfg.seoUserAgent,
+      guard: async url => {
+        if (!seoSameSiteHost(url.hostname, rootHost)) await seoPublicLinkGuard(url);
+      },
+      concurrency: 8,
+      perHost: 4
+    });
+    for (const [url, r] of results) {
+      if (r.bytes) sizes.set(url, r);
+      if (r.kind === 'broken')
+        for (const p of owners.get(url))
+          p.issues.push({
+            level: 'warn',
+            code: 'broken_resource',
+            text: 'Bild nicht erreichbar (' + (r.status || r.error || 'Netzwerkfehler') + '): ' + url
+          });
+    }
+  }
+  const maxBytes = Math.max(10, cfg.seoImageMaxKb || 100) * 1024;
+  let large = 0,
+    totalBytes = 0;
+  for (const p of pages) {
+    const images = p.images || [];
+    if (!images.length) continue;
+    p.issues.push(...imageIssues(images, sizes, { maxBytes }));
+    for (const img of images) {
+      const size = sizes.get(img.src);
+      if (size?.bytes) {
+        img.bytes = size.bytes;
+        img.contentType = size.contentType || null;
+        totalBytes += size.bytes;
+        if (size.bytes > maxBytes) large++;
+      }
+    }
+    if (p.details) p.details.images = images.slice(0, 50);
+  }
+  return { checked: owners.size + known.size, measured: sizes.size, large, totalBytes };
+}
+// Search Console page rows from the last completed sync (no API call during the crawl).
+async function seoSearchConsoleRows(siteId) {
+  const rows = [];
+  try {
+    for (let offset = 0; offset < 5000; offset += 500) {
+      const result = await searchConsoleService.performance(siteId, { dimension: 'page', limit: 500, offset });
+      if (!result?.available) return { available: false, reason: result?.reason || null, rows };
+      rows.push(...(result.rows || []));
+      if (result.next_offset == null) break;
+    }
+    return { available: true, rows };
+  } catch (e) {
+    return { available: false, reason: String(e.message || e).slice(0, 200), rows };
+  }
+}
+function seoSiteCustomRules(site) {
+  try {
+    return site?.seo_custom_rules ? validateCustomRules(site.seo_custom_rules) : [];
+  } catch {
+    return [];
+  }
 }
 // Outgoing links are checked only against public addresses: page content is untrusted and must
 // not make SiteOps probe internal networks.
@@ -3833,8 +4031,8 @@ async function seoRunnerCapabilities() {
     return null;
   }
 }
-async function seoRunnerAudit(url, { axe, lighthouse }) {
-  const body = { url, axe, lighthouse: lighthouse ? ['mobile', 'desktop'] : false, timeoutMs: 45000 };
+async function seoRunnerAudit(url, { axe, lighthouse, privacy = false }) {
+  const body = { url, axe, privacy, lighthouse: lighthouse ? ['mobile', 'desktop'] : false, timeoutMs: 45000 };
   try {
     return await browserRunnerRequest('/seo/audit', { method: 'POST', body });
   } catch (e) {
@@ -3875,7 +4073,8 @@ async function runSeoAudit(
     root = seoNormalizeUrl(configuredUrl.origin + '/'),
     rootUrl = new URL(root),
     rootHost = rootUrl.hostname,
-    renderBudget = { remaining: cfg.seoRenderMaxPages };
+    renderBudget = { remaining: cfg.seoRenderMaxPages },
+    customRules = seoSiteCustomRules(site);
   const sitemap = await seoDiscoverSitemaps(root, Math.min(maxPages * 3, 1500)),
     sitemapKeySet = new Set(sitemap.pages.map(seoSiteUrlKey)),
     rootKey = seoSiteUrlKey(root);
@@ -3887,7 +4086,7 @@ async function runSeoAudit(
         maxPages,
         keyOf: seoSiteUrlKey,
         isCrawlable: url => seoCrawlableUrl(url, rootHost),
-        fetchPage: (url, depth) => crawlSeoPage(url, rootHost, depth, renderBudget),
+        fetchPage: (url, depth) => crawlSeoPage(url, rootHost, depth, renderBudget, { customRules }),
         concurrency: cfg.seoCrawlConcurrency,
         maxRequestsPerMinute: cfg.seoCrawlMaxRequestsPerMinute,
         retries: cfg.seoCrawlRetries
@@ -4043,8 +4242,20 @@ async function runSeoAudit(
           });
         }
       }
+    // Canonical/hreflang targets, robots.txt and sitemap hygiene across the whole crawl.
+    const robotsGroups = parseRobotsTxt(sitemap.robotsTxt),
+      crossPage = crossPageIssues({
+        pages,
+        keyOf: seoSiteUrlKey,
+        sitemapPages: sitemap.pages,
+        robots: robotsGroups
+      });
     const resourceAudit = await seoAuditResources(pages, rootHost),
+      imageAudit = await seoAuditImages(pages, rootHost, resourceAudit.results),
       externalLinkAudit = await seoAuditExternalLinks(pages);
+    const gsc = await seoSearchConsoleRows(site.id),
+      gscResult = gsc.rows.length ? searchConsoleIssues({ pages, keyOf: seoSiteUrlKey, rows: gsc.rows }) : null;
+    for (const p of pages) if (p.searchConsole && p.details) p.details.searchConsole = p.searchConsole;
     // Lighthouse and axe-core run in the Browser Runner when it supports them; otherwise
     // Lighthouse falls back to the Google PageSpeed API (with a configured key).
     const runnerSeo = await seoRunnerCapabilities(),
@@ -4056,17 +4267,27 @@ async function runSeoAudit(
             pageSpeed === 'all' ? Math.min(pageSpeedMaxPages, pages.length) : pageSpeed === 'homepage' ? 1 : 0
           )
         : [],
-      axeCandidates = runnerSeo?.axe ? htmlPages.slice(0, Math.max(0, cfg.seoAxeMaxPages)) : [];
+      axeCandidates = runnerSeo?.axe ? htmlPages.slice(0, Math.max(0, cfg.seoAxeMaxPages)) : [],
+      privacyCandidates = runnerSeo?.privacy ? htmlPages.slice(0, Math.max(0, cfg.seoPrivacyMaxPages)) : [];
     let axePages = 0;
-    for (const p of [...new Set([...psiCandidates, ...axeCandidates])]) {
+    const privacyPages = [];
+    for (const p of [...new Set([...psiCandidates, ...axeCandidates, ...privacyCandidates])]) {
       const wantLighthouse = psiCandidates.includes(p),
-        wantAxe = axeCandidates.includes(p);
+        wantAxe = axeCandidates.includes(p),
+        wantPrivacy = privacyCandidates.includes(p);
       try {
-        if (lighthouseSource === 'runner' || (wantAxe && runnerSeo)) {
+        if (lighthouseSource === 'runner' || ((wantAxe || wantPrivacy) && runnerSeo)) {
           const audit = await seoRunnerAudit(p.url, {
             axe: wantAxe,
+            privacy: wantPrivacy,
             lighthouse: wantLighthouse && lighthouseSource === 'runner'
           });
+          if (audit.privacy) {
+            const privacy = privacyIssues(audit.privacy, rootHost);
+            p.issues.push(...privacy.issues);
+            if (p.details) p.details.privacy = privacy.summary;
+            privacyPages.push({ url: p.url, ...privacy.summary });
+          }
           if (audit.lighthouse?.mobile) p.lighthouseMobile = audit.lighthouse.mobile;
           if (audit.lighthouse?.desktop) p.lighthouseDesktop = audit.lighthouse.desktop;
           for (const report of [audit.lighthouse?.mobile, audit.lighthouse?.desktop])
@@ -4097,7 +4318,7 @@ async function runSeoAudit(
     }
     for (const p of pages) {
       await q(
-        `insert into seo_pages(run_id,site_id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,structured_data,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop,final_url,redirect_count,lang,hreflang,social,security,accessibility,content_hash,content_fingerprint,indexable) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `insert into seo_pages(run_id,site_id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,structured_data,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop,final_url,redirect_count,lang,hreflang,social,security,accessibility,content_hash,content_fingerprint,indexable,details) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           runId,
           site.id,
@@ -4134,7 +4355,8 @@ async function runSeoAudit(
           JSON.stringify(p.accessibility),
           p.contentHash,
           JSON.stringify(p.contentFingerprint),
-          p.indexable ? 1 : 0
+          p.indexable ? 1 : 0,
+          p.details ? JSON.stringify(p.details) : null
         ]
       );
     }
@@ -4146,28 +4368,41 @@ async function runSeoAudit(
     const allIssues = pages.flatMap(p => (p.issues || []).map(i => ({ ...i, url: p.url }))),
       count = code => allIssues.filter(i => i.code === code).length;
     const categories = {
-      technical: allIssues.filter(i =>
-        [
-          'http_status',
-          'redirect_chain',
-          'canonical_missing',
-          'canonical_external',
-          'canonical_invalid',
-          'canonical_to_other',
-          'noindex',
-          'page_nofollow',
-          'not_in_sitemap',
-          'orphan_page'
-        ].includes(i.code)
+      technical: allIssues.filter(
+        i =>
+          [
+            'http_status',
+            'redirect_chain',
+            'canonical_missing',
+            'canonical_external',
+            'canonical_invalid',
+            'canonical_to_other',
+            'noindex',
+            'page_nofollow',
+            'not_in_sitemap',
+            'orphan_page'
+          ].includes(i.code) ||
+          /^(canonical_|hreflang_|robots_|sitemap_|x_robots_|url_|viewport_|noindex_with)/.test(i.code)
       ).length,
-      content: allIssues.filter(i => /title|description|h1|content|word|wdf|duplicate/.test(i.code)).length,
-      links: allIssues.filter(i => /link|crawl_depth/.test(i.code)).length,
+      content: allIssues.filter(i =>
+        /title|description|h1|heading|content|word|wdf|duplicate|soft_404|placeholder|rich_result/.test(i.code)
+      ).length,
+      links: allIssues.filter(i => /link|crawl_depth|anchor|nofollow/.test(i.code)).length,
       media: allIssues.filter(i => /image|resource|mixed_content/.test(i.code)).length,
+      performance: allIssues.filter(i => /^(ttfb_slow|page_large|pagespeed_error)$/.test(i.code)).length,
       accessibility: allIssues.filter(i => /accessibility|html_lang/.test(i.code)).length,
       security: allIssues.filter(i => /security|mixed_content/.test(i.code)).length,
+      privacy: allIssues.filter(i => /^privacy_/.test(i.code)).length,
+      searchConsole: allIssues.filter(i => /^gsc_/.test(i.code)).length,
+      custom: allIssues.filter(i => /^custom_rule/.test(i.code)).length,
       social: allIssues.filter(i => /open_graph|twitter/.test(i.code)).length,
       trust: allIssues.filter(i => /impressum|entity_schema/.test(i.code)).length
     };
+    const ttfbValues = pages.map(p => p.ttfbMs).filter(v => Number.isFinite(v)),
+      privacyProviders = new Map();
+    for (const entry of privacyPages)
+      for (const provider of entry.providers || [])
+        privacyProviders.set(provider.name, { name: provider.name, level: provider.level });
     const summary = {
       healthScore: seoHealthScore(pages),
       pages: pages.length,
@@ -4204,6 +4439,37 @@ async function runSeoAudit(
       brokenExternalLinks: externalLinkAudit.broken,
       externalLinksChecked: externalLinkAudit.checked,
       externalLinksBlocked: externalLinkAudit.blocked,
+      avgTtfbMs: ttfbValues.length ? Math.round(ttfbValues.reduce((n, v) => n + v, 0) / ttfbValues.length) : null,
+      images: imageAudit,
+      robotsTxtFound: Boolean(sitemap.robotsTxt),
+      robotsBlockedPages: count('robots_blocked'),
+      sitemapHygiene: crossPage.sitemap,
+      hreflangIssues: allIssues.filter(i => /^hreflang_/.test(i.code)).length,
+      canonicalIssues: allIssues.filter(i => /^canonical_(target|chain|conflict|multiple)/.test(i.code)).length,
+      softPages404: count('soft_404'),
+      searchConsole: gsc.available
+        ? {
+            available: true,
+            rows: gsc.rows.length,
+            matchedPages: pages.filter(p => p.searchConsole).length,
+            uncrawledWithImpressions: gscResult?.uncrawledCount || 0,
+            uncrawled: gscResult?.uncrawled?.slice(0, 20) || []
+          }
+        : { available: false, reason: gsc.reason },
+      privacy: privacyPages.length
+        ? {
+            pages: privacyPages.length,
+            consentTool: privacyPages.find(p => p.consentTool)?.consentTool || null,
+            providers: [...privacyProviders.values()],
+            trackingCookies: [
+              ...new Set(
+                privacyPages.flatMap(p => (p.cookies || []).filter(c => c.tracking || c.thirdParty).map(c => c.name))
+              )
+            ].slice(0, 30)
+          }
+        : null,
+      customRules: customRules.length,
+      customRuleFailures: count('custom_rule'),
       sitemapUrls: sitemap.sitemaps.length,
       sitemapPages: sitemap.pages.length,
       aiBots: seoAiBotAccess(sitemap.robotsTxt),
@@ -4244,6 +4510,21 @@ async function startSeoAudit(siteId, options = {}) {
     pageSpeedConfigured: Boolean(cfg.pageSpeedApiKey || (cfg.browserRunnerUrl && cfg.browserRunnerToken))
   };
 }
+async function seoCustomRulesGet(siteId) {
+  const site = await getSite(siteId);
+  return { site: site.slug, rules: seoSiteCustomRules(site), types: CUSTOM_RULE_TYPES };
+}
+async function seoCustomRulesSet(siteId, rules) {
+  const site = await getSite(siteId);
+  let clean;
+  try {
+    clean = validateCustomRules(rules);
+  } catch (e) {
+    throw Object.assign(new Error(e.message), { statusCode: 400 });
+  }
+  await q('update sites set seo_custom_rules=? where id=?', [clean.length ? JSON.stringify(clean) : null, site.id]);
+  return { site: site.slug, rules: clean, note: 'Gilt ab dem nächsten SEO-Crawl.' };
+}
 async function seoRunGet(runId) {
   const run = (await q('select * from seo_runs where id=?', [runId])).rows[0];
   if (!run) throw new Error('SEO run not found');
@@ -4262,7 +4543,7 @@ async function seoLatest(siteId) {
   if (!run) return { site: site.slug, run: null, pages: [], search_console: searchConsole };
   const pages = (
     await q(
-      'select id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop,final_url,redirect_count,lang,hreflang,social,security,accessibility,content_hash,indexable from seo_pages where run_id=? order by pagerank desc',
+      'select id,url,path,status_code,response_ms,content_bytes,title,meta_description,canonical,robots,h1,h2,word_count,internal_links,external_links,incoming_links,depth,pagerank,issues,wdfidf,images_total,images_missing_alt,lighthouse_mobile,lighthouse_desktop,final_url,redirect_count,lang,hreflang,social,security,accessibility,content_hash,indexable,details from seo_pages where run_id=? order by pagerank desc',
       [run.id]
     )
   ).rows;
@@ -5007,7 +5288,7 @@ function mcpServer(principal) {
     'seo_start',
     {
       description:
-        'Start an asynchronous SEO crawl. Includes on-page checks, internal link graph, PageRank-style link strength and site-corpus WDF-IDF. Lighthouse runs in the configured Browser Runner (no API key needed) or, without one, through a configured PageSpeed API key; the Browser Runner also adds axe-core accessibility checks.',
+        'Start an asynchronous SEO crawl. Includes on-page checks, internal link graph, PageRank-style link strength and site-corpus WDF-IDF. Lighthouse runs in the configured Browser Runner (no API key needed) or, without one, through a configured PageSpeed API key; the Browser Runner also adds axe-core accessibility checks and a privacy check (third parties and cookies before consent). Also checks robots.txt, sitemap hygiene, canonical/hreflang targets, snippet pixel widths, URLs, headings, anchors, image weight, TTFB, rich-result fields, soft 404, Search Console data per URL and the custom rules of the site (seo_custom_rules_set).',
       inputSchema: z.object({
         site: z.string(),
         max_pages: z.number().int().min(1).max(500).optional(),
@@ -5023,6 +5304,30 @@ function mcpServer(principal) {
           pageSpeedMaxPages: page_speed_max_pages
         })
       )
+  );
+  const seoCustomRuleSchema = z.object({
+    name: z.string().min(1).max(80),
+    type: z.enum(CUSTOM_RULE_TYPES),
+    value: z.string().min(1).max(500),
+    attr: z.string().max(40).optional()
+  });
+  registerTool(
+    'seo_custom_rules_get',
+    {
+      description:
+        'Get the custom search/extraction rules of a website that every SEO crawl evaluates (CSS selector present/missing, text present/missing, regex on the HTML, value extraction).',
+      inputSchema: z.object({ site: z.string() })
+    },
+    async ({ site }) => toolText(await seoCustomRulesGet(site))
+  );
+  registerTool(
+    'seo_custom_rules_set',
+    {
+      description:
+        'Replace the custom SEO search/extraction rules of a website (max. 30). Types: css_exists, css_missing, text_contains, text_missing, regex_html, regex_html_missing (issue when not met) and extract (CSS selector, optional attr; values are stored per page). Applies from the next crawl. An empty list removes all rules.',
+      inputSchema: z.object({ site: z.string(), rules: z.array(seoCustomRuleSchema).max(30) })
+    },
+    async ({ site, rules }) => toolText(await seoCustomRulesSet(site, rules))
   );
   registerTool(
     'seo_run_status',
@@ -7312,6 +7617,7 @@ async function seoDashboardPage(slug) {
       '</dl></div><div class="tablewrap"><table><thead><tr><th>KI-Bot</th><th>Zugriff via robots.txt</th></tr></thead><tbody>' +
       (aiBotRows || '<tr><td colspan="2">Keine robots.txt gefunden.</td></tr>') +
       '</tbody></table></div></div></section>';
+    html += seoAuditOverviewHtml(summary, esc);
     html +=
       '<section><div class="sectionhead"><div><span class="eyebrow">Onpage</span><h2>Alle gecrawlten Seiten</h2></div><small>' +
       pages.length +
@@ -7321,6 +7627,7 @@ async function seoDashboardPage(slug) {
   } else if (!run)
     html +=
       '<section><div class="empty-state"><strong>Noch kein SEO-Audit vorhanden.</strong><p>Starte oben den ersten Crawl.</p></div></section>';
+  html += seoCustomRulesEditorHtml(site.slug, seoSiteCustomRules(site), esc);
   html +=
     '<script>const seoForm=document.getElementById("seoRunForm"),seoState=document.getElementById("seoRunState");seoForm.addEventListener("submit",async e=>{e.preventDefault();const fd=new FormData(seoForm),data={maxPages:Number(fd.get("maxPages")),pageSpeed:fd.get("pageSpeed"),pageSpeedMaxPages:Number(fd.get("pageSpeedMaxPages"))};seoState.textContent="Starte…";const r=await fetch("/api/sites/' +
     encodeURIComponent(site.slug) +
@@ -7496,6 +7803,7 @@ async function seoPageDetailPage(id) {
     '</dd></div></dl></section><section><div class="sectionhead"><div><span class="eyebrow">Issues</span><h2>Hinweise</h2></div></div><ul class="seo-issues">' +
     issueRows +
     '</ul></section></div>';
+  html += seoSnippetPreviewHtml(p, p.details, esc) + seoPageExtrasHtml(p.details, esc);
   html +=
     '<section><div class="sectionhead"><div><span class="eyebrow">Lighthouse / PSI</span><h2>Performance & Qualität</h2></div></div><div class="lh-grid">' +
     lh(mobile, 'Mobile') +
@@ -8448,6 +8756,10 @@ async function buildApplication({ initialize = true, routeObserver } = {}) {
     })
   );
   app.get('/api/sites/:site/seo/compare', async req => seoCompare(req.params.site));
+  app.get('/api/sites/:site/seo/rules', async req => seoCustomRulesGet(req.params.site));
+  app.put('/api/sites/:site/seo/rules', async req =>
+    seoCustomRulesSet(req.params.site, z.object({ rules: z.array(z.unknown()).max(30) }).parse(req.body || {}).rules)
+  );
   app.get('/api/sites/:site/quality', async req => qualityOverview(req.params.site));
   app.get('/api/seo-runs/:id', async req => seoRunGet(req.params.id));
   app.get('/api/seo-pages/:id', async req => seoPageGet(Number(req.params.id)));

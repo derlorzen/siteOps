@@ -47,3 +47,26 @@ test('outgoing link checks refuse internal addresses', async () => {
     await assert.rejects(seoPublicLinkGuard(new URL(url)), url);
   await seoPublicLinkGuard(new URL('http://93.184.215.14/'));
 });
+
+test('privacy recorder groups requests by host and keeps consent-tool paths', async () => {
+  const { createPrivacyRecorder } = await import('../runner/seo-audit.mjs');
+  const recorder = createPrivacyRecorder('https://www.beispiel.de/');
+  const req = (url, type) => ({ url: () => url, resourceType: () => type });
+  recorder.onRequest(req('https://www.beispiel.de/', 'document'));
+  recorder.onRequest(req('https://www.beispiel.de/wp-content/plugins/borlabs-cookie/a.js?v=1', 'script'));
+  recorder.onRequest(req('https://fonts.googleapis.com/css?family=x', 'stylesheet'));
+  recorder.onRequest(req('https://fonts.googleapis.com/css2', 'stylesheet'));
+  recorder.onRequest(req('data:image/png;base64,AA', 'image'));
+  const result = recorder.result([{ name: '_ga', domain: '.beispiel.de', value: 'secret' }]);
+  assert.deepEqual(result.requests, [
+    {
+      host: 'www.beispiel.de',
+      url: 'https://www.beispiel.de/wp-content/plugins/borlabs-cookie/a.js',
+      type: 'document,script',
+      count: 2
+    },
+    { host: 'fonts.googleapis.com', url: 'https://fonts.googleapis.com/css', type: 'stylesheet', count: 2 }
+  ]);
+  // Cookie values never leave the runner.
+  assert.deepEqual(result.cookies, [{ name: '_ga', domain: '.beispiel.de' }]);
+});

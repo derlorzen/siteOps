@@ -666,6 +666,12 @@
   "GET /api/sites/:site/seo/compare": {
     "tools": ["seo_compare"]
   },
+  "GET /api/sites/:site/seo/rules": {
+    "tools": ["seo_custom_rules_get"]
+  },
+  "PUT /api/sites/:site/seo/rules": {
+    "tools": ["seo_custom_rules_set"]
+  },
   "GET /api/sites/:site/quality": {
     "tools": ["quality_overview"]
   },
