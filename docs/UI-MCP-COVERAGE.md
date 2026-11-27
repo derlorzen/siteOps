@@ -2,7 +2,7 @@
 
 Automatisch aus den tatsächlichen Fastify-Routen, der zentralen MCP-Registrierung und den ausdrücklich geprüften Ausnahmen in `lib/ui-capabilities.json` erzeugt. Neu erzeugen: `npm run capabilities`. Neue oder entfernte API-Routen sowie nicht existierende MCP-Tools lassen den Abdeckungstest fehlschlagen.
 
-Bestand: 316 API-Funktionen, 268 MCP-Tools, 58 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
+Bestand: 318 API-Funktionen, 270 MCP-Tools, 58 begründete Dashboard-Ausnahmen. „Zugeordnet“ bezeichnet fachliche Adapterabdeckung, keine erfolgreiche Live-Prüfung eines externen Providers oder Clients.
 
 Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Einstieg und Service benennen ihren Arbeitskontext. Bei zusammengesetzten Abläufen können mehrere Tool-Aufrufe erforderlich sein. Einzelne Credential- und Binärtransferwege bleiben bewusst im Dashboard.
 
@@ -175,6 +175,8 @@ Die UI-Funktion wird durch API-Methode und Pfad eindeutig bezeichnet. Der UI-Ein
 | seo | /websites | seo_graph | GET /api/sites/:site/seo/graph | seo_graph | Lesen | Keine zusätzliche | Zugeordnet |  |
 | seo | /websites | seo_issues | GET /api/sites/:site/seo/issues | seo_issues | Lesen | Keine zusätzliche | Zugeordnet |  |
 | seo | /websites | seo_latest | GET /api/sites/:site/seo/latest | seo_latest | Lesen | Keine zusätzliche | Zugeordnet |  |
+| seo | /websites | seo_custom_rules_get | GET /api/sites/:site/seo/rules | seo_custom_rules_get | Lesen | Keine zusätzliche | Zugeordnet |  |
+| seo | /websites | seo_custom_rules_set | PUT /api/sites/:site/seo/rules | seo_custom_rules_set | Ändern | Keine zusätzliche | Zugeordnet |  |
 | server-profiles | /mcp-info | Dashboard-Administration | DELETE /api/server-profiles/:id | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Administrative Einrichtung oder Entfernung eines Zugangsdaten enthaltenden Providerkontos bleibt im Dashboard. MCP verwendet ausschließlich die gespeicherten Verbindungen. |
 | server-profiles | /mcp-info | Dashboard-Administration | POST /api/server-profiles/from-site | – | Ändern | Dashboard-Entscheidung | Begründete Ausnahme | Kopieren von Zugangsdaten zwischen Verbindungsprofilen bleibt ein administrativer Dashboard-Vorgang. |
 | server-profiles | /mcp-info | Dashboard-Administration | GET /api/server-profiles/source-sites | – | Lesen | Dashboard-Entscheidung | Begründete Ausnahme | Administrative Auswahl für die Übernahme verschlüsselter Verbindungsdaten. MCP verwendet die bereits freigegebenen Profile aus server_profiles_list. |

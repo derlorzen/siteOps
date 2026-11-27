@@ -541,6 +541,9 @@ The OAuth issuer and MCP resource URLs are derived from this value, so it must b
 - `SEO_CRAWL_RETRIES` — extra attempts for network errors, 408/425/429 and 5xx responses (default `2`)
 - `SEO_AXE_MAX_PAGES` — pages per crawl checked with axe-core in the Browser Runner (default `10`, `0` disables)
 - `SEO_EXTERNAL_LINK_MAX_CHECKS` — distinct outgoing links checked per crawl (default `200`, `0` disables)
+- `SEO_IMAGE_MAX_CHECKS` — distinct images measured per crawl beyond the same-site resource check (default `300`)
+- `SEO_IMAGE_MAX_KB` — images above this size are reported as `image_large` (default `100`)
+- `SEO_PRIVACY_MAX_PAGES` — pages per crawl checked for third parties and cookies before consent in the Browser Runner (default `3`, `0` disables)
 
 Crawl scheduling (queue, deduplication, autoscaled concurrency, rate limit, retries) uses
 [Crawlee](https://github.com/apify/crawlee) (Apache-2.0) in-process with in-memory storage;
@@ -561,6 +564,39 @@ retry on 429/503 (technique from linkinator/lychee). Outgoing links are checked 
 (`broken_external_link`), only against public IP addresses; 401/403/999 responses count as
 blocked for bots, not as broken. A DNS rebinding window between the address check and the
 request remains; only the status code is used.
+
+### Extended checks (modelled on Screaming Frog's reports)
+
+All in-process, rules in `lib/seo-rules.mjs` (unit-tested without network):
+
+- **Indexing & directives:** robots.txt parsed with Google's matching (longest match, Allow wins
+  ties, `*`/`$`): `robots_blocked`, blocked CSS/JS, links to blocked URLs. `X-Robots-Tag` header,
+  canonical in the `Link` header, several or conflicting canonicals, noindex with canonical,
+  missing viewport.
+- **Cross-page:** canonical targets (broken, redirecting, noindex, chains), hreflang (x-default,
+  self reference, duplicate languages, target status/noindex/non-canonical, missing return links),
+  sitemap hygiene (sitemap URLs that are broken, redirect, noindex or not canonical).
+- **Snippet:** title and description pixel width (Arial metrics, ~580/~920 px) with a search
+  result preview on the page view.
+- **URLs, headings, anchors:** uppercase, underscores, double slashes, parameters, length;
+  skipped heading levels, H1 equal to the title; empty or generic anchors, internal nofollow.
+- **Performance & media:** TTFB, HTML size, image weight and format (HEAD/ranged GET), missing
+  `width`/`height`, long alt texts.
+- **Content:** soft 404 (HTTP 200 with a "not found" page), placeholder text (Lorem ipsum),
+  rich-result required and recommended fields for common schema.org types.
+- **Search Console:** clicks, impressions, CTR and position per crawled URL from the last sync
+  (no API call during the crawl); impressions on broken or noindex pages, top-10 pages with very
+  low CTR, URLs with impressions that the crawl did not reach.
+- **Custom search & extraction:** up to 30 rules per site (CSS selector present/missing, text
+  present/missing, regex on the HTML, value extraction), edited on the SEO dashboard or via
+  `seo_custom_rules_get` / `seo_custom_rules_set` (`GET`/`PUT /api/sites/:site/seo/rules`).
+- **Privacy (GDPR):** with Browser Runner support (`privacy: true` in `/seo/capabilities`) the
+  first pages are opened in a fresh browser context without any click. Requests to known third
+  parties (Google Fonts, Analytics/Tag Manager, Meta, YouTube, Maps, …), tracking or third-party
+  cookies and the detected consent tool are reported (`privacy_*`). This is a technical check,
+  not legal advice; cookie values never leave the runner.
+
+Per-page extras are stored in `seo_pages.details` (JSON).
 
 ### Content analysis on client-rendered pages (Next.js and similar)
 

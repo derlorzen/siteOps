@@ -78,3 +78,21 @@ test('helpers', () => {
   assert.equal(retryAfterMs('2'), 2000);
   assert.equal(retryAfterMs('120'), 10000);
 });
+
+test('reports resource size and type from HEAD or the ranged GET', async t => {
+  const base = await serve(t, (req, res) => {
+    if (req.url === '/head.jpg')
+      return res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': '2048' }).end();
+    if (req.method === 'HEAD') return res.writeHead(405).end();
+    res.writeHead(206, { 'content-type': 'image/png; charset=binary', 'content-range': 'bytes 0-0/4096' }).end('x');
+  });
+  const results = await checkUrls([base + '/head.jpg', base + '/range.png'], { userAgent: 'test' });
+  assert.deepEqual(
+    [results.get(base + '/head.jpg').bytes, results.get(base + '/head.jpg').contentType],
+    [2048, 'image/jpeg']
+  );
+  assert.deepEqual(
+    [results.get(base + '/range.png').bytes, results.get(base + '/range.png').contentType],
+    [4096, 'image/png']
+  );
+});
