@@ -1,0 +1,39 @@
+name: Browser Runner Deploy (Hostinger)
+
+# Rebuilds the existing Browser Runner on the Hostinger VPS when runner code changes on main.
+# Setup (once): secret HOSTINGER_API_KEY, secret BROWSER_RUNNER_TOKEN (the token SiteOps already
+# uses), variable HOSTINGER_VM_ID and variable HOSTINGER_RUNNER_PROJECT (name of the existing
+# Docker Manager project). Until all of them exist the job is skipped.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'runner/**'
+      - '.github/workflows/runner-deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: runner-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ vars.HOSTINGER_VM_ID != '' && vars.HOSTINGER_RUNNER_PROJECT != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Deploy runner to Hostinger VPS
+        uses: hostinger/deploy-action@v1
+        with:
+          api-key: ${{ secrets.HOSTINGER_API_KEY }}
+          virtual-machine: ${{ vars.HOSTINGER_VM_ID }}
+          project-name: ${{ vars.HOSTINGER_RUNNER_PROJECT }}
+          docker-compose-path: runner/docker-compose.hostinger.yml
+          environment-variables: |
+            BROWSER_RUNNER_TOKEN=${{ secrets.BROWSER_RUNNER_TOKEN }}
+            BROWSER_MAX_SESSIONS=${{ vars.BROWSER_MAX_SESSIONS || '2' }}
+            VIDEO_ALLOWED_HOSTS=${{ vars.VIDEO_ALLOWED_HOSTS }}
+            RUNNER_BIND=${{ vars.RUNNER_BIND || '127.0.0.1:3200' }}
