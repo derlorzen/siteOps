@@ -4,6 +4,18 @@
 
 Ab Runner **1.8.0** bietet der Runner `/seo/audit`: Lighthouse (mobil/Desktop) lokal im Chromium und axe-core-Barrierefreiheitsprüfung für den SEO-Check. Dafür ist kein PageSpeed-API-Key nötig. Node.js **22.19** oder neuer wird benötigt (Lighthouse 13). Mit `privacy: true` öffnet `/seo/audit` die Seite außerdem in einem frischen Kontext ohne Klick und meldet die angefragten Hosts und gesetzten Cookies (nur Name und Domain) für den DSGVO-Check.
 
+## Automatisches Update auf dem Hostinger-VPS
+
+`.github/workflows/runner-deploy.yml` baut den bestehenden Runner bei jedem Push auf `main` mit Änderungen in `runner/` über die offizielle Action `hostinger/deploy-action@v1` neu (manuell auch über „Run workflow“). Einmalig unter GitHub → Settings → Secrets and variables → Actions anlegen:
+
+- Secret `HOSTINGER_API_KEY`: hPanel → Dev → API → API tokens → New token
+- Secret `BROWSER_RUNNER_TOKEN`: der Token, den SiteOps für den Runner bereits verwendet
+- Variable `HOSTINGER_VM_ID`: Zahl aus dem VPS-Hostnamen (`srv123456.hstgr.cloud` → `123456`)
+- Variable `HOSTINGER_RUNNER_PROJECT`: Name des **bestehenden** Projekts im Docker Manager, damit Container und Volume weiterverwendet werden
+- optional `RUNNER_HOST` (Standard `browse.lorzen.de`, Routing über Traefik im `coolify`-Netz) und `VIDEO_ALLOWED_HOSTS` (Standard `shop.lorzen.link`)
+
+Solange eine der beiden Variablen fehlt, wird der Job übersprungen. Compose-Datei: `runner/docker-compose.hostinger.yml`.
+
 ## Browser Runner 1.5.0 – Release-Abnahme und Reihenfolge
 
 Ab Runner **1.5.0** prüft die Video Suite echte gerenderte Video- und
