@@ -91,6 +91,10 @@ import { createAiUsage, aiLimitsSchema } from './lib/ai-usage.mjs';
 import { renderAiUsage } from './lib/ai-usage-ui.mjs';
 import { createBackupJobs, backupJobInput } from './lib/backup-jobs.mjs';
 import { renderWebsiteFiles } from './lib/website-files-ui.mjs';
+import { crawlSeoSite } from './lib/seo-crawler.mjs';
+import { checkUrls } from './lib/seo-link-check.mjs';
+import { publicIp, publicAddresses } from './lib/coolify-public-http.mjs';
+import { isIP } from 'node:net';
 
 function env(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
@@ -136,6 +140,11 @@ const cfg = {
   pageSpeedApiKey: process.env.PAGESPEED_API_KEY || '',
   seoMaxPages: Number(env('SEO_MAX_PAGES', '100')),
   seoRenderMaxPages: Number(env('SEO_RENDER_MAX_PAGES', '20')),
+  seoCrawlConcurrency: Number(env('SEO_CRAWL_CONCURRENCY', '4')),
+  seoCrawlMaxRequestsPerMinute: Number(env('SEO_CRAWL_MAX_REQUESTS_PER_MINUTE', '120')),
+  seoCrawlRetries: Number(env('SEO_CRAWL_RETRIES', '2')),
+  seoAxeMaxPages: Number(env('SEO_AXE_MAX_PAGES', '10')),
+  seoExternalLinkMaxChecks: Number(env('SEO_EXTERNAL_LINK_MAX_CHECKS', '200')),
   seoUserAgent: env('SEO_USER_AGENT', 'Lorzen-SiteOps-SEO/1.0'),
   browserRunnerUrl: process.env.BROWSER_RUNNER_URL || '',
   browserRunnerToken: process.env.BROWSER_RUNNER_TOKEN || '',
@@ -3733,57 +3742,127 @@ function seoExtractDocument($, { finalUrl, rootHost, sourceUrl, statusCode }) {
     indexable
   };
 }
-async function seoAuditResources(pages, rootHost, limit = 250) {
+function seoCollectTargets(pages, pick, limit) {
   const owners = new Map();
   for (const p of pages)
-    for (const resource of p.resources || []) {
-      let u;
-      try {
-        u = new URL(resource);
-      } catch {
-        continue;
+    for (const url of pick(p)) {
+      if (!owners.has(url)) {
+        if (owners.size >= limit) continue;
+        owners.set(url, new Set());
       }
-      if (!seoSameSiteHost(u.hostname, rootHost)) continue;
-      if (!owners.has(resource)) owners.set(resource, []);
-      owners.get(resource).push(p);
+      owners.get(url).add(p);
     }
-  const entries = [...owners.entries()].slice(0, limit),
-    results = [];
-  for (let i = 0; i < entries.length; i += 10) {
-    const batch = entries.slice(i, i + 10);
-    const checked = await Promise.all(
-      batch.map(async ([url, pagesFor]) => {
+  return owners;
+}
+async function seoAuditResources(pages, rootHost, limit = 250) {
+  const owners = seoCollectTargets(
+    pages,
+    p =>
+      (p.resources || []).filter(resource => {
         try {
-          let r = await fetch(url, {
-            method: 'HEAD',
-            redirect: 'follow',
-            signal: AbortSignal.timeout(10000),
-            headers: { 'User-Agent': cfg.seoUserAgent }
-          });
-          if (r.status === 405)
-            r = await fetch(url, {
-              method: 'GET',
-              redirect: 'follow',
-              signal: AbortSignal.timeout(10000),
-              headers: { 'User-Agent': cfg.seoUserAgent, Range: 'bytes=0-0' }
-            });
-          return { url, status: r.status, pagesFor };
-        } catch (e) {
-          return { url, status: 0, error: String(e.message || e), pagesFor };
+          return seoSameSiteHost(new URL(resource).hostname, rootHost);
+        } catch {
+          return false;
         }
-      })
-    );
-    results.push(...checked);
+      }),
+    limit
+  );
+  const results = await checkUrls([...owners.keys()], { userAgent: cfg.seoUserAgent });
+  let broken = 0;
+  for (const [url, r] of results) {
+    if (r.kind !== 'broken') continue;
+    broken++;
+    for (const p of owners.get(url))
+      p.issues.push({
+        level: 'warn',
+        code: 'broken_resource',
+        text: 'Ressource nicht erreichbar (' + (r.status || r.error || 'Netzwerkfehler') + '): ' + url
+      });
   }
-  for (const r of results)
-    if (r.status === 0 || r.status >= 400)
-      for (const p of r.pagesFor)
+  return { checked: results.size, broken };
+}
+// Outgoing links are checked only against public addresses: page content is untrusted and must
+// not make SiteOps probe internal networks.
+async function seoPublicLinkGuard(url) {
+  if (url.username || url.password) throw new Error('Link mit Zugangsdaten nicht geprüft');
+  if (isIP(url.hostname.replace(/^\[|\]$/g, ''))) {
+    if (!publicIp(url.hostname.replace(/^\[|\]$/g, ''))) throw new Error('Interne Adresse nicht geprüft');
+    return;
+  }
+  if (/\.(?:local|localhost|internal)$|^localhost$/i.test(url.hostname)) throw new Error('Interner Host nicht geprüft');
+  await publicAddresses(url.hostname);
+}
+async function seoAuditExternalLinks(pages, limit = cfg.seoExternalLinkMaxChecks) {
+  if (!(limit > 0)) return { checked: 0, broken: 0, blocked: 0, skipped: 0 };
+  const owners = seoCollectTargets(
+    pages,
+    p => (p.links || []).filter(l => !l.internal && /^https?:/i.test(l.target)).map(l => l.target),
+    limit
+  );
+  const results = await checkUrls([...owners.keys()], {
+    userAgent: cfg.seoUserAgent,
+    guard: seoPublicLinkGuard,
+    concurrency: 8,
+    perHost: 2
+  });
+  const summary = { checked: 0, broken: 0, blocked: 0, skipped: 0 };
+  for (const [url, r] of results) {
+    if (r.kind === 'skipped') {
+      summary.skipped++;
+      continue;
+    }
+    summary.checked++;
+    if (r.kind === 'broken') {
+      summary.broken++;
+      for (const p of owners.get(url))
         p.issues.push({
           level: 'warn',
-          code: 'broken_resource',
-          text: 'Ressource nicht erreichbar (' + (r.status || 'Netzwerkfehler') + '): ' + r.url
+          code: 'broken_external_link',
+          text: 'Externer Link nicht erreichbar (' + (r.status || r.error || 'Netzwerkfehler') + '): ' + url
         });
-  return { checked: results.length, broken: results.filter(r => r.status === 0 || r.status >= 400).length };
+    } else if (r.kind === 'blocked') summary.blocked++;
+  }
+  return summary;
+}
+async function seoRunnerCapabilities() {
+  if (!cfg.browserRunnerUrl || !cfg.browserRunnerToken) return null;
+  try {
+    const caps = await browserRunnerRequest('/seo/capabilities');
+    return caps?.seoAuditVersion === 1 ? caps : null;
+  } catch {
+    return null;
+  }
+}
+async function seoRunnerAudit(url, { axe, lighthouse }) {
+  const body = { url, axe, lighthouse: lighthouse ? ['mobile', 'desktop'] : false, timeoutMs: 45000 };
+  try {
+    return await browserRunnerRequest('/seo/audit', { method: 'POST', body });
+  } catch (e) {
+    // Shared browser capacity (synthetics, video) is busy: wait once, then report.
+    if (!/Browser Runner 503/.test(String(e.message))) throw e;
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    return browserRunnerRequest('/seo/audit', { method: 'POST', body });
+  }
+}
+const SEO_AXE_IMPACT_DE = { critical: 'kritisch', serious: 'schwer', moderate: 'mittel', minor: 'gering' };
+function seoApplyAxe(page, axe) {
+  if (!axe) return;
+  page.accessibility = { ...(page.accessibility || {}), axe };
+  for (const v of (axe.violations || []).slice(0, 10))
+    page.issues.push({
+      level: v.impact === 'critical' || v.impact === 'serious' ? 'warn' : 'info',
+      code: 'accessibility_axe',
+      text:
+        'Barrierefreiheit (axe ' +
+        v.id +
+        ', ' +
+        (SEO_AXE_IMPACT_DE[v.impact] || v.impact) +
+        ', ' +
+        v.nodes +
+        (v.nodes === 1 ? ' Element' : ' Elemente') +
+        '): ' +
+        v.help
+    });
 }
 async function runSeoAudit(
   runId,
@@ -3796,53 +3875,24 @@ async function runSeoAudit(
     root = seoNormalizeUrl(configuredUrl.origin + '/'),
     rootUrl = new URL(root),
     rootHost = rootUrl.hostname,
-    queue = [{ url: root, depth: 0 }],
-    queued = new Set([seoSiteUrlKey(root)]),
-    crawled = new Set(),
-    pages = [],
-    links = [],
     renderBudget = { remaining: cfg.seoRenderMaxPages };
   const sitemap = await seoDiscoverSitemaps(root, Math.min(maxPages * 3, 1500)),
     sitemapKeySet = new Set(sitemap.pages.map(seoSiteUrlKey)),
-    rootKey = seoSiteUrlKey(root),
-    sitemapPending = sitemap.pages.filter(url => seoSiteUrlKey(url) !== rootKey);
+    rootKey = seoSiteUrlKey(root);
   try {
-    while ((queue.length || sitemapPending.length) && pages.length < maxPages) {
-      if (!queue.length) {
-        let candidate = null;
-        while (sitemapPending.length && !candidate) {
-          const next = sitemapPending.shift(),
-            key = seoSiteUrlKey(next);
-          if (!crawled.has(key) && !queued.has(key)) candidate = next;
-        }
-        if (!candidate) break;
-        queued.add(seoSiteUrlKey(candidate));
-        queue.push({ url: candidate, depth: null });
-      }
-      const item = queue.shift(),
-        itemKey = seoSiteUrlKey(item.url);
-      queued.delete(itemKey);
-      if (crawled.has(itemKey)) continue;
-      crawled.add(itemKey);
-      const page = await crawlSeoPage(item.url, rootHost, item.depth, renderBudget);
-      crawled.add(seoSiteUrlKey(page.finalUrl));
-      pages.push(page);
-      links.push(...page.links);
-      for (const l of page.links) {
-        const targetKey = seoSiteUrlKey(l.target);
-        if (!l.internal || !seoCrawlableUrl(l.target, rootHost) || crawled.has(targetKey)) continue;
-        const linkedDepth = item.depth == null ? 1 : item.depth + 1,
-          existing = queue.find(x => seoSiteUrlKey(x.url) === targetKey);
-        if (existing) {
-          if (existing.depth == null || linkedDepth < existing.depth) existing.depth = linkedDepth;
-          continue;
-        }
-        if (pages.length + queue.length < maxPages && !queued.has(targetKey)) {
-          queued.add(targetKey);
-          queue.push({ url: l.target, depth: linkedDepth });
-        }
-      }
-    }
+    // Queue, deduplication, concurrency, rate limit and retries: Crawlee (lib/seo-crawler.mjs).
+    const pages = await crawlSeoSite({
+        root,
+        sitemapPages: sitemap.pages,
+        maxPages,
+        keyOf: seoSiteUrlKey,
+        isCrawlable: url => seoCrawlableUrl(url, rootHost),
+        fetchPage: (url, depth) => crawlSeoPage(url, rootHost, depth, renderBudget),
+        concurrency: cfg.seoCrawlConcurrency,
+        maxRequestsPerMinute: cfg.seoCrawlMaxRequestsPerMinute,
+        retries: cfg.seoCrawlRetries
+      }),
+      links = pages.flatMap(p => p.links);
     const canonicalUrlByKey = new Map(pages.map(p => [seoSiteUrlKey(p.url), p.url])),
       graphLinks = links.map(l =>
         l.internal
@@ -3993,16 +4043,56 @@ async function runSeoAudit(
           });
         }
       }
-    const resourceAudit = await seoAuditResources(pages, rootHost);
-    const psiCandidates = pages
-      .filter(p => p.statusCode === 200)
-      .slice(0, pageSpeed === 'all' ? Math.min(pageSpeedMaxPages, pages.length) : pageSpeed === 'homepage' ? 1 : 0);
-    for (const p of psiCandidates) {
+    const resourceAudit = await seoAuditResources(pages, rootHost),
+      externalLinkAudit = await seoAuditExternalLinks(pages);
+    // Lighthouse and axe-core run in the Browser Runner when it supports them; otherwise
+    // Lighthouse falls back to the Google PageSpeed API (with a configured key).
+    const runnerSeo = await seoRunnerCapabilities(),
+      lighthouseSource = runnerSeo?.lighthouse ? 'runner' : cfg.pageSpeedApiKey ? 'pagespeed' : null;
+    const htmlPages = pages.filter(p => p.statusCode === 200 && !p.error),
+      psiCandidates = lighthouseSource
+        ? htmlPages.slice(
+            0,
+            pageSpeed === 'all' ? Math.min(pageSpeedMaxPages, pages.length) : pageSpeed === 'homepage' ? 1 : 0
+          )
+        : [],
+      axeCandidates = runnerSeo?.axe ? htmlPages.slice(0, Math.max(0, cfg.seoAxeMaxPages)) : [];
+    let axePages = 0;
+    for (const p of [...new Set([...psiCandidates, ...axeCandidates])]) {
+      const wantLighthouse = psiCandidates.includes(p),
+        wantAxe = axeCandidates.includes(p);
       try {
-        p.lighthouseMobile = await pageSpeedAudit(p.url, 'mobile');
-        p.lighthouseDesktop = await pageSpeedAudit(p.url, 'desktop');
+        if (lighthouseSource === 'runner' || (wantAxe && runnerSeo)) {
+          const audit = await seoRunnerAudit(p.url, {
+            axe: wantAxe,
+            lighthouse: wantLighthouse && lighthouseSource === 'runner'
+          });
+          if (audit.lighthouse?.mobile) p.lighthouseMobile = audit.lighthouse.mobile;
+          if (audit.lighthouse?.desktop) p.lighthouseDesktop = audit.lighthouse.desktop;
+          for (const report of [audit.lighthouse?.mobile, audit.lighthouse?.desktop])
+            if (report?.runtimeError)
+              p.issues.push({
+                level: 'info',
+                code: 'pagespeed_error',
+                text: 'Lighthouse ' + report.strategy + ': ' + String(report.runtimeError).slice(0, 300)
+              });
+          if (audit.axe) {
+            seoApplyAxe(p, audit.axe);
+            axePages++;
+          }
+          for (const message of audit.errors || [])
+            p.issues.push({ level: 'info', code: 'browser_audit_error', text: String(message).slice(0, 500) });
+        }
+        if (wantLighthouse && lighthouseSource === 'pagespeed') {
+          p.lighthouseMobile = await pageSpeedAudit(p.url, 'mobile');
+          p.lighthouseDesktop = await pageSpeedAudit(p.url, 'desktop');
+        }
       } catch (e) {
-        p.issues.push({ level: 'warn', code: 'pagespeed_error', text: String(e.message || e) });
+        p.issues.push({
+          level: 'warn',
+          code: wantLighthouse ? 'pagespeed_error' : 'browser_audit_error',
+          text: String(e.message || e).slice(0, 500)
+        });
       }
     }
     for (const p of pages) {
@@ -4107,8 +4197,13 @@ async function runSeoAudit(
           pagerank: Number(p.pagerank.toFixed(6)),
           incomingLinks: p.incomingLinks
         })),
-      pageSpeedEnabled: Boolean(cfg.pageSpeedApiKey),
+      pageSpeedEnabled: Boolean(lighthouseSource),
+      lighthouseSource,
       pageSpeedPages: psiCandidates.length,
+      axePages,
+      brokenExternalLinks: externalLinkAudit.broken,
+      externalLinksChecked: externalLinkAudit.checked,
+      externalLinksBlocked: externalLinkAudit.blocked,
       sitemapUrls: sitemap.sitemaps.length,
       sitemapPages: sitemap.pages.length,
       aiBots: seoAiBotAccess(sitemap.robotsTxt),
@@ -4146,7 +4241,7 @@ async function startSeoAudit(siteId, options = {}) {
     site: site.slug,
     maxPages,
     pageSpeed: options.pageSpeed || 'homepage',
-    pageSpeedConfigured: Boolean(cfg.pageSpeedApiKey)
+    pageSpeedConfigured: Boolean(cfg.pageSpeedApiKey || (cfg.browserRunnerUrl && cfg.browserRunnerToken))
   };
 }
 async function seoRunGet(runId) {
@@ -4912,7 +5007,7 @@ function mcpServer(principal) {
     'seo_start',
     {
       description:
-        'Start an asynchronous SEO crawl. Includes on-page checks, internal link graph, PageRank-style link strength and site-corpus WDF-IDF. Optional PageSpeed/Lighthouse requires a configured API key.',
+        'Start an asynchronous SEO crawl. Includes on-page checks, internal link graph, PageRank-style link strength and site-corpus WDF-IDF. Lighthouse runs in the configured Browser Runner (no API key needed) or, without one, through a configured PageSpeed API key; the Browser Runner also adds axe-core accessibility checks.',
       inputSchema: z.object({
         site: z.string(),
         max_pages: z.number().int().min(1).max(500).optional(),
@@ -6452,7 +6547,7 @@ function settingsPage() {
       </section>
 
       <section class="form-card"><div class="sectionhead"><div><span class="eyebrow">SEO / Lighthouse</span><h2>SEO-Audits</h2></div><span class="pill ${s.pageSpeedApiKeyConfigured ? 'ok' : ''}">${s.pageSpeedApiKeyConfigured ? 'PAGESPEED AKTIV' : 'OHNE PAGESPEED'}</span></div>
-        <p class="lead">Der normale SEO-Crawl funktioniert ohne externe API. Für echte Lighthouse-/PageSpeed-Werte kann optional ein Google PageSpeed Insights API-Key hinterlegt werden.</p>
+        <p class="lead">Der normale SEO-Crawl funktioniert ohne externe API. Lighthouse läuft im Browser Runner (ab Version 1.8.0). Nur ohne Runner wird ein Google PageSpeed Insights API-Key benötigt.</p>
         <div class="formgrid">
           <label>Standard: maximale Seiten pro Crawl <small>Schützt große Websites vor sehr langen Crawls. Pro Lauf kann der Wert angepasst werden.</small><input name="seoMaxPages" type="number" min="1" max="500" value="${s.seoMaxPages || 100}"></label>
           <label class="span2">Google PageSpeed Insights API-Key <small>${s.pageSpeedApiKeyConfigured ? 'API-Key gespeichert – leer lassen für unverändert.' : 'Optional. Benötigt für Lighthouse Performance, Accessibility, Best Practices und SEO.'}</small><input name="pageSpeedApiKey" type="password" autocomplete="new-password" placeholder="${s.pageSpeedApiKeyConfigured ? 'API-Key bereits gespeichert' : 'AIza…'}"></label>
@@ -7152,7 +7247,7 @@ async function seoDashboardPage(slug) {
   html +=
     '<section class="seo-run-panel"><form id="seoRunForm" class="seo-run-form"><label>Max. Seiten<input name="maxPages" type="number" min="1" max="500" value="' +
     (run?.max_pages || cfg.seoMaxPages || 100) +
-    '"></label><label>PageSpeed / Lighthouse<select name="pageSpeed"><option value="homepage">Startseite</option><option value="all">Mehrere Seiten</option><option value="none">Nicht abrufen</option></select></label><label>Max. Lighthouse-Seiten<input name="pageSpeedMaxPages" type="number" min="1" max="50" value="10"></label><button type="submit">SEO-Check starten</button><span id="seoRunState"></span></form><p class="lead">Der Crawl folgt internen Links, robots.txt und Sitemaps. Lighthouse läuft nur mit hinterlegtem PageSpeed API-Key.</p></section>';
+    '"></label><label>PageSpeed / Lighthouse<select name="pageSpeed"><option value="homepage">Startseite</option><option value="all">Mehrere Seiten</option><option value="none">Nicht abrufen</option></select></label><label>Max. Lighthouse-Seiten<input name="pageSpeedMaxPages" type="number" min="1" max="50" value="10"></label><button type="submit">SEO-Check starten</button><span id="seoRunState"></span></form><p class="lead">Der Crawl folgt internen Links, robots.txt und Sitemaps. Lighthouse und die axe-Barrierefreiheitsprüfung laufen im Browser Runner. Ohne Runner wird Lighthouse über einen hinterlegten PageSpeed API-Key abgerufen.</p></section>';
   if (run?.status === 'running')
     html +=
       '<div class="notice"><strong>Crawl läuft</strong><span>Gestartet ' +
@@ -8685,6 +8780,8 @@ export {
   seoSiteUrlKey,
   seoCrawlableUrl,
   seoFetchDocument,
+  crawlSeoPage,
+  seoPublicLinkGuard,
   isUtf8Text,
   gitTreeEntryPayload,
   githubRateLimitMessage,
