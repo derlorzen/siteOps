@@ -12,7 +12,7 @@ Ab Runner **1.8.0** bietet der Runner `/seo/audit`: Lighthouse (mobil/Desktop) l
 - Secret `BROWSER_RUNNER_TOKEN`: der Token, den SiteOps für den Runner bereits verwendet
 - Variable `HOSTINGER_VM_ID`: Zahl aus dem VPS-Hostnamen (`srv123456.hstgr.cloud` → `123456`)
 - Variable `HOSTINGER_RUNNER_PROJECT`: Name des **bestehenden** Projekts im Docker Manager, damit Container und Volume weiterverwendet werden
-- optional `RUNNER_BIND` (Standard `127.0.0.1:3200`), `BROWSER_MAX_SESSIONS`, `VIDEO_ALLOWED_HOSTS`
+- optional `RUNNER_HOST` (Standard `browse.lorzen.de`, Routing über Traefik im `coolify`-Netz) und `VIDEO_ALLOWED_HOSTS` (Standard `shop.lorzen.link`)
 
 Solange eine der beiden Variablen fehlt, wird der Job übersprungen. Compose-Datei: `runner/docker-compose.hostinger.yml`.
 

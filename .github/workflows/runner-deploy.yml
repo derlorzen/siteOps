@@ -34,6 +34,5 @@ jobs:
           docker-compose-path: runner/docker-compose.hostinger.yml
           environment-variables: |
             BROWSER_RUNNER_TOKEN=${{ secrets.BROWSER_RUNNER_TOKEN }}
-            BROWSER_MAX_SESSIONS=${{ vars.BROWSER_MAX_SESSIONS || '2' }}
-            VIDEO_ALLOWED_HOSTS=${{ vars.VIDEO_ALLOWED_HOSTS }}
-            RUNNER_BIND=${{ vars.RUNNER_BIND || '127.0.0.1:3200' }}
+            VIDEO_ALLOWED_HOSTS=${{ vars.VIDEO_ALLOWED_HOSTS || 'shop.lorzen.link' }}
+            RUNNER_HOST=${{ vars.RUNNER_HOST || 'browse.lorzen.de' }}
