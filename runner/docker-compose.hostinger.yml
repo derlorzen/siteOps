@@ -1,7 +1,7 @@
 # Compose file for the Hostinger "Deploy to Hostinger VPS" GitHub Action
 # (.github/workflows/runner-deploy.yml). It updates the EXISTING runner project:
 # the workflow uses the project name from vars.HOSTINGER_RUNNER_PROJECT, so the named volume
-# (<project>_siteops-video-data) and the container are reused instead of creating a second
+# (siteops_video_data) and the container are reused instead of creating a second
 # runner. Secrets are passed by the workflow as environment variables and never stored here.
 services:
   siteops-browser-runner:
@@ -17,10 +17,16 @@ services:
       BROWSER_MAX_SESSIONS: ${BROWSER_MAX_SESSIONS:-2}
       VIDEO_ALLOWED_HOSTS: ${VIDEO_ALLOWED_HOSTS:-}
     volumes:
-      - siteops-video-data:/data/video-studio
+      - siteops_video_data:/data/video-studio
     ports:
       # Same binding as the existing installation behind the HTTPS reverse proxy.
       - '${RUNNER_BIND:-127.0.0.1:3200}:3200'
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    external: true
 
 volumes:
-  siteops-video-data:
+  siteops_video_data:
