@@ -7,6 +7,8 @@ services:
   siteops-browser-runner:
     build:
       context: https://github.com/derlorzen/siteOps.git#main:runner
+    # Always rebuild from the Git source on deploy; without this Docker reuses the cached image.
+    pull_policy: build
     container_name: siteops-browser-runner
     environment:
       BROWSER_RUNNER_TOKEN: ${BROWSER_RUNNER_TOKEN:?BROWSER_RUNNER_TOKEN is required}
