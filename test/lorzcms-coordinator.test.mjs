@@ -74,6 +74,13 @@ test(
       async write(path, bytes) {
         files.set(path, Buffer.from(bytes));
       },
+      async rename(from, to) {
+        files.set(to, await this.read(from));
+        files.delete(from);
+      },
+      async remove(path) {
+        files.delete(path);
+      },
       async close() {}
     };
     const getSite = async id => (await q('select * from sites where id=?', [id])).rows[0];
@@ -109,9 +116,22 @@ test(
       decrypt: x => decryptWithKey(x, key),
       request: async (url, options = {}) => {
         const origin = new URL(url).origin;
+        const pathname = new URL(url).pathname;
+        if (origin === 'https://copy.example.de' && pathname.startsWith('/assets/siteops-adopt-')) {
+          const content = files.get('/copy/public' + pathname);
+          return new Response(content || 'missing', { status: content ? 200 : 404 });
+        }
         if (!url.endsWith('/siteops.php'))
           return new Response('website', { status: unhealthy && live.get(origin)?.version === '3.4.1' ? 500 : 200 });
         const inst = (await q('select * from cms_installations where base_url=?', [origin])).rows[0];
+        if (origin === 'https://copy.example.de') {
+          const config = files.get('/copy/config/siteops.php');
+          if (!config || !files.has('/copy/.lorzcms/agent.php') || !files.has('/copy/public/siteops.php'))
+            return new Response('missing', { status: 404 });
+          const tokenHash = crypto.createHash('sha256').update(options.headers.authorization.slice(7)).digest('hex');
+          if (!config.toString().includes(tokenHash)) return new Response('invalid key', { status: 401 });
+          return Response.json({ instanceId: inst.id, version: base.version, installed: true, maintenance: false });
+        }
         if (!options.body) return Response.json({ instanceId: inst.id, ...live.get(origin), maintenance: false });
         const body = JSON.parse(options.body);
         calls.push(body);
@@ -223,5 +243,48 @@ test(
     assert.equal(readopted.jobId, adopted.jobId);
     assert.equal(readopted.installationId, adopted.installationId);
     await controller.cancel(readopted.jobId);
+
+    const copy = await createSite({
+      ...installInput,
+      slug: 'copied-managed',
+      domain: 'copy.example.de',
+      remoteRoot: '/copy'
+    });
+    const copiedCore = await readFile(new URL('../lib/lorzcms/index.php', import.meta.url));
+    const oldOwner = crypto.randomUUID();
+    files.set('/copy/public/index.php', copiedCore);
+    files.set(
+      '/copy/.lorzcms/active.json',
+      Buffer.from(JSON.stringify({ version: base.version, digest: base.digest }))
+    );
+    files.set('/copy/.lorzcms/releases/' + base.version + '/manifest.json', Buffer.from(base.manifestText));
+    files.set('/copy/.lorzcms/owner.json', Buffer.from(JSON.stringify({ instanceId: oldOwner })));
+    files.set(
+      '/copy/config/siteops.php',
+      Buffer.from("<?php return ['instance_id'=>'" + oldOwner + "','key_hash'=>'" + 'b'.repeat(64) + "'];")
+    );
+    files.set('/copy/.lorzcms/agent.php', Buffer.from('old agent'));
+    files.set('/copy/public/siteops.php', Buffer.from('old wrapper'));
+    const copyInput = { site: copy.id, baseUrl: 'https://copy.example.de', publicRootReady: true };
+    const copyJob = await controller.attach(copyInput);
+    assert.equal((await controller.attach(copyInput)).jobId, copyJob.jobId);
+    assert.equal((await controller.inspect(copyJob.installationId)).code, 'CMS_JOB_ACTIVE');
+    await controller.tick();
+    const warning = (await q('select * from cms_jobs where id=?', [copyJob.jobId])).rows[0];
+    assert.equal(warning.state, 'needs_attention');
+    assert.match(warning.error, new RegExp(oldOwner));
+    assert.equal((await controller.inspect(copyJob.installationId)).agentStatus, 401);
+    assert.equal((await controller.attach(copyInput)).jobId, copyJob.jobId);
+    assert.equal((await controller.retry(copyJob.jobId)).state, 'queued');
+    await controller.tick();
+    const done = (await q('select * from cms_jobs where id=?', [copyJob.jobId])).rows[0];
+    assert.equal(done.state, 'succeeded');
+    const inspected = await controller.inspect(copyJob.installationId);
+    assert.equal(inspected.state, 'ready');
+    assert.equal(inspected.version, base.version);
+    assert.ok(inspected.checks.includes('Admin-Anmeldung'));
+    assert.deepEqual(files.get('/copy/public/index.php'), copiedCore);
+    assert.equal(JSON.parse(files.get('/copy/.lorzcms/owner.json')).instanceId, copyJob.installationId);
+    assert.equal((await controller.attach(copyInput)).jobId, copyJob.jobId);
   }
 );

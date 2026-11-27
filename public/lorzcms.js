@@ -61,7 +61,7 @@
   });
   document.querySelectorAll('[data-cms-resume]').forEach(button => {
     button.addEventListener('click', () => {
-      if (!window.confirm('Den bestehenden CMS-Anschluss fortsetzen? Die vorhandene Website wird nicht neu installiert.')) return;
+      if (!window.confirm(button.dataset.cmsOwnerWarning || 'Den bestehenden CMS-Anschluss fortsetzen? Die vorhandene Website wird nicht neu installiert.')) return;
       action(button, () => send('installations/' + encodeURIComponent(button.dataset.cmsResume) + '/resume'));
     });
   });
@@ -88,6 +88,7 @@
   document.querySelectorAll('[data-cms-action]').forEach(button => {
     button.addEventListener('click', () => {
       const kind = button.dataset.cmsAction;
+      if (kind === 'retry' && button.dataset.cmsOwnerWarning && !window.confirm(button.dataset.cmsOwnerWarning)) return;
       if (kind === 'rollback' &&
           !window.confirm('Vorherige Core-Version aktivieren? Aktuelle Inhalte und Medien bleiben erhalten.')) return;
       action(button, () => send('jobs/' + encodeURIComponent(button.dataset.job) + '/' + kind));
